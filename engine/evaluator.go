@@ -25,25 +25,27 @@ func NewSession() *Session {
 // Evaluator evaluates AIML templates with session context
 // Supports: <template>, <set>, <get>, <srai>, <think>, <condition>, <random>, <star>
 type Evaluator struct {
-	Session  *Session
-	SraiFunc func(string) (string, error) // For <srai> recursion
-	Config   *Config
+	Session   *Session
+	SraiFunc  func(string) (string, error) // For <srai> recursion
+	Config    *Config
 	SessionID string
+	Bot       *Bot // Reference to parent bot for sets/maps
 }
 
 func NewEvaluator(session *Session, sraiFunc func(string) (string, error)) *Evaluator {
 	return &Evaluator{
-		Session: session,
+		Session:  session,
 		SraiFunc: sraiFunc,
 	}
 }
 
-func NewEvaluatorWithConfig(session *Session, sraiFunc func(string) (string, error), config *Config, sessionID string) *Evaluator {
+func NewEvaluatorWithConfig(session *Session, sraiFunc func(string) (string, error), config *Config, sessionID string, bot *Bot) *Evaluator {
 	return &Evaluator{
-		Session: session,
-		SraiFunc: sraiFunc,
-		Config: config,
+		Session:   session,
+		SraiFunc:  sraiFunc,
+		Config:    config,
 		SessionID: sessionID,
+		Bot:       bot,
 	}
 }
 
@@ -163,9 +165,19 @@ func (e *Evaluator) evalNode(n node) (string, error) {
 			val = n.Text
 		}
 		if name != "" {
-			e.Session.Vars[name] = val
-			if e.Config != nil && e.Config.Debug {
-				e.debugf("<set> %q = %q", name, val)
+			// If this is a loaded set, add the value to the set
+			setName := strings.ToUpper(name)
+			valUC := strings.ToUpper(val)
+			if e.Bot != nil && e.Bot.Sets != nil && e.Bot.Sets[setName] != nil {
+				e.Bot.Sets[setName][valUC] = struct{}{}
+				if e.Config != nil && e.Config.Debug {
+					e.debugf("<set> (set) %q += %q", setName, valUC)
+				}
+			} else {
+				e.Session.Vars[name] = val
+				if e.Config != nil && e.Config.Debug {
+					e.debugf("<set> (var) %q = %q", name, val)
+				}
 			}
 		}
 		return "", nil
@@ -222,6 +234,33 @@ func (e *Evaluator) evalNode(n node) (string, error) {
 		return e.evalStar(n)
 	case "li":
 		return e.evalNodeChildren(n.Nodes)
+	case "map":
+		name := ""
+		for _, a := range n.Attr {
+			if a.Name.Local == "name" {
+				name = a.Value
+			}
+		}
+		key := ""
+		if len(n.Nodes) > 0 {
+			var err error
+			key, err = e.evalNodeChildren(n.Nodes)
+			if err != nil {
+				return "", err
+			}
+		} else if n.Text != "" {
+			key = n.Text
+		}
+		mapName := strings.ToUpper(name)
+		keyUC := strings.ToUpper(key)
+		if mapName != "" && keyUC != "" && e.Bot != nil && e.Bot.Maps != nil && e.Bot.Maps[mapName] != nil {
+			val := e.Bot.Maps[mapName][keyUC]
+			if e.Config != nil && e.Config.Debug {
+				e.debugf("<map> %q[%q] = %q", mapName, keyUC, val)
+			}
+			return val, nil
+		}
+		return "", nil
 	default:
 		var sb strings.Builder
 		sb.WriteString(n.Text)
@@ -242,32 +281,150 @@ func (e *Evaluator) evalNode(n node) (string, error) {
 }
 
 func (e *Evaluator) evalCondition(n node) (string, error) {
-	// <condition name="var"><li value="val">...</li><li>...</li></condition>
-	varName := ""
-	for _, a := range n.Attr {
-		if a.Name.Local == "name" {
-			varName = a.Value
+	// Support:
+	// <condition name="var" value="val">...</condition>
+	// <condition><li value="...">...</li></condition>
+	// <condition><li>...</li></condition>
+	// <condition set="setname" value="val">...</condition>
+	// <condition map="mapname" key="key">...</condition>
+	if len(n.Attr) > 0 {
+		varName, varVal := "", ""
+		setName, setVal := "", ""
+		mapName, mapKey := "", ""
+		for _, a := range n.Attr {
+			switch strings.ToLower(a.Name.Local) {
+			case "name":
+				varName = a.Value
+			case "value":
+				varVal = a.Value
+			case "set":
+				setName = a.Value
+			case "map":
+				mapName = a.Value
+			case "key":
+				mapKey = a.Value
+			}
+		}
+		if varName != "" && varVal != "" {
+			if e.Config != nil && e.Config.Debug {
+				e.debugf("<condition> checking var %q == %q (actual: %q)", varName, varVal, e.Session.Vars[varName])
+			}
+			if e.Session.Vars[varName] == varVal {
+				if e.Config != nil && e.Config.Debug {
+					e.debugf("<condition> var match: %q == %q", varName, varVal)
+				}
+				if len(n.Nodes) > 0 {
+					return e.evalNodeChildren(n.Nodes)
+				} else if n.Text != "" {
+					return n.Text, nil
+				}
+				return "", nil
+			}
+			return "", nil
+		}
+		if setName != "" && setVal != "" && e.Bot != nil && e.Bot.Sets != nil && e.Bot.Sets[strings.ToUpper(setName)] != nil {
+			setUC := strings.ToUpper(setName)
+			valUC := strings.ToUpper(setVal)
+			if e.Config != nil && e.Config.Debug {
+				e.debugf("<condition> checking set %q contains %q; set contents: %+v", setUC, valUC, e.Bot.Sets[setUC])
+			}
+			if _, ok := e.Bot.Sets[setUC][valUC]; ok {
+				if e.Config != nil && e.Config.Debug {
+					e.debugf("<condition> set match: %q contains %q", setUC, valUC)
+				}
+				if len(n.Nodes) > 0 {
+					return e.evalNodeChildren(n.Nodes)
+				} else if n.Text != "" {
+					return n.Text, nil
+				}
+				return "", nil
+			}
+			return "", nil
+		}
+		if mapName != "" && mapKey != "" && e.Bot != nil && e.Bot.Maps != nil && e.Bot.Maps[strings.ToUpper(mapName)] != nil {
+			if e.Config != nil && e.Config.Debug {
+				e.debugf("<condition> checking map %q[%q] (actual: %q)", strings.ToUpper(mapName), strings.ToUpper(mapKey), e.Bot.Maps[strings.ToUpper(mapName)][strings.ToUpper(mapKey)])
+			}
+			if val, ok := e.Bot.Maps[strings.ToUpper(mapName)][strings.ToUpper(mapKey)]; ok && val != "" {
+				if e.Config != nil && e.Config.Debug {
+					e.debugf("<condition> map match: %q[%q] = %q", strings.ToUpper(mapName), strings.ToUpper(mapKey), val)
+				}
+				if len(n.Nodes) > 0 {
+					return e.evalNodeChildren(n.Nodes)
+				} else if n.Text != "" {
+					return n.Text, nil
+				}
+				return "", nil
+			}
+			return "", nil
 		}
 	}
-	varVal := e.Session.Vars[varName]
+	// Handle <condition><li ...>...</li></condition>
 	for _, li := range n.Nodes {
 		if li.XMLName.Local != "li" {
 			continue
 		}
-		liVal := ""
+		varName, varVal := "", ""
+		setName, setVal := "", ""
+		mapName, mapKey := "", ""
 		for _, a := range li.Attr {
-			if a.Name.Local == "value" {
-				liVal = a.Value
+			switch strings.ToLower(a.Name.Local) {
+			case "name":
+				varName = a.Value
+			case "value":
+				varVal = a.Value
+			case "set":
+				setName = a.Value
+			case "map":
+				mapName = a.Value
+			case "key":
+				mapKey = a.Value
 			}
 		}
-		if liVal == "" || liVal == varVal {
-			if li.Text != "" {
+		if varName != "" && varVal != "" {
+			if e.Session.Vars[varName] == varVal {
+				if len(li.Nodes) > 0 {
+					return e.evalNodeChildren(li.Nodes)
+				} else if li.Text != "" {
+					return li.Text, nil
+				}
+			}
+			continue
+		}
+		if setName != "" && setVal != "" && e.Bot != nil && e.Bot.Sets != nil && e.Bot.Sets[strings.ToUpper(setName)] != nil {
+			setUC := strings.ToUpper(setName)
+			valUC := strings.ToUpper(setVal)
+			if e.Config != nil && e.Config.Debug {
+				e.debugf("<condition> checking set %q contains %q; set contents: %+v", setUC, valUC, e.Bot.Sets[setUC])
+			}
+			if _, ok := e.Bot.Sets[setUC][valUC]; ok {
+				if len(li.Nodes) > 0 {
+					return e.evalNodeChildren(li.Nodes)
+				} else if li.Text != "" {
+					return li.Text, nil
+				}
+			}
+			continue
+		}
+		if mapName != "" && mapKey != "" && e.Bot != nil && e.Bot.Maps != nil && e.Bot.Maps[strings.ToUpper(mapName)] != nil {
+			if val, ok := e.Bot.Maps[strings.ToUpper(mapName)][strings.ToUpper(mapKey)]; ok && val != "" {
+				if len(li.Nodes) > 0 {
+					return e.evalNodeChildren(li.Nodes)
+				} else if li.Text != "" {
+					return li.Text, nil
+				}
+			}
+			continue
+		}
+		// Default <li> (no attributes): match if no other <li> matched
+		if len(li.Attr) == 0 {
+			if len(li.Nodes) > 0 {
+				return e.evalNodeChildren(li.Nodes)
+			} else if li.Text != "" {
 				return li.Text, nil
 			}
-			return e.evalNodeChildren(li.Nodes)
 		}
 	}
-	// If no match, return empty
 	return "", nil
 }
 

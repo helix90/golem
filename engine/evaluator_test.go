@@ -84,4 +84,75 @@ func TestEvaluator_Star(t *testing.T) {
 	if out != "bar" {
 		t.Errorf("Expected 'bar', got '%s'", out)
 	}
+}
+
+func TestEvaluator_SetMapCondition(t *testing.T) {
+	sess := &Session{Vars: make(map[string]string), Wildcards: make(map[string][]string)}
+	cfg := &Config{Debug: true}
+
+	// Test <set> with set
+	bot := NewBot(false)
+	bot.Sets["COLORS"] = map[string]struct{}{ "RED": {}, "BLUE": {} }
+	eval := NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
+	_, err := eval.EvaluateTemplate(`<set name="COLORS">GREEN</set>`)
+	if err != nil {
+		t.Fatalf("set tag failed: %v", err)
+	}
+	if _, ok := bot.Sets["COLORS"]["GREEN"]; !ok {
+		t.Errorf("Expected 'GREEN' to be added to set 'COLORS'")
+	}
+
+	// Test <map>
+	bot = NewBot(false)
+	bot.Maps["COUNTRIES"] = map[string]string{ "FR": "FRANCE", "DE": "GERMANY" }
+	eval = NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
+	out, err := eval.EvaluateTemplate(`<map name="COUNTRIES">FR</map>`)
+	if err != nil {
+		t.Fatalf("map tag failed: %v", err)
+	}
+	if out != "FRANCE" {
+		t.Errorf("Expected map lookup to return 'FRANCE', got %q", out)
+	}
+
+	// Test <condition> with set
+	bot = NewBot(false)
+	bot.Sets["COLORS"] = map[string]struct{}{ "RED": {}, "BLUE": {} }
+	eval = NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
+	out, err = eval.EvaluateTemplate(`<condition set="COLORS" value="BLUE">Blue is in the set.</condition>`)
+	if err != nil {
+		t.Fatalf("condition set failed: %v", err)
+	}
+	if out != "Blue is in the set." {
+		t.Errorf("Expected set condition to match, got %q", out)
+	}
+
+	// Test <condition> with map
+	bot = NewBot(false)
+	bot.Maps["COUNTRIES"] = map[string]string{ "FR": "FRANCE", "DE": "GERMANY" }
+	eval = NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
+	out, err = eval.EvaluateTemplate(`<condition map="COUNTRIES" key="DE">Hallo!</condition>`)
+	if err != nil {
+		t.Fatalf("condition map failed: %v", err)
+	}
+	if out != "Hallo!" {
+		t.Errorf("Expected map condition to match, got %q", out)
+	}
+
+	// Test <condition> with <li> children
+	bot = NewBot(false)
+	bot.Sets["COLORS"] = map[string]struct{}{ "RED": {}, "BLUE": {} }
+	bot.Maps["COUNTRIES"] = map[string]string{ "FR": "FRANCE", "DE": "GERMANY" }
+	eval = NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
+	tmpl := `<condition>
+	<li set="COLORS" value="RED">Red found</li>
+	<li map="COUNTRIES" key="FR">Bonjour</li>
+	<li>Default</li>
+</condition>`
+	out, err = eval.EvaluateTemplate(tmpl)
+	if err != nil {
+		t.Fatalf("condition li failed: %v", err)
+	}
+	if out != "Red found" {
+		t.Errorf("Expected first matching li to be 'Red found', got %q", out)
+	}
 } 

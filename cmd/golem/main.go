@@ -91,9 +91,23 @@ func loadAIMLFiles(bot *engine.Bot, path string, debug bool) error {
 			return err
 		}
 		for _, f := range files {
-			if !f.IsDir() && filepath.Ext(f.Name()) == ".aiml" {
-				if err := bot.LoadAIML(filepath.Join(path, f.Name())); err != nil {
-					return err
+			if !f.IsDir() {
+				ext := filepath.Ext(f.Name())
+				switch ext {
+				case ".aiml":
+					if err := bot.LoadAIML(filepath.Join(path, f.Name())); err != nil {
+						return err
+					}
+				case ".set":
+					if err := bot.LoadSet(filepath.Join(path, f.Name())); err != nil {
+						return err
+					}
+					fmt.Fprintf(os.Stderr, "Loaded .set file: %s\n", f.Name())
+				case ".map":
+					if err := bot.LoadMap(filepath.Join(path, f.Name())); err != nil {
+						return err
+					}
+					fmt.Fprintf(os.Stderr, "Loaded .map file: %s\n", f.Name())
 				}
 			}
 		}

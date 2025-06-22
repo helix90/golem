@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"golem/parser"
+	"bufio"
+	"path/filepath"
 )
 
 // Config represents the configuration for the bot
@@ -18,6 +20,8 @@ type Bot struct {
 	parser    *parser.Parser
 	sessions  *SessionManager
 	config    *Config
+	Sets      map[string]map[string]struct{} // set name -> set of values
+	Maps      map[string]map[string]string   // map name -> key->value
 }
 
 // NewBot creates a new Bot instance
@@ -28,6 +32,8 @@ func NewBot(debug bool) *Bot {
 		parser:    parser.NewParser(debug),
 		sessions:  NewSessionManager(),
 		config:    cfg,
+		Sets:      make(map[string]map[string]struct{}),
+		Maps:      make(map[string]map[string]string),
 	}
 }
 
@@ -74,7 +80,7 @@ func (b *Bot) Respond(input string, sessionID string) (string, error) {
 	eval := NewEvaluatorWithConfig(userSession, func(sraiInput string) (string, error) {
 		// SRAI recursion: match again with new input, same session
 		return b.Respond(sraiInput, sessionID)
-	}, b.config, sessionID)
+	}, b.config, sessionID, b)
 	output, err := eval.EvaluateTemplate(res.Template)
 	if err != nil {
 		return "[Error evaluating template]", err
@@ -85,4 +91,52 @@ func (b *Bot) Respond(input string, sessionID string) (string, error) {
 		b.sessions.UpdateTopic(sessionID, res.MatchedTopic)
 	}
 	return output, nil
+}
+
+// LoadSet loads a .set file (one value per line, set name is file base name)
+func (b *Bot) LoadSet(path string) error {
+	name := strings.ToUpper(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if b.Sets[name] == nil {
+		b.Sets[name] = make(map[string]struct{})
+	}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		val := strings.ToUpper(strings.TrimSpace(scanner.Text()))
+		if val != "" {
+			b.Sets[name][val] = struct{}{}
+		}
+	}
+	return scanner.Err()
+}
+
+// LoadMap loads a .map file (key value per line, map name is file base name)
+func (b *Bot) LoadMap(path string) error {
+	name := strings.ToUpper(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if b.Maps[name] == nil {
+		b.Maps[name] = make(map[string]string)
+	}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			key := strings.ToUpper(parts[0])
+			val := strings.ToUpper(strings.Join(parts[1:], " "))
+			b.Maps[name][key] = val
+		}
+	}
+	return scanner.Err()
 } 
