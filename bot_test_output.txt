@@ -1,0 +1,90 @@
+=== RUN   TestBotRespondWithoutCategories
+=== RUN   TestBotRespondWithoutCategories/input_Hello
+=== RUN   TestBotRespondWithoutCategories/input_What_is_your_name?
+=== RUN   TestBotRespondWithoutCategories/input_How_are_you?
+=== RUN   TestBotRespondWithoutCategories/input_Tell_me_a_joke
+=== RUN   TestBotRespondWithoutCategories/input_
+=== RUN   TestBotRespondWithoutCategories/input____
+--- PASS: TestBotRespondWithoutCategories (0.00s)
+    --- PASS: TestBotRespondWithoutCategories/input_Hello (0.00s)
+    --- PASS: TestBotRespondWithoutCategories/input_What_is_your_name? (0.00s)
+    --- PASS: TestBotRespondWithoutCategories/input_How_are_you? (0.00s)
+    --- PASS: TestBotRespondWithoutCategories/input_Tell_me_a_joke (0.00s)
+    --- PASS: TestBotRespondWithoutCategories/input_ (0.00s)
+    --- PASS: TestBotRespondWithoutCategories/input____ (0.00s)
+=== RUN   TestBotRespondWithDebug
+[session=debug-session] Input: test input
+--- PASS: TestBotRespondWithDebug (0.00s)
+=== RUN   TestBotLoadAIMLNonExistentFile
+--- PASS: TestBotLoadAIMLNonExistentFile (0.00s)
+=== RUN   TestNewBot
+--- PASS: TestNewBot (0.00s)
+=== RUN   TestBotRespondWithDebugTrace
+Parsed node tree: {XMLName:{Space: Local:template} Attr:[] Nodes:[{XMLName:{Space: Local:set} Attr:[{Name:{Space: Local:name} Value:foo}] Nodes:[] Text:bar} {XMLName:{Space: Local:get} Attr:[{Name:{Space: Local:name} Value:foo}] Nodes:[] Text:}] Text:Hi !}
+    bot_test.go:158: Expected response to be 'Hi bar!', got: Hi !bar
+--- FAIL: TestBotRespondWithDebugTrace (0.00s)
+=== RUN   TestEvaluator_Template
+--- PASS: TestEvaluator_Template (0.00s)
+=== RUN   TestEvaluator_SetAndGet
+--- PASS: TestEvaluator_SetAndGet (0.00s)
+=== RUN   TestEvaluator_Srai
+--- PASS: TestEvaluator_Srai (0.00s)
+=== RUN   TestEvaluator_Think
+--- PASS: TestEvaluator_Think (0.00s)
+=== RUN   TestEvaluator_Condition
+--- PASS: TestEvaluator_Condition (0.00s)
+=== RUN   TestEvaluator_Random
+--- PASS: TestEvaluator_Random (0.00s)
+=== RUN   TestEvaluator_Star
+--- PASS: TestEvaluator_Star (0.00s)
+=== RUN   TestMatchTree_InsertAndMatch
+=== RUN   TestMatchTree_InsertAndMatch/Exact_match
+=== RUN   TestMatchTree_InsertAndMatch/Match_with_'that'_context
+=== RUN   TestMatchTree_InsertAndMatch/Exact_match_2
+=== RUN   TestMatchTree_InsertAndMatch/Wildcard_in_pattern,_topic_match
+=== RUN   TestMatchTree_InsertAndMatch/Simple_match
+=== RUN   TestMatchTree_InsertAndMatch/__wildcard_at_start
+=== RUN   TestMatchTree_InsertAndMatch/Catch-all_wildcard
+=== RUN   TestMatchTree_InsertAndMatch/No_topic,_so_catch-all
+=== RUN   TestMatchTree_InsertAndMatch/No_that_match,_so_catch-all
+--- PASS: TestMatchTree_InsertAndMatch (0.00s)
+    --- PASS: TestMatchTree_InsertAndMatch/Exact_match (0.00s)
+    --- PASS: TestMatchTree_InsertAndMatch/Match_with_'that'_context (0.00s)
+    --- PASS: TestMatchTree_InsertAndMatch/Exact_match_2 (0.00s)
+    --- PASS: TestMatchTree_InsertAndMatch/Wildcard_in_pattern,_topic_match (0.00s)
+    --- PASS: TestMatchTree_InsertAndMatch/Simple_match (0.00s)
+    --- PASS: TestMatchTree_InsertAndMatch/__wildcard_at_start (0.00s)
+    --- PASS: TestMatchTree_InsertAndMatch/Catch-all_wildcard (0.00s)
+    --- PASS: TestMatchTree_InsertAndMatch/No_topic,_so_catch-all (0.00s)
+    --- PASS: TestMatchTree_InsertAndMatch/No_that_match,_so_catch-all (0.00s)
+=== RUN   TestMatchTree_WildcardPriority
+--- PASS: TestMatchTree_WildcardPriority (0.00s)
+=== RUN   TestMatchTree_MatchWithMeta_MetadataAndWildcards
+=== RUN   TestMatchTree_MatchWithMeta_MetadataAndWildcards/Pattern_wildcard_capture
+=== RUN   TestMatchTree_MatchWithMeta_MetadataAndWildcards/Pattern___and_that_*_wildcard_capture
+=== RUN   TestMatchTree_MatchWithMeta_MetadataAndWildcards/Exact_match,_no_wildcards
+=== RUN   TestMatchTree_MatchWithMeta_MetadataAndWildcards/Catch-all_wildcard
+--- PASS: TestMatchTree_MatchWithMeta_MetadataAndWildcards (0.00s)
+    --- PASS: TestMatchTree_MatchWithMeta_MetadataAndWildcards/Pattern_wildcard_capture (0.00s)
+    --- PASS: TestMatchTree_MatchWithMeta_MetadataAndWildcards/Pattern___and_that_*_wildcard_capture (0.00s)
+    --- PASS: TestMatchTree_MatchWithMeta_MetadataAndWildcards/Exact_match,_no_wildcards (0.00s)
+    --- PASS: TestMatchTree_MatchWithMeta_MetadataAndWildcards/Catch-all_wildcard (0.00s)
+=== RUN   TestMatchTree_ThatAndWildcardMatching
+=== RUN   TestMatchTree_ThatAndWildcardMatching/Exact_pattern,_wildcard_in_that
+=== RUN   TestMatchTree_ThatAndWildcardMatching/Pattern___wildcard,_exact_that
+=== RUN   TestMatchTree_ThatAndWildcardMatching/Pattern_*_and_that_*_wildcards
+=== RUN   TestMatchTree_ThatAndWildcardMatching/Catch-all_fallback
+--- PASS: TestMatchTree_ThatAndWildcardMatching (0.00s)
+    --- PASS: TestMatchTree_ThatAndWildcardMatching/Exact_pattern,_wildcard_in_that (0.00s)
+    --- PASS: TestMatchTree_ThatAndWildcardMatching/Pattern___wildcard,_exact_that (0.00s)
+    --- PASS: TestMatchTree_ThatAndWildcardMatching/Pattern_*_and_that_*_wildcards (0.00s)
+    --- PASS: TestMatchTree_ThatAndWildcardMatching/Catch-all_fallback (0.00s)
+=== RUN   TestSessionManager_VariablesPersist
+--- PASS: TestSessionManager_VariablesPersist (0.00s)
+=== RUN   TestSessionManager_TopicAndThatPersist
+--- PASS: TestSessionManager_TopicAndThatPersist (0.00s)
+=== RUN   TestSessionManager_MultipleUsers
+--- PASS: TestSessionManager_MultipleUsers (0.00s)
+FAIL
+FAIL	golem/engine	0.009s
+FAIL

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="1.0.1">
+    <category>
+        <pattern>HELLO</pattern>
+        <template>Hello! How are you today?</template>
+    </category>
+    
+    <category>
+        <pattern>WHAT IS YOUR NAME</pattern>
+        <template>My name is Golem, nice to meet you!</template>
+    </category>
+    
+    <category>
+        <pattern>HOW ARE YOU</pattern>
+        <that>HELLO</that>
+        <template>I'm doing well, thank you for asking!</template>
+    </category>
+    
+    <category>
+        <pattern>TELL ME A JOKE</pattern>
+        <topic>HUMOR</topic>
+        <template>Why don't scientists trust atoms? Because they make up everything!</template>
+    </category>
+    
+    <category>
+        <pattern>GOODBYE</pattern>
+        <template>Goodbye! Have a great day!</template>
+    </category>
+    
+    <!-- Malformed category with empty pattern (should be skipped) -->
+    <category>
+        <pattern></pattern>
+        <template>This should be skipped</template>
+    </category>
+    
+    <!-- Malformed category with empty template (should be skipped) -->
+    <category>
+        <pattern>EMPTY TEMPLATE</pattern>
+        <template></template>
+    </category>
+</aiml> 
