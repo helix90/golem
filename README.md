@@ -21,7 +21,7 @@
 ### Installation
 
 ```bash
-go install github.com/yourusername/golem@latest
+go install github.com/helix90/golem@latest
 ```
 
 ### Basic Usage (Library)
