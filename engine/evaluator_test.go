@@ -87,10 +87,10 @@ func TestEvaluator_Star(t *testing.T) {
 }
 
 func TestEvaluator_SetMapCondition(t *testing.T) {
-	sess := &Session{Vars: make(map[string]string), Wildcards: make(map[string][]string)}
 	cfg := &Config{Debug: true}
 
 	// Test <set> with set
+	sess := &Session{Vars: make(map[string]string), Wildcards: make(map[string][]string)}
 	bot := NewBot(false)
 	bot.Sets["COLORS"] = map[string]struct{}{ "RED": {}, "BLUE": {} }
 	eval := NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
@@ -102,23 +102,12 @@ func TestEvaluator_SetMapCondition(t *testing.T) {
 		t.Errorf("Expected 'GREEN' to be added to set 'COLORS'")
 	}
 
-	// Test <map>
-	bot = NewBot(false)
-	bot.Maps["COUNTRIES"] = map[string]string{ "FR": "FRANCE", "DE": "GERMANY" }
-	eval = NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
-	out, err := eval.EvaluateTemplate(`<map name="COUNTRIES">FR</map>`)
-	if err != nil {
-		t.Fatalf("map tag failed: %v", err)
-	}
-	if out != "FRANCE" {
-		t.Errorf("Expected map lookup to return 'FRANCE', got %q", out)
-	}
-
 	// Test <condition> with set
+	sess = &Session{Vars: make(map[string]string), Wildcards: make(map[string][]string)}
 	bot = NewBot(false)
 	bot.Sets["COLORS"] = map[string]struct{}{ "RED": {}, "BLUE": {} }
 	eval = NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
-	out, err = eval.EvaluateTemplate(`<condition set="COLORS" value="BLUE">Blue is in the set.</condition>`)
+	out, err := eval.EvaluateTemplate(`<condition set="COLORS" value="BLUE">Blue is in the set.</condition>`)
 	if err != nil {
 		t.Fatalf("condition set failed: %v", err)
 	}
@@ -126,33 +115,48 @@ func TestEvaluator_SetMapCondition(t *testing.T) {
 		t.Errorf("Expected set condition to match, got %q", out)
 	}
 
-	// Test <condition> with map
+	// Test <map>
+	sess = &Session{Vars: make(map[string]string), Wildcards: make(map[string][]string)}
 	bot = NewBot(false)
 	bot.Maps["COUNTRIES"] = map[string]string{ "FR": "FRANCE", "DE": "GERMANY" }
 	eval = NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
-	out, err = eval.EvaluateTemplate(`<condition map="COUNTRIES" key="DE">Hallo!</condition>`)
+	out2, err := eval.EvaluateTemplate(`<map name="COUNTRIES">FR</map>`)
+	if err != nil {
+		t.Fatalf("map tag failed: %v", err)
+	}
+	if out2 != "FRANCE" {
+		t.Errorf("Expected map lookup to return 'FRANCE', got %q", out2)
+	}
+
+	// Test <condition> with map
+	sess = &Session{Vars: make(map[string]string), Wildcards: make(map[string][]string)}
+	bot = NewBot(false)
+	bot.Maps["COUNTRIES"] = map[string]string{ "FR": "FRANCE", "DE": "GERMANY" }
+	eval = NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
+	out3, err := eval.EvaluateTemplate(`<condition map="COUNTRIES" key="DE">Hallo!</condition>`)
 	if err != nil {
 		t.Fatalf("condition map failed: %v", err)
 	}
-	if out != "Hallo!" {
-		t.Errorf("Expected map condition to match, got %q", out)
+	if out3 != "Hallo!" {
+		t.Errorf("Expected map condition to match, got %q", out3)
 	}
 
 	// Test <condition> with <li> children
+	sess = &Session{Vars: make(map[string]string), Wildcards: make(map[string][]string)}
 	bot = NewBot(false)
 	bot.Sets["COLORS"] = map[string]struct{}{ "RED": {}, "BLUE": {} }
 	bot.Maps["COUNTRIES"] = map[string]string{ "FR": "FRANCE", "DE": "GERMANY" }
 	eval = NewEvaluatorWithConfig(sess, nil, cfg, "", bot)
 	tmpl := `<condition>
-	<li set="COLORS" value="RED">Red found</li>
 	<li map="COUNTRIES" key="FR">Bonjour</li>
+	<li set="COLORS" value="RED">Red found</li>
 	<li>Default</li>
 </condition>`
-	out, err = eval.EvaluateTemplate(tmpl)
+	out4, err := eval.EvaluateTemplate(tmpl)
 	if err != nil {
 		t.Fatalf("condition li failed: %v", err)
 	}
-	if out != "Red found" {
-		t.Errorf("Expected first matching li to be 'Red found', got %q", out)
+	if out4 != "Red found" {
+		t.Errorf("Expected first matching li to be 'Red found', got %q", out4)
 	}
 } 

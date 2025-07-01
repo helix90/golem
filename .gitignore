@@ -30,6 +30,9 @@ go.work.sum
 # test artifacts
 *output.txt
 
+# build artifacts
+golem
+
 # Editor/IDE
 # .idea/
 # .vscode/

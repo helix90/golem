@@ -280,13 +280,26 @@ func (e *Evaluator) evalNode(n node) (string, error) {
 	}
 }
 
+func keysOfMap(m map[string]map[string]struct{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func (e *Evaluator) evalCondition(n node) (string, error) {
+	if e.Config != nil && e.Config.Debug {
+		e.debugf("<condition> node attributes: %+v", n.Attr)
+	}
 	// Support:
 	// <condition name="var" value="val">...</condition>
 	// <condition><li value="...">...</li></condition>
 	// <condition><li>...</li></condition>
 	// <condition set="setname" value="val">...</condition>
 	// <condition map="mapname" key="key">...</condition>
+
+	// First, handle <condition> with attributes (single test)
 	if len(n.Attr) > 0 {
 		varName, varVal := "", ""
 		setName, setVal := "", ""
@@ -297,6 +310,7 @@ func (e *Evaluator) evalCondition(n node) (string, error) {
 				varName = a.Value
 			case "value":
 				varVal = a.Value
+				setVal = a.Value
 			case "set":
 				setName = a.Value
 			case "map":
@@ -304,6 +318,9 @@ func (e *Evaluator) evalCondition(n node) (string, error) {
 			case "key":
 				mapKey = a.Value
 			}
+		}
+		if e.Config != nil && e.Config.Debug && e.Bot != nil && e.Bot.Sets != nil {
+			e.debugf("<condition> setName: %q, setVal: %q, Bot.Sets keys: %+v", setName, setVal, keysOfMap(e.Bot.Sets))
 		}
 		if varName != "" && varVal != "" {
 			if e.Config != nil && e.Config.Debug {
@@ -313,12 +330,10 @@ func (e *Evaluator) evalCondition(n node) (string, error) {
 				if e.Config != nil && e.Config.Debug {
 					e.debugf("<condition> var match: %q == %q", varName, varVal)
 				}
-				if len(n.Nodes) > 0 {
-					return e.evalNodeChildren(n.Nodes)
-				} else if n.Text != "" {
+				if n.Text != "" {
 					return n.Text, nil
 				}
-				return "", nil
+				return e.evalNodeChildren(n.Nodes)
 			}
 			return "", nil
 		}
@@ -332,12 +347,10 @@ func (e *Evaluator) evalCondition(n node) (string, error) {
 				if e.Config != nil && e.Config.Debug {
 					e.debugf("<condition> set match: %q contains %q", setUC, valUC)
 				}
-				if len(n.Nodes) > 0 {
-					return e.evalNodeChildren(n.Nodes)
-				} else if n.Text != "" {
+				if n.Text != "" {
 					return n.Text, nil
 				}
-				return "", nil
+				return e.evalNodeChildren(n.Nodes)
 			}
 			return "", nil
 		}
@@ -349,79 +362,89 @@ func (e *Evaluator) evalCondition(n node) (string, error) {
 				if e.Config != nil && e.Config.Debug {
 					e.debugf("<condition> map match: %q[%q] = %q", strings.ToUpper(mapName), strings.ToUpper(mapKey), val)
 				}
-				if len(n.Nodes) > 0 {
-					return e.evalNodeChildren(n.Nodes)
-				} else if n.Text != "" {
+				if n.Text != "" {
 					return n.Text, nil
 				}
-				return "", nil
+				return e.evalNodeChildren(n.Nodes)
 			}
 			return "", nil
 		}
 	}
-	// Handle <condition><li ...>...</li></condition>
-	for _, li := range n.Nodes {
+
+	// Now handle <condition> with <li> children (multi-test)
+	// Determine if parent has name for context
+	var parentName string
+	for _, a := range n.Attr {
+		switch strings.ToLower(a.Name.Local) {
+		case "name":
+			parentName = a.Value
+		}
+	}
+
+	var (
+		setMatch, mapMatch, varMatch, valueMatch, defaultLI *node
+	)
+	for i := range n.Nodes {
+		li := &n.Nodes[i]
 		if li.XMLName.Local != "li" {
 			continue
 		}
-		varName, varVal := "", ""
-		setName, setVal := "", ""
-		mapName, mapKey := "", ""
+		// Extract attributes for this <li>
+		liName, liVal := "", ""
+		liSet := ""
+		liMap, liMapKey := "", ""
 		for _, a := range li.Attr {
 			switch strings.ToLower(a.Name.Local) {
 			case "name":
-				varName = a.Value
+				liName = a.Value
 			case "value":
-				varVal = a.Value
+				liVal = a.Value
 			case "set":
-				setName = a.Value
+				liSet = a.Value
 			case "map":
-				mapName = a.Value
+				liMap = a.Value
 			case "key":
-				mapKey = a.Value
+				liMapKey = a.Value
 			}
 		}
-		if varName != "" && varVal != "" {
-			if e.Session.Vars[varName] == varVal {
-				if len(li.Nodes) > 0 {
-					return e.evalNodeChildren(li.Nodes)
-				} else if li.Text != "" {
-					return li.Text, nil
-				}
-			}
-			continue
-		}
-		if setName != "" && setVal != "" && e.Bot != nil && e.Bot.Sets != nil && e.Bot.Sets[strings.ToUpper(setName)] != nil {
-			setUC := strings.ToUpper(setName)
-			valUC := strings.ToUpper(setVal)
-			if e.Config != nil && e.Config.Debug {
-				e.debugf("<condition> checking set %q contains %q; set contents: %+v", setUC, valUC, e.Bot.Sets[setUC])
-			}
+		// 1. <li set=... value=...>
+		if setMatch == nil && liSet != "" && liVal != "" && e.Bot != nil && e.Bot.Sets != nil && e.Bot.Sets[strings.ToUpper(liSet)] != nil {
+			setUC := strings.ToUpper(liSet)
+			valUC := strings.ToUpper(liVal)
 			if _, ok := e.Bot.Sets[setUC][valUC]; ok {
-				if len(li.Nodes) > 0 {
-					return e.evalNodeChildren(li.Nodes)
-				} else if li.Text != "" {
-					return li.Text, nil
-				}
+				setMatch = li
 			}
-			continue
 		}
-		if mapName != "" && mapKey != "" && e.Bot != nil && e.Bot.Maps != nil && e.Bot.Maps[strings.ToUpper(mapName)] != nil {
-			if val, ok := e.Bot.Maps[strings.ToUpper(mapName)][strings.ToUpper(mapKey)]; ok && val != "" {
-				if len(li.Nodes) > 0 {
-					return e.evalNodeChildren(li.Nodes)
-				} else if li.Text != "" {
-					return li.Text, nil
-				}
+		// 2. <li map=... key=...>
+		if mapMatch == nil && liMap != "" && liMapKey != "" && e.Bot != nil && e.Bot.Maps != nil && e.Bot.Maps[strings.ToUpper(liMap)] != nil {
+			if val, ok := e.Bot.Maps[strings.ToUpper(liMap)][strings.ToUpper(liMapKey)]; ok && val != "" {
+				mapMatch = li
 			}
-			continue
 		}
-		// Default <li> (no attributes): match if no other <li> matched
-		if len(li.Attr) == 0 {
-			if len(li.Nodes) > 0 {
-				return e.evalNodeChildren(li.Nodes)
-			} else if li.Text != "" {
-				return li.Text, nil
+		// 3. <li name=... value=...>
+		if varMatch == nil && liName != "" && liVal != "" {
+			if e.Session.Vars[liName] == liVal {
+				varMatch = li
+			}
+		}
+		// 4. <li value=...> with parent name
+		if valueMatch == nil && liVal != "" && parentName != "" {
+			if e.Session.Vars[parentName] == liVal {
+				valueMatch = li
+			}
+		}
+		// 5. <li> with no attributes (default)
+		if defaultLI == nil && len(li.Attr) == 0 {
+			defaultLI = li
+		}
+	}
+	// Return in order of priority: set > map > var > value > default
+	for _, match := range []*node{setMatch, mapMatch, varMatch, valueMatch, defaultLI} {
+		if match != nil {
+			if len(match.Nodes) > 0 {
+				return e.evalNodeChildren(match.Nodes)
+			} else if match.Text != "" {
+				return match.Text, nil
 			}
 		}
 	}
