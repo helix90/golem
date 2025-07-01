@@ -38,4 +38,37 @@ func main() {
 </condition>`
 	out, _ = eval.EvaluateTemplate(tmpl)
 	fmt.Println("Condition with <li> children:", out)
+
+	// Create a bot and define a set of pets
+	bot.Sets["PETS"] = map[string]struct{}{
+		"DOG":    {},
+		"CAT":    {},
+		"PARROT": {},
+	}
+
+	// Example 1: Check if "CAT" is a pet (with default response)
+	tmpl1 := `<condition>
+	<li set="PETS" value="CAT">Yes, that's a pet!</li>
+	<li>Sorry, that's not a pet.</li>
+</condition>`
+	out1, _ := eval.EvaluateTemplate(tmpl1)
+	fmt.Printf("Is CAT a pet? %s\n", out1)
+
+	// Example 2: Check if "HORSE" is a pet (with default response)
+	tmpl2 := `<condition>
+	<li set="PETS" value="HORSE">Yes, that's a pet!</li>
+	<li>Sorry, that's not a pet.</li>
+</condition>`
+	out2, _ := eval.EvaluateTemplate(tmpl2)
+	fmt.Printf("Is HORSE a pet? %s\n", out2)
+
+	// Example 3: Set and get favorite pet
+	_, _ = eval.EvaluateTemplate(`<set name="FAV_PET">DOG</set>`)
+	favPet, _ := eval.EvaluateTemplate(`<get name="FAV_PET"/>`)
+	fmt.Printf("Favorite pet: %s\n", favPet)
+
+	// Example 4: Talk about favorite pet
+	tmpl4 := `My favorite pet is <get name="FAV_PET"/>!`
+	out4, _ := eval.EvaluateTemplate(tmpl4)
+	fmt.Println(out4)
 } 
