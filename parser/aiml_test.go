@@ -10,7 +10,7 @@ import (
 
 func TestParseFile(t *testing.T) {
 	parser := NewParser(true)
-	
+
 	categories, err := parser.ParseFile("../testdata/simple.aiml")
 	if err != nil {
 		t.Fatalf("Failed to parse AIML file: %v", err)
@@ -61,10 +61,10 @@ func TestParseFile(t *testing.T) {
 			t.Errorf("Missing category %d", i)
 			continue
 		}
-		
+
 		actual := categories[i]
 		if !reflect.DeepEqual(actual, expected) {
-			t.Errorf("Category %d mismatch:\nExpected: %+v\nGot:      %+v", 
+			t.Errorf("Category %d mismatch:\nExpected: %+v\nGot:      %+v",
 				i, expected, actual)
 		}
 	}
@@ -75,7 +75,7 @@ func TestParseFile(t *testing.T) {
 
 func TestParseReader(t *testing.T) {
 	parser := NewParser(false)
-	
+
 	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
 <aiml version="1.0.1">
     <category>
@@ -83,7 +83,7 @@ func TestParseReader(t *testing.T) {
         <template>Test template response</template>
     </category>
 </aiml>`
-	
+
 	reader := strings.NewReader(aimlContent)
 	categories, err := parser.ParseReader(reader)
 	if err != nil {
@@ -103,7 +103,7 @@ func TestParseReader(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(categories[0], expected) {
-		t.Errorf("Category mismatch:\nExpected: %+v\nGot:      %+v", 
+		t.Errorf("Category mismatch:\nExpected: %+v\nGot:      %+v",
 			expected, categories[0])
 	}
 
@@ -113,7 +113,7 @@ func TestParseReader(t *testing.T) {
 
 func TestParseFileWithMalformedEntries(t *testing.T) {
 	parser := NewParser(true)
-	
+
 	// Create a temporary AIML content with malformed entries
 	malformedContent := `<?xml version="1.0" encoding="UTF-8"?>
 <aiml version="1.0.1">
@@ -134,7 +134,7 @@ func TestParseFileWithMalformedEntries(t *testing.T) {
         <template>Another valid template</template>
     </category>
 </aiml>`
-	
+
 	reader := strings.NewReader(malformedContent)
 	categories, err := parser.ParseReader(reader)
 	if err != nil {
@@ -161,12 +161,12 @@ func TestParseFileWithMalformedEntries(t *testing.T) {
 
 func TestParseFileNonExistent(t *testing.T) {
 	parser := NewParser(false)
-	
+
 	_, err := parser.ParseFile("nonexistent.aiml")
 	if err == nil {
 		t.Error("Expected error for non-existent file")
 	}
-	
+
 	if !strings.Contains(err.Error(), "failed to open file") {
 		t.Errorf("Expected error to contain 'failed to open file', got: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestNewParser(t *testing.T) {
 	if parser.debug {
 		t.Error("Expected debug to be false")
 	}
-	
+
 	// Test creating parser with debug enabled
 	parserDebug := NewParser(true)
 	if !parserDebug.debug {
@@ -188,7 +188,7 @@ func TestNewParser(t *testing.T) {
 
 func TestCategoryValidation(t *testing.T) {
 	parser := NewParser(true)
-	
+
 	testCases := []struct {
 		name     string
 		category Category
@@ -274,4 +274,36 @@ func TestParseTemplateWithInnerXML(t *testing.T) {
 
 	field, _ := reflect.TypeOf(Category{}).FieldByName("Template")
 	fmt.Fprintf(os.Stderr, "Template struct tag at runtime: %q\n", field.Tag)
-} 
+}
+
+func TestParseFile_NestedTemplateAndPlainPattern(t *testing.T) {
+	parser := NewParser(false)
+
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="1.0.1">
+    <category>
+        <pattern>WHAT IS A CAT</pattern>
+        <template>Hello <think><set var="foo">bar</set></think> <get var="foo"/></template>
+    </category>
+</aiml>`
+
+	reader := strings.NewReader(aimlContent)
+	categories, err := parser.ParseReader(reader)
+	if err != nil {
+		t.Fatalf("Failed to parse AIML content: %v", err)
+	}
+
+	if len(categories) != 1 {
+		t.Fatalf("Expected 1 category, got %d", len(categories))
+	}
+
+	expectedPattern := "WHAT IS A CAT"
+	if categories[0].Pattern != expectedPattern {
+		t.Errorf("Expected pattern %q, got %q", expectedPattern, categories[0].Pattern)
+	}
+
+	// Should contain nested tags in template
+	if !strings.Contains(categories[0].Template, "<think>") || !strings.Contains(categories[0].Template, "<set var=\"foo\">bar</set>") {
+		t.Errorf("Expected template to contain nested <think> and <set> tags, got: %q", categories[0].Template)
+	}
+}

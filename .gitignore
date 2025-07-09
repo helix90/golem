@@ -31,6 +31,8 @@ go.work.sum
 *output.txt
 pandora/*
 testxml.go
+debug*
+tolens*
 
 # build artifacts
 golem

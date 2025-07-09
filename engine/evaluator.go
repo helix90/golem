@@ -93,6 +93,7 @@ func (e *Evaluator) EvaluateTemplate(template string) (string, error) {
 								if e.Config != nil && e.Config.Debug {
 									e.debugf("<set> (var) %q = %q", setName, val)
 								}
+								sb.WriteString(val)
 							}
 							setName = ""
 							break
@@ -105,7 +106,7 @@ func (e *Evaluator) EvaluateTemplate(template string) (string, error) {
 			case "get":
 				var getName string
 				for _, attr := range tok.Attr {
-					if attr.Name.Local == "name" || attr.Name.Local == "var" {
+					if attr.Name.Local == "name" || attr.Name.Local == "var" || attr.Name.Local == "car" {
 						getName = attr.Value
 						break
 					}
@@ -135,7 +136,7 @@ func (e *Evaluator) EvaluateTemplate(template string) (string, error) {
 				if len(words) == 0 {
 					// nothing captured
 				} else if len(tok.Attr) == 0 {
-					sb.WriteString(strings.Join(words, " "))
+					sb.WriteString(words[0])
 				} else if index > 0 && index <= len(words) {
 					sb.WriteString(words[index-1])
 				}
@@ -176,7 +177,7 @@ func (e *Evaluator) EvaluateTemplate(template string) (string, error) {
 				if len(words) == 0 {
 					// nothing captured
 				} else if len(tok.Attr) == 0 {
-					sb.WriteString(strings.Join(words, " "))
+					sb.WriteString(words[0])
 				} else if index > 0 && index <= len(words) {
 					sb.WriteString(words[index-1])
 				}
@@ -257,6 +258,58 @@ func (e *Evaluator) EvaluateTemplate(template string) (string, error) {
 					return "", err
 				}
 				// Do not append anything to sb (no output)
+			case "uniq":
+				var subj, pred, obj string
+				for {
+					innerT, err := decoder.Token()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						return "", err
+					}
+					switch innerTok := innerT.(type) {
+					case xml.StartElement:
+						switch innerTok.Name.Local {
+						case "subj":
+							subj, _ = e.evalInnerXML(decoder, &innerTok)
+						case "pred":
+							pred, _ = e.evalInnerXML(decoder, &innerTok)
+						case "obj":
+							obj, _ = e.evalInnerXML(decoder, &innerTok)
+						}
+					case xml.EndElement:
+						if innerTok.Name.Local == "uniq" {
+							goto uniq_done
+						}
+					}
+				}
+			uniq_done:
+				if e.Bot == nil {
+					break
+				}
+				if len(obj) > 0 && obj[0] == '?' {
+					// Query: look up (subj, pred)
+					if e.Bot.KnowledgeBase[subj] != nil {
+						val := e.Bot.KnowledgeBase[subj][pred]
+						if val != "" {
+							// Set the variable (without '?')
+							if e.Session != nil {
+								varName := obj[1:]
+								e.Session.Vars[varName] = val
+							}
+							sb.WriteString(val)
+						}
+					}
+				} else {
+					// Assertion: store (subj, pred, obj)
+					if e.Bot.KnowledgeBase[subj] == nil {
+						e.Bot.KnowledgeBase[subj] = make(map[string]string)
+					}
+					e.Bot.KnowledgeBase[subj][pred] = obj
+					sb.WriteString(obj)
+				}
+				// End <uniq>
 			}
 		}
 	}
@@ -268,4 +321,33 @@ func (e *Evaluator) debugf(format string, args ...interface{}) {
 	if e.Config != nil && e.Config.Debug {
 		fmt.Fprintf(os.Stderr, format+"\n", args...)
 	}
+}
+
+// Helper to evaluate the inner XML/text of a tag
+func (e *Evaluator) evalInnerXML(decoder *xml.Decoder, start *xml.StartElement) (string, error) {
+	var sb strings.Builder
+	depth := 1
+	for depth > 0 {
+		t, err := decoder.Token()
+		if err != nil {
+			return "", err
+		}
+		switch tok := t.(type) {
+		case xml.StartElement:
+			depth++
+			// Recursively evaluate nested tags
+			val, err := e.evalInnerXML(decoder, &tok)
+			if err != nil {
+				return "", err
+			}
+			sb.WriteString(val)
+		case xml.EndElement:
+			if tok.Name.Local == start.Name.Local {
+				depth--
+			}
+		case xml.CharData:
+			sb.WriteString(string(tok))
+		}
+	}
+	return strings.TrimSpace(sb.String()), nil
 }

@@ -409,7 +409,7 @@ func TestBot_SetTagNoMatch(t *testing.T) {
 }
 
 func TestBot_SetTagInThatSection(t *testing.T) {
-	bot := NewBot(false)
+	bot := NewBot(true)
 
 	// Load a test set for AFFIRMATIVE
 	setFile, err := os.CreateTemp("", "AFFIRMATIVE.set")
@@ -423,6 +423,15 @@ func TestBot_SetTagInThatSection(t *testing.T) {
 		t.Fatalf("LoadSet failed: %v", err)
 	}
 
+	// Add a category to respond to 'YES' (simulate a real bot response)
+	catAffirm := parser.Category{
+		Pattern:  "YES",
+		That:     "*",
+		Topic:    "",
+		Template: "Affirmative received!",
+	}
+	loadCategories(bot, []parser.Category{catAffirm})
+
 	// Test pattern with set in that section
 	cat := parser.Category{
 		Pattern:  "DO YOU WANT TO PLAY",
@@ -432,10 +441,16 @@ func TestBot_SetTagInThatSection(t *testing.T) {
 	}
 	loadCategories(bot, []parser.Category{cat})
 
-	// First, set the that context
-	bot.Respond("YES", "test-session")
+	// First, get the bot's response to 'YES' (sets 'that' to 'YES' pattern)
+	resp1, err := bot.Respond("YES", "test-session")
+	if err != nil {
+		t.Fatalf("Bot.Respond() returned an error: %v", err)
+	}
+	if resp1 != "Affirmative received!" {
+		t.Errorf("Expected response to be 'Affirmative received!', got: '%s'", resp1)
+	}
 
-	// Now test the pattern with that context
+	// Now test the pattern with that context (should match <set>AFFIRMATIVE</set> in 'that')
 	response, err := bot.Respond("DO YOU WANT TO PLAY", "test-session")
 	if err != nil {
 		t.Fatalf("Bot.Respond() returned an error: %v", err)
@@ -464,5 +479,147 @@ func TestBotThinkTag(t *testing.T) {
 	}
 	if response != "Hello bar!" {
 		t.Errorf("Expected response to be 'Hello bar!', got: %s", response)
+	}
+}
+
+func TestEvaluator_SetGetVarAndCarAttributes(t *testing.T) {
+	bot := NewBot(false)
+
+	// Test <set var="foo">bar</set> and <get var="foo"/>
+	cat1 := parser.Category{
+		Pattern:  "SET VAR FOO",
+		That:     "",
+		Topic:    "",
+		Template: `<set var="foo">bar</set>`,
+	}
+	cat2 := parser.Category{
+		Pattern:  "GET VAR FOO",
+		That:     "",
+		Topic:    "",
+		Template: `<get var="foo"/>`,
+	}
+
+	// Test <set name="baz">qux</set> and <get name="baz"/>
+	cat3 := parser.Category{
+		Pattern:  "SET NAME BAZ",
+		That:     "",
+		Topic:    "",
+		Template: `<set name="baz">qux</set>`,
+	}
+	cat4 := parser.Category{
+		Pattern:  "GET NAME BAZ",
+		That:     "",
+		Topic:    "",
+		Template: `<get name="baz"/>`,
+	}
+
+	// Test <get car="foo"/>
+	cat5 := parser.Category{
+		Pattern:  "GET CAR FOO",
+		That:     "",
+		Topic:    "",
+		Template: `<get car="foo"/>`,
+	}
+
+	loadCategories(bot, []parser.Category{cat1, cat2, cat3, cat4, cat5})
+
+	// Set var foo
+	resp, err := bot.Respond("SET VAR FOO", "test-session")
+	if err != nil {
+		t.Fatalf("Bot.Respond() returned an error: %v", err)
+	}
+	if resp != "bar" {
+		t.Errorf("Expected response to be 'bar', got: '%s'", resp)
+	}
+
+	// Get var foo
+	resp, err = bot.Respond("GET VAR FOO", "test-session")
+	if err != nil {
+		t.Fatalf("Bot.Respond() returned an error: %v", err)
+	}
+	if resp != "bar" {
+		t.Errorf("Expected response to be 'bar', got: '%s'", resp)
+	}
+
+	// Set name baz
+	resp, err = bot.Respond("SET NAME BAZ", "test-session")
+	if err != nil {
+		t.Fatalf("Bot.Respond() returned an error: %v", err)
+	}
+	if resp != "qux" {
+		t.Errorf("Expected response to be 'qux', got: '%s'", resp)
+	}
+
+	// Get name baz
+	resp, err = bot.Respond("GET NAME BAZ", "test-session")
+	if err != nil {
+		t.Fatalf("Bot.Respond() returned an error: %v", err)
+	}
+	if resp != "qux" {
+		t.Errorf("Expected response to be 'qux', got: '%s'", resp)
+	}
+
+	// Get car foo (should return 'bar')
+	resp, err = bot.Respond("GET CAR FOO", "test-session")
+	if err != nil {
+		t.Fatalf("Bot.Respond() returned an error: %v", err)
+	}
+	if resp != "bar" {
+		t.Errorf("Expected response to be 'bar', got: '%s'", resp)
+	}
+}
+
+func TestEvaluator_UniqTag(t *testing.T) {
+	bot := NewBot(false)
+
+	// Assert a triple: CAT has sound MEOW
+	cat1 := parser.Category{
+		Pattern:  "ASSERT CAT SOUND",
+		That:     "",
+		Topic:    "",
+		Template: `<uniq><subj>CAT</subj><pred>sound</pred><obj>MEOW</obj></uniq>`,
+	}
+	// Query the triple: CAT has sound ?sound
+	cat2 := parser.Category{
+		Pattern:  "QUERY CAT SOUND",
+		That:     "",
+		Topic:    "",
+		Template: `<uniq><subj>CAT</subj><pred>sound</pred><obj>?sound</obj></uniq>`,
+	}
+	// Use <get var="sound"/> to retrieve the variable
+	cat3 := parser.Category{
+		Pattern:  "GET SOUND",
+		That:     "",
+		Topic:    "",
+		Template: `<get var="sound"/>`,
+	}
+
+	loadCategories(bot, []parser.Category{cat1, cat2, cat3})
+
+	// Assert triple
+	resp, err := bot.Respond("ASSERT CAT SOUND", "test-session")
+	if err != nil {
+		t.Fatalf("Bot.Respond() returned an error: %v", err)
+	}
+	if resp != "MEOW" {
+		t.Errorf("Expected response to be 'MEOW', got: '%s'", resp)
+	}
+
+	// Query triple (should set ?sound and return 'MEOW')
+	resp, err = bot.Respond("QUERY CAT SOUND", "test-session")
+	if err != nil {
+		t.Fatalf("Bot.Respond() returned an error: %v", err)
+	}
+	if resp != "MEOW" {
+		t.Errorf("Expected response to be 'MEOW', got: '%s'", resp)
+	}
+
+	// Get variable (should return 'MEOW')
+	resp, err = bot.Respond("GET SOUND", "test-session")
+	if err != nil {
+		t.Fatalf("Bot.Respond() returned an error: %v", err)
+	}
+	if resp != "MEOW" {
+		t.Errorf("Expected response to be 'MEOW', got: '%s'", resp)
 	}
 }

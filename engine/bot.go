@@ -18,25 +18,31 @@ type Config struct {
 
 // Bot represents an AIML chatbot
 type Bot struct {
-	matchTree *MatchTree
-	parser    *parser.Parser
-	sessions  *SessionManager
-	config    *Config
-	Sets      map[string]map[string]struct{} // set name -> set of values
-	Maps      map[string]map[string]string   // map name -> key->value
+	matchTree     *MatchTree
+	parser        *parser.Parser
+	sessions      *SessionManager
+	config        *Config
+	Sets          map[string]map[string]struct{} // set name -> set of values
+	Maps          map[string]map[string]string   // map name -> key->value
+	KnowledgeBase map[string]map[string]string   // subject -> predicate -> object
 }
 
 // NewBot creates a new Bot instance
 func NewBot(debug bool) *Bot {
 	cfg := &Config{Debug: debug}
-	return &Bot{
-		matchTree: NewMatchTree(),
-		parser:    parser.NewParser(debug),
-		sessions:  NewSessionManager(),
-		config:    cfg,
-		Sets:      make(map[string]map[string]struct{}),
-		Maps:      make(map[string]map[string]string),
+	bot := &Bot{
+		matchTree:     NewMatchTree(),
+		parser:        parser.NewParser(debug),
+		sessions:      NewSessionManager(),
+		config:        cfg,
+		Sets:          make(map[string]map[string]struct{}),
+		Maps:          make(map[string]map[string]string),
+		KnowledgeBase: make(map[string]map[string]string),
 	}
+	if debug {
+		bot.matchTree.Debug = true
+	}
+	return bot
 }
 
 // LoadAIML loads AIML categories from the specified path
@@ -48,14 +54,19 @@ func (b *Bot) LoadAIML(path string) error {
 		return err
 	}
 	if info.IsDir() {
-		// Load all .aiml files in the directory
+		// Load all .aiml, .set, and .map files in the directory
 		entries, err := os.ReadDir(path)
 		if err != nil {
 			return err
 		}
 		for _, entry := range entries {
-			if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".aiml") {
-				filePath := filepath.Join(path, entry.Name())
+			if entry.IsDir() {
+				continue
+			}
+			name := strings.ToLower(entry.Name())
+			filePath := filepath.Join(path, entry.Name())
+			switch {
+			case strings.HasSuffix(name, ".aiml"):
 				if b.config != nil && b.config.Debug {
 					fmt.Fprintf(os.Stderr, "Loading AIML from: %s\n", filePath)
 				}
@@ -72,6 +83,22 @@ func (b *Bot) LoadAIML(path string) error {
 						fmt.Fprintf(os.Stderr, "Loaded pattern: %q\n", cat.Pattern)
 					}
 				}
+			case strings.HasSuffix(name, ".set"):
+				if b.config != nil && b.config.Debug {
+					fmt.Fprintf(os.Stderr, "Loading set from: %s\n", filePath)
+				}
+				if err := b.LoadSet(filePath); err != nil {
+					return err
+				}
+			case strings.HasSuffix(name, ".map"):
+				if b.config != nil && b.config.Debug {
+					fmt.Fprintf(os.Stderr, "Loading map from: %s\n", filePath)
+				}
+				if err := b.LoadMap(filePath); err != nil {
+					return err
+				}
+			default:
+				// skip other files
 			}
 		}
 		return nil
@@ -105,6 +132,9 @@ func (b *Bot) Respond(input string, sessionID string) (string, error) {
 	sess := b.sessions.GetOrCreateSession(sessionID)
 	that := sess.That
 	topic := sess.Topic
+	if b.config != nil && b.config.Debug {
+		fmt.Fprintf(os.Stderr, "[session=%s] That context before match: %q\n", sessionID, that)
+	}
 	res, found := b.matchTree.MatchWithMeta(inputNorm, that, topic, b.Sets)
 	if !found {
 		return "I don't have any knowledge loaded yet. Please load some AIML files first.", nil
@@ -128,6 +158,9 @@ func (b *Bot) Respond(input string, sessionID string) (string, error) {
 	}
 	// Update session context
 	b.sessions.UpdateThat(sessionID, res.MatchedPattern)
+	if b.config != nil && b.config.Debug {
+		fmt.Fprintf(os.Stderr, "[session=%s] That context after match: %q\n", sessionID, res.MatchedPattern)
+	}
 	if res.MatchedTopic != "" {
 		b.sessions.UpdateTopic(sessionID, res.MatchedTopic)
 	}

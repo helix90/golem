@@ -24,7 +24,14 @@ type MatchNode struct {
 // Insert and Match operate on pattern, that, topic
 // All keys are uppercased and trimmed
 type MatchTree struct {
-	root *MatchNode
+	root  *MatchNode
+	Debug bool
+}
+
+func (t *MatchTree) debugf(format string, args ...interface{}) {
+	if t != nil && t.Debug {
+		fmt.Fprintf(os.Stderr, format+"\n", args...)
+	}
 }
 
 // Helper to select the most specific match: exact > set > '_' > '*'
@@ -45,17 +52,26 @@ type matchResultWithType struct {
 func selectBestMatch(matches []matchResultWithType) (*MatchResult, bool) {
 	best := -1
 	var bestRes *MatchResult
+	maxPatternCapture := -1
 	for _, m := range matches {
-		if m.res != nil && int(m.mtype) > best {
-			best = int(m.mtype)
-			bestRes = m.res
+		if m.res != nil {
+			mtype := int(m.mtype)
+			patternCapLen := 0
+			if m.res.WildcardCaptures != nil {
+				patternCapLen = len(m.res.WildcardCaptures["pattern"])
+			}
+			if mtype > best || (mtype == best && patternCapLen > maxPatternCapture) {
+				best = mtype
+				bestRes = m.res
+				maxPatternCapture = patternCapLen
+			}
 		}
 	}
 	return bestRes, bestRes != nil
 }
 
 func NewMatchTree() *MatchTree {
-	return &MatchTree{root: newMatchNode()}
+	return &MatchTree{root: newMatchNode(), Debug: false}
 }
 
 func newMatchNode() *MatchNode {
@@ -80,8 +96,11 @@ func (t *MatchTree) Insert(cat parser.Category) {
 	thatWords := splitAIML(cat.That)
 	topicWords := splitAIML(cat.Topic)
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] Insert: Pattern=%q That=%q Topic=%q\n", cat.Pattern, cat.That, cat.Topic)
-	fmt.Fprintf(os.Stderr, "[DEBUG] Insert tokens: patternWords=%q thatWords=%q topicWords=%q\n", patternWords, thatWords, topicWords)
+	t.debugf("[DEBUG] Insert: Pattern=%q That=%q Topic=%q", cat.Pattern, cat.That, cat.Topic)
+	t.debugf("[DEBUG] Insert tokens: patternWords=%q thatWords=%q topicWords=%q", patternWords, thatWords, topicWords)
+	// New: print normalized 'that' and its tokens at insertion time
+	t.debugf("[DEBUG] Insert normalized that: %q", cat.That)
+	t.debugf("[DEBUG] Insert that tokens: %q", thatWords)
 
 	if len(thatWords) == 0 {
 		thatWords = []string{"*"}
@@ -174,14 +193,21 @@ func (t *MatchTree) MatchWithMeta(input, that, topic string, sets map[string]map
 		topicWords = []string{"*"}
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] Match: Input=%q That=%q Topic=%q\n", strings.Join(inputWords, " "), strings.Join(thatWords, " "), strings.Join(topicWords, " "))
-	fmt.Fprintf(os.Stderr, "[DEBUG] Match tokens: inputWords=%q thatWords=%q topicWords=%q\n", inputWords, thatWords, topicWords)
+	t.debugf("[DEBUG] Match: Input=%q That=%q Topic=%q", strings.Join(inputWords, " "), strings.Join(thatWords, " "), strings.Join(topicWords, " "))
+	t.debugf("[DEBUG] Match tokens: inputWords=%q thatWords=%q topicWords=%q", inputWords, thatWords, topicWords)
+	// New: print normalized 'that' and its tokens at match time
+	t.debugf("[DEBUG] Match normalized that: %q", that)
+	t.debugf("[DEBUG] Match that tokens: %q", thatWords)
 
 	// Start recursive match from the root node with all tokens
-	return matchNodeMetaPattern(t.root, inputWords, inputWords, thatWords, topicWords, 0, map[string][]string{"pattern": {}, "that": {}, "topic": {}}, sets)
+	res, found := matchNodeMetaPattern(t, t.root, inputWords, inputWords, thatWords, topicWords, 0, map[string][]string{"pattern": {}, "that": {}, "topic": {}}, sets)
+	if found {
+		return res, true
+	}
+	return nil, false
 }
 
-func matchNodeMetaPattern(node *MatchNode, pattern, input, that, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
+func matchNodeMetaPattern(t *MatchTree, node *MatchNode, pattern, input, that, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
 	if depth > matchRecursionLimit {
 		return nil, false
 	}
@@ -191,7 +217,7 @@ func matchNodeMetaPattern(node *MatchNode, pattern, input, that, topic []string,
 		// 1. Exact match
 		if len(input) > 0 {
 			if child, ok := node.children[w]; ok && w == input[0] {
-				if res, found := matchNodeMetaPattern(child, pattern[1:], input[1:], that, topic, depth+1, captures, sets); found {
+				if res, found := matchNodeMetaPattern(t, child, pattern[1:], input[1:], that, topic, depth+1, captures, sets); found {
 					matches = append(matches, matchResultWithType{res, exactMatch})
 				}
 			}
@@ -203,9 +229,10 @@ func matchNodeMetaPattern(node *MatchNode, pattern, input, that, topic []string,
 					setName := strings.TrimSuffix(strings.TrimPrefix(childKey, "__SET_"), "__")
 					if set, exists := sets[setName]; exists {
 						_, isMember := set[input[0]]
-						fmt.Fprintf(os.Stderr, "[DEBUG] Set match: setName=%q inputWord=%q exists=%v isMember=%v\n", setName, input[0], exists, isMember)
 						if isMember {
-							if res, found := matchNodeMetaPattern(childNode, pattern[1:], input[1:], that, topic, depth+1, captures, sets); found {
+							capCopy := copyCaptures(captures)
+							capCopy["pattern"] = append(capCopy["pattern"], input[0])
+							if res, found := matchNodeMetaPattern(t, childNode, pattern[1:], input[1:], that, topic, depth+1, capCopy, sets); found {
 								matches = append(matches, matchResultWithType{res, setMatch})
 							}
 						}
@@ -216,9 +243,8 @@ func matchNodeMetaPattern(node *MatchNode, pattern, input, that, topic []string,
 		// 3. '_' wildcard (single word)
 		if node.under != nil && len(input) > 0 {
 			capCopy := copyCaptures(captures)
-			capCopy["pattern"] = append([]string{}, captures["pattern"]...)
 			capCopy["pattern"] = append(capCopy["pattern"], input[0])
-			if res, found := matchNodeMetaPattern(node.under, pattern[1:], input[1:], that, topic, depth+1, capCopy, sets); found {
+			if res, found := matchNodeMetaPattern(t, node.under, pattern[1:], input[1:], that, topic, depth+1, capCopy, sets); found {
 				matches = append(matches, matchResultWithType{res, underMatch})
 			}
 		}
@@ -226,9 +252,8 @@ func matchNodeMetaPattern(node *MatchNode, pattern, input, that, topic []string,
 		if node.star != nil {
 			for i := 0; i <= len(input); i++ {
 				capCopy := copyCaptures(captures)
-				capCopy["pattern"] = append([]string{}, captures["pattern"]...)
 				capCopy["pattern"] = append(capCopy["pattern"], input[:i]...)
-				if res, found := matchNodeMetaPattern(node.star, pattern[1:], input[i:], that, topic, depth+1, capCopy, sets); found {
+				if res, found := matchNodeMetaPattern(t, node.star, pattern[1:], input[i:], that, topic, depth+1, capCopy, sets); found {
 					matches = append(matches, matchResultWithType{res, starMatch})
 				}
 			}
@@ -236,25 +261,28 @@ func matchNodeMetaPattern(node *MatchNode, pattern, input, that, topic []string,
 		return selectBestMatch(matches)
 	}
 	// Pattern exhausted, now match that
-	return matchNodeMetaThatSection(node, that, topic, depth, captures, sets)
+	return matchNodeMetaThatSection(t, node, that, topic, depth, captures, sets)
 }
 
-func matchNodeMetaThatSection(node *MatchNode, that, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
+func matchNodeMetaThatSection(t *MatchTree, node *MatchNode, that, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
 	capCopy := copyCaptures(captures)
 	capCopy["that"] = []string{}
-	return matchNodeMetaThatSectionRecurse(node, that, topic, depth, capCopy, sets)
+	return matchNodeMetaThatSectionRecurse(t, nil, node, that, topic, depth, capCopy, sets)
 }
 
-func matchNodeMetaThatSectionRecurse(node *MatchNode, that, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
+func matchNodeMetaThatSectionRecurse(t *MatchTree, parent *MatchNode, node *MatchNode, that, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
 	if depth > matchRecursionLimit {
 		return nil, false
 	}
 	if len(that) > 0 {
 		w := that[0]
 		matches := []matchResultWithType{}
+		// DEBUG: Print which that node is being tried
+		t.debugf("[DEBUG] That recurse: depth=%d, thatWord=%q, that=%q", depth, w, that)
 		// 1. Exact match
 		if child, ok := node.children[w]; ok {
-			if res, found := matchNodeMetaThatSectionRecurse(child, that[1:], topic, depth+1, captures, sets); found {
+			t.debugf("[DEBUG] That recurse: trying exact match for %q at depth %d", w, depth)
+			if res, found := matchNodeMetaThatSectionRecurse(t, node, child, that[1:], topic, depth+1, captures, sets); found {
 				matches = append(matches, matchResultWithType{res, exactMatch})
 			}
 		}
@@ -264,8 +292,11 @@ func matchNodeMetaThatSectionRecurse(node *MatchNode, that, topic []string, dept
 				setName := strings.TrimSuffix(strings.TrimPrefix(childKey, "__SET_"), "__")
 				if set, exists := sets[setName]; exists {
 					_, isMember := set[that[0]]
+					t.debugf("[DEBUG] That recurse: trying set match for %q in set %q at depth %d", w, setName, depth)
 					if isMember {
-						if res, found := matchNodeMetaThatSectionRecurse(childNode, that[1:], topic, depth+1, captures, sets); found {
+						capCopy := copyCaptures(captures)
+						capCopy["that"] = append(capCopy["that"], that[0])
+						if res, found := matchNodeMetaThatSectionRecurse(t, node, childNode, that[1:], topic, depth+1, capCopy, sets); found {
 							matches = append(matches, matchResultWithType{res, setMatch})
 						}
 					}
@@ -274,46 +305,74 @@ func matchNodeMetaThatSectionRecurse(node *MatchNode, that, topic []string, dept
 		}
 		// 3. '_' wildcard (single word)
 		if node.under != nil {
+			t.debugf("[DEBUG] That recurse: trying _ wildcard at depth %d", depth)
 			capCopy := copyCaptures(captures)
-			capCopy["that"] = append([]string{}, captures["that"]...)
 			capCopy["that"] = append(capCopy["that"], that[0])
-			if res, found := matchNodeMetaThatSectionRecurse(node.under, that[1:], topic, depth+1, capCopy, sets); found {
+			if res, found := matchNodeMetaThatSectionRecurse(t, node, node.under, that[1:], topic, depth+1, capCopy, sets); found {
 				matches = append(matches, matchResultWithType{res, underMatch})
 			}
 		}
 		// 4. '*' wildcard (zero or more words, all splits)
+		var starThatMatchFound bool
 		if node.star != nil {
 			for i := 0; i <= len(that); i++ {
+				t.debugf("[DEBUG] That recurse: trying * wildcard for i=%d at depth %d", i, depth)
 				capCopy := copyCaptures(captures)
-				capCopy["that"] = append([]string{}, captures["that"]...)
 				capCopy["that"] = append(capCopy["that"], that[:i]...)
-				if res, found := matchNodeMetaThatSectionRecurse(node.star, that[i:], topic, depth+1, capCopy, sets); found {
+				if res, found := matchNodeMetaThatSectionRecurse(t, node, node.star, that[i:], topic, depth+1, capCopy, sets); found {
 					matches = append(matches, matchResultWithType{res, starMatch})
+					starThatMatchFound = true
 				}
+			}
+		}
+		// FINAL FALLBACK: always try '*' node as a fallback if no matches found, without consuming that tokens
+		if !starThatMatchFound && node.star != nil {
+			t.debugf("[DEBUG] That recurse: final fallback to * node at depth %d", depth)
+			capCopy := copyCaptures(captures)
+			if res, found := matchNodeMetaThatSectionRecurse(t, node, node.star, that, topic, depth+1, capCopy, sets); found {
+				matches = append(matches, matchResultWithType{res, starMatch})
+			}
+		}
+		// NEW: If no matches found, and parent has a star child, and node is not that child, try fallback from parent.star
+		if len(matches) == 0 && parent != nil && parent.star != nil && parent.star != node {
+			t.debugf("[DEBUG] That recurse: parent fallback to * node at depth %d", depth)
+			capCopy := copyCaptures(captures)
+			if res, found := matchNodeMetaThatSectionRecurse(t, parent, parent.star, that, topic, depth+1, capCopy, sets); found {
+				matches = append(matches, matchResultWithType{res, starMatch})
 			}
 		}
 		return selectBestMatch(matches)
 	}
 	// That exhausted, now match topic
-	return matchNodeMetaTopicSection(node, topic, depth, captures, sets)
+	// Fallback: try star child if present
+	if node.star != nil {
+		capCopy := copyCaptures(captures)
+		if res, found := matchNodeMetaThatSectionRecurse(t, node, node.star, that, topic, depth+1, capCopy, sets); found {
+			return res, true
+		}
+	}
+	return matchNodeMetaTopicSection(t, node, topic, depth, captures, sets)
 }
 
-func matchNodeMetaTopicSection(node *MatchNode, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
+func matchNodeMetaTopicSection(t *MatchTree, node *MatchNode, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
 	capCopy := copyCaptures(captures)
 	capCopy["topic"] = []string{}
-	return matchNodeMetaTopicSectionRecurse(node, topic, depth, capCopy, sets)
+	return matchNodeMetaTopicSectionRecurse(t, nil, node, topic, depth, capCopy, sets)
 }
 
-func matchNodeMetaTopicSectionRecurse(node *MatchNode, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
+func matchNodeMetaTopicSectionRecurse(t *MatchTree, parent *MatchNode, node *MatchNode, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
 	if depth > matchRecursionLimit {
 		return nil, false
 	}
 	if len(topic) > 0 {
 		w := topic[0]
 		matches := []matchResultWithType{}
+		// DEBUG: Print which topic node is being tried
+		t.debugf("[DEBUG] Topic recurse: depth=%d, topicWord=%q", depth, w)
 		// 1. Exact match
 		if child, ok := node.children[w]; ok {
-			if res, found := matchNodeMetaTopicSectionRecurse(child, topic[1:], depth+1, captures, sets); found {
+			t.debugf("[DEBUG] Topic recurse: trying exact match for %q at depth %d", w, depth)
+			if res, found := matchNodeMetaTopicSectionRecurse(t, node, child, topic[1:], depth+1, captures, sets); found {
 				matches = append(matches, matchResultWithType{res, exactMatch})
 			}
 		}
@@ -324,7 +383,8 @@ func matchNodeMetaTopicSectionRecurse(node *MatchNode, topic []string, depth int
 				if set, exists := sets[setName]; exists {
 					_, isMember := set[topic[0]]
 					if isMember {
-						if res, found := matchNodeMetaTopicSectionRecurse(childNode, topic[1:], depth+1, captures, sets); found {
+						t.debugf("[DEBUG] Topic recurse: trying set match for %q in set %q at depth %d", w, setName, depth)
+						if res, found := matchNodeMetaTopicSectionRecurse(t, node, childNode, topic[1:], depth+1, captures, sets); found {
 							matches = append(matches, matchResultWithType{res, setMatch})
 						}
 					}
@@ -333,29 +393,47 @@ func matchNodeMetaTopicSectionRecurse(node *MatchNode, topic []string, depth int
 		}
 		// 3. '_' wildcard (single word)
 		if node.under != nil {
+			t.debugf("[DEBUG] Topic recurse: trying _ wildcard at depth %d", depth)
 			capCopy := copyCaptures(captures)
-			capCopy["topic"] = append([]string{}, captures["topic"]...)
 			capCopy["topic"] = append(capCopy["topic"], topic[0])
-			if res, found := matchNodeMetaTopicSectionRecurse(node.under, topic[1:], depth+1, capCopy, sets); found {
+			if res, found := matchNodeMetaTopicSectionRecurse(t, node, node.under, topic[1:], depth+1, capCopy, sets); found {
 				matches = append(matches, matchResultWithType{res, underMatch})
 			}
 		}
 		// 4. '*' wildcard (zero or more words, all splits)
+		var starTopicMatchFound bool
 		if node.star != nil {
 			for i := 0; i <= len(topic); i++ {
+				t.debugf("[DEBUG] Topic recurse: trying * wildcard for i=%d at depth %d", i, depth)
 				capCopy := copyCaptures(captures)
-				capCopy["topic"] = append([]string{}, captures["topic"]...)
 				capCopy["topic"] = append(capCopy["topic"], topic[:i]...)
-				if res, found := matchNodeMetaTopicSectionRecurse(node.star, topic[i:], depth+1, capCopy, sets); found {
+				if res, found := matchNodeMetaTopicSectionRecurse(t, node, node.star, topic[i:], depth+1, capCopy, sets); found {
 					matches = append(matches, matchResultWithType{res, starMatch})
+					starTopicMatchFound = true
 				}
+			}
+		}
+		// FINAL FALLBACK: always try '*' node as a fallback if no matches found, without consuming topic tokens
+		if !starTopicMatchFound && node.star != nil {
+			t.debugf("[DEBUG] Topic recurse: final fallback to * node at depth %d", depth)
+			capCopy := copyCaptures(captures)
+			if res, found := matchNodeMetaTopicSectionRecurse(t, node, node.star, topic, depth+1, capCopy, sets); found {
+				matches = append(matches, matchResultWithType{res, starMatch})
+			}
+		}
+		// NEW: If no matches found, and parent has a star child, and node is not that child, try fallback from parent.star
+		if len(matches) == 0 && parent != nil && parent.star != nil && parent.star != node {
+			t.debugf("[DEBUG] Topic recurse: parent fallback to * node at depth %d", depth)
+			capCopy := copyCaptures(captures)
+			if res, found := matchNodeMetaTopicSectionRecurse(t, parent, parent.star, topic, depth+1, capCopy, sets); found {
+				matches = append(matches, matchResultWithType{res, starMatch})
 			}
 		}
 		return selectBestMatch(matches)
 	}
 	// All exhausted, return category if present
 	if node.category != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Matched: Pattern=%q That=%q Topic=%q Template=%q\n", node.category.Pattern, node.category.That, node.category.Topic, node.category.Template)
+		t.debugf("[DEBUG] Matched: Pattern=%q That=%q Topic=%q Template=%q", node.category.Pattern, node.category.That, node.category.Topic, node.category.Template)
 		return &MatchResult{
 			Category:         node.category,
 			MatchedPattern:   node.category.Pattern,
@@ -364,6 +442,13 @@ func matchNodeMetaTopicSectionRecurse(node *MatchNode, topic []string, depth int
 			Template:         node.category.Template,
 			WildcardCaptures: captures,
 		}, true
+	}
+	// Fallback: try star child if present
+	if node.star != nil {
+		capCopy := copyCaptures(captures)
+		if res, found := matchNodeMetaTopicSectionRecurse(t, node, node.star, topic, depth+1, capCopy, sets); found {
+			return res, true
+		}
 	}
 	return nil, false
 }

@@ -10,9 +10,9 @@ import (
 
 // Category represents an AIML category entry
 type Category struct {
-	Pattern  string `xml:"pattern,innerxml"`
-	That     string `xml:"that,innerxml"`
-	Topic    string `xml:"topic,innerxml"`
+	Pattern  string `xml:"pattern"`
+	That     string `xml:"that"`
+	Topic    string `xml:"topic"`
 	Template string `xml:"template,innerxml"`
 }
 
