@@ -1,6 +1,6 @@
 # Makefile for Golem AIML interpreter
 
-.PHONY: all test lint build
+.PHONY: all test lint build clean
 
 all: build
 
@@ -11,4 +11,7 @@ test:
 	go test ./...
 
 lint:
-	go vet ./... 
+	go vet ./...
+
+clean:
+	rm -f golem 

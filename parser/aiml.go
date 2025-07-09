@@ -10,10 +10,10 @@ import (
 
 // Category represents an AIML category entry
 type Category struct {
-	Pattern  string `xml:"pattern"`
-	That     string `xml:"that"`
-	Topic    string `xml:"topic"`
-	Template string `xml:"template"`
+	Pattern  string `xml:"pattern,innerxml"`
+	That     string `xml:"that,innerxml"`
+	Topic    string `xml:"topic,innerxml"`
+	Template string `xml:"template,innerxml"`
 }
 
 // AIML represents the root AIML element
@@ -51,10 +51,10 @@ func (p *Parser) ParseFile(filename string) ([]Category, error) {
 // ParseReader parses AIML content from an io.Reader
 func (p *Parser) ParseReader(reader io.Reader) ([]Category, error) {
 	var aiml AIML
-	
+
 	decoder := xml.NewDecoder(reader)
 	decoder.Strict = false // Allow malformed XML
-	
+
 	err := decoder.Decode(&aiml)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode XML: %w", err)
@@ -69,13 +69,13 @@ func (p *Parser) ParseReader(reader io.Reader) ([]Category, error) {
 			category.That = strings.TrimSpace(category.That)
 			category.Topic = strings.TrimSpace(category.Topic)
 			category.Template = strings.TrimSpace(category.Template)
-			
+
 			validCategories = append(validCategories, category)
 		}
 	}
 
 	if p.debug {
-		fmt.Fprintf(os.Stderr, "Parsed %d valid categories from %d total entries\n", 
+		fmt.Fprintf(os.Stderr, "Parsed %d valid categories from %d total entries\n",
 			len(validCategories), len(aiml.Categories))
 	}
 
@@ -101,4 +101,4 @@ func (p *Parser) validateCategory(category Category, index int) bool {
 	}
 
 	return true
-} 
+}

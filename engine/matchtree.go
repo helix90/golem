@@ -1,8 +1,11 @@
 package engine
 
 import (
-	"strings"
+	"fmt"
 	"golem/parser"
+	"os"
+	"regexp"
+	"strings"
 )
 
 // MatchNode represents a node in the match tree
@@ -20,9 +23,35 @@ type MatchNode struct {
 // It stores the root node for all patterns
 // Insert and Match operate on pattern, that, topic
 // All keys are uppercased and trimmed
-//
 type MatchTree struct {
 	root *MatchNode
+}
+
+// Helper to select the most specific match: exact > set > '_' > '*'
+type matchType int
+
+const (
+	starMatch matchType = iota // lowest specificity
+	underMatch
+	setMatch
+	exactMatch // highest specificity
+)
+
+type matchResultWithType struct {
+	res   *MatchResult
+	mtype matchType
+}
+
+func selectBestMatch(matches []matchResultWithType) (*MatchResult, bool) {
+	best := -1
+	var bestRes *MatchResult
+	for _, m := range matches {
+		if m.res != nil && int(m.mtype) > best {
+			best = int(m.mtype)
+			bestRes = m.res
+		}
+	}
+	return bestRes, bestRes != nil
 }
 
 func NewMatchTree() *MatchTree {
@@ -35,9 +64,24 @@ func newMatchNode() *MatchNode {
 
 // Insert adds a category to the tree, indexed by pattern, that, topic
 func (t *MatchTree) Insert(cat parser.Category) {
+	// Normalize pattern, that, topic to uppercase and trimmed
+	cat.Pattern = strings.ToUpper(strings.TrimSpace(cat.Pattern))
+	cat.That = strings.ToUpper(strings.TrimSpace(cat.That))
+	cat.Topic = strings.ToUpper(strings.TrimSpace(cat.Topic))
+
+	if cat.That == "" {
+		cat.That = "*"
+	}
+	if cat.Topic == "" {
+		cat.Topic = "*"
+	}
+
 	patternWords := splitAIML(cat.Pattern)
 	thatWords := splitAIML(cat.That)
 	topicWords := splitAIML(cat.Topic)
+
+	fmt.Fprintf(os.Stderr, "[DEBUG] Insert: Pattern=%q That=%q Topic=%q\n", cat.Pattern, cat.That, cat.Topic)
+	fmt.Fprintf(os.Stderr, "[DEBUG] Insert tokens: patternWords=%q thatWords=%q topicWords=%q\n", patternWords, thatWords, topicWords)
 
 	if len(thatWords) == 0 {
 		thatWords = []string{"*"}
@@ -59,7 +103,9 @@ func (t *MatchTree) Insert(cat parser.Category) {
 	for _, w := range topicWords {
 		topicNode = topicNode.childFor(w)
 	}
-	topicNode.category = &cat
+	// Instead of newCat := cat; topicNode.category = &newCat
+	topicNode.category = new(parser.Category)
+	*topicNode.category = cat
 }
 
 // childFor returns the child node for a word, creating it if necessary
@@ -84,9 +130,21 @@ func (n *MatchNode) childFor(word string) *MatchNode {
 	}
 }
 
-// splitAIML splits a pattern/that/topic into words, uppercased, ignoring extra whitespace
+// splitAIML splits a pattern/that/topic into words, uppercased, and converts <set>NAME</set> (any case) to __SET_NAME__ tokens
 func splitAIML(s string) []string {
-	words := strings.Fields(strings.ToUpper(strings.TrimSpace(s)))
+	s = strings.TrimSpace(s)
+	if strings.Contains(strings.ToLower(s), "<set>") {
+		// Replace <set>NAME</set> (any case) with __SET_NAME__
+		re := regexp.MustCompile(`(?i)<set>([^<]+)</set>`) // case-insensitive
+		s = re.ReplaceAllStringFunc(s, func(m string) string {
+			matches := re.FindStringSubmatch(m)
+			if len(matches) == 2 {
+				return " __SET_" + strings.ToUpper(strings.TrimSpace(matches[1])) + "__ "
+			}
+			return m
+		})
+	}
+	words := strings.Fields(strings.ToUpper(s))
 	return words
 }
 
@@ -104,9 +162,8 @@ type MatchResult struct {
 
 const matchRecursionLimit = 20
 
-// Match finds the best matching category for the given pattern, that, and topic
-// Returns the match result and whether a match was found
-func (t *MatchTree) MatchWithMeta(input, that, topic string) (*MatchResult, bool) {
+// MatchWithMeta now takes both pattern and input tokens separately for proper set matching
+func (t *MatchTree) MatchWithMeta(input, that, topic string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
 	inputWords := splitAIML(input)
 	thatWords := splitAIML(that)
 	topicWords := splitAIML(topic)
@@ -117,69 +174,188 @@ func (t *MatchTree) MatchWithMeta(input, that, topic string) (*MatchResult, bool
 		topicWords = []string{"*"}
 	}
 
-	// Try with provided that/topic, then fallback to '*'
-	if res, found := matchNodeMeta(t.root, inputWords, thatWords, topicWords, 0, map[string][]string{"pattern": {}, "that": {}, "topic": {}}); found {
-		return res, true
-	}
-	if res, found := matchNodeMeta(t.root, inputWords, []string{"*"}, topicWords, 0, map[string][]string{"pattern": {}, "that": {}, "topic": {}}); found {
-		return res, true
-	}
-	if res, found := matchNodeMeta(t.root, inputWords, thatWords, []string{"*"}, 0, map[string][]string{"pattern": {}, "that": {}, "topic": {}}); found {
-		return res, true
-	}
-	if res, found := matchNodeMeta(t.root, inputWords, []string{"*"}, []string{"*"}, 0, map[string][]string{"pattern": {}, "that": {}, "topic": {}}); found {
-		return res, true
-	}
-	return nil, false
+	fmt.Fprintf(os.Stderr, "[DEBUG] Match: Input=%q That=%q Topic=%q\n", strings.Join(inputWords, " "), strings.Join(thatWords, " "), strings.Join(topicWords, " "))
+	fmt.Fprintf(os.Stderr, "[DEBUG] Match tokens: inputWords=%q thatWords=%q topicWords=%q\n", inputWords, thatWords, topicWords)
+
+	// Start recursive match from the root node with all tokens
+	return matchNodeMetaPattern(t.root, inputWords, inputWords, thatWords, topicWords, 0, map[string][]string{"pattern": {}, "that": {}, "topic": {}}, sets)
 }
 
-// matchNodeMeta recursively matches pattern, that, topic with support for wildcards and returns match metadata
-func matchNodeMeta(node *MatchNode, pattern, that, topic []string, depth int, captures map[string][]string) (*MatchResult, bool) {
+func matchNodeMetaPattern(node *MatchNode, pattern, input, that, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
 	if depth > matchRecursionLimit {
 		return nil, false
 	}
 	if len(pattern) > 0 {
 		w := pattern[0]
-		// Try exact word
-		if child, ok := node.children[w]; ok {
-			if res, found := matchNodeMeta(child, pattern[1:], that, topic, depth+1, captures); found {
-				return res, true
-			}
-		}
-		// Try '_' wildcard
-		if node.under != nil {
-			capCopy := copyCaptures(captures)
-			capCopy["pattern"] = append([]string{}, captures["pattern"]...)
-			capCopy["pattern"] = append(capCopy["pattern"], w)
-			if res, found := matchNodeMeta(node.under, pattern[1:], that, topic, depth+1, capCopy); found {
-				return res, true
-			}
-		}
-		// Try '*' wildcard (matches zero or more words, all possible splits)
-		if node.star != nil {
-			for i := 0; i <= len(pattern); i++ {
-				capCopy := copyCaptures(captures)
-				capCopy["pattern"] = append([]string{}, captures["pattern"]...)
-				capCopy["pattern"] = append(capCopy["pattern"], pattern[:i]...)
-				if res, found := matchNodeMeta(node.star, pattern[i:], that, topic, depth+1, capCopy); found {
-					return res, true
+		matches := []matchResultWithType{}
+		// 1. Exact match
+		if len(input) > 0 {
+			if child, ok := node.children[w]; ok && w == input[0] {
+				if res, found := matchNodeMetaPattern(child, pattern[1:], input[1:], that, topic, depth+1, captures, sets); found {
+					matches = append(matches, matchResultWithType{res, exactMatch})
 				}
 			}
 		}
-		return nil, false
+		// 2. Set match (try all set children)
+		if len(input) > 0 {
+			for childKey, childNode := range node.children {
+				if strings.HasPrefix(childKey, "__SET_") && strings.HasSuffix(childKey, "__") {
+					setName := strings.TrimSuffix(strings.TrimPrefix(childKey, "__SET_"), "__")
+					if set, exists := sets[setName]; exists {
+						_, isMember := set[input[0]]
+						fmt.Fprintf(os.Stderr, "[DEBUG] Set match: setName=%q inputWord=%q exists=%v isMember=%v\n", setName, input[0], exists, isMember)
+						if isMember {
+							if res, found := matchNodeMetaPattern(childNode, pattern[1:], input[1:], that, topic, depth+1, captures, sets); found {
+								matches = append(matches, matchResultWithType{res, setMatch})
+							}
+						}
+					}
+				}
+			}
+		}
+		// 3. '_' wildcard (single word)
+		if node.under != nil && len(input) > 0 {
+			capCopy := copyCaptures(captures)
+			capCopy["pattern"] = append([]string{}, captures["pattern"]...)
+			capCopy["pattern"] = append(capCopy["pattern"], input[0])
+			if res, found := matchNodeMetaPattern(node.under, pattern[1:], input[1:], that, topic, depth+1, capCopy, sets); found {
+				matches = append(matches, matchResultWithType{res, underMatch})
+			}
+		}
+		// 4. '*' wildcard (zero or more words, all splits)
+		if node.star != nil {
+			for i := 0; i <= len(input); i++ {
+				capCopy := copyCaptures(captures)
+				capCopy["pattern"] = append([]string{}, captures["pattern"]...)
+				capCopy["pattern"] = append(capCopy["pattern"], input[:i]...)
+				if res, found := matchNodeMetaPattern(node.star, pattern[1:], input[i:], that, topic, depth+1, capCopy, sets); found {
+					matches = append(matches, matchResultWithType{res, starMatch})
+				}
+			}
+		}
+		return selectBestMatch(matches)
 	}
 	// Pattern exhausted, now match that
-	if len(pattern) == 0 && len(that) > 0 {
-		// Only reset 'that' captures at the transition point
-		return matchNodeMetaThatSection(node, that, topic, depth, captures)
+	return matchNodeMetaThatSection(node, that, topic, depth, captures, sets)
+}
+
+func matchNodeMetaThatSection(node *MatchNode, that, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
+	capCopy := copyCaptures(captures)
+	capCopy["that"] = []string{}
+	return matchNodeMetaThatSectionRecurse(node, that, topic, depth, capCopy, sets)
+}
+
+func matchNodeMetaThatSectionRecurse(node *MatchNode, that, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
+	if depth > matchRecursionLimit {
+		return nil, false
+	}
+	if len(that) > 0 {
+		w := that[0]
+		matches := []matchResultWithType{}
+		// 1. Exact match
+		if child, ok := node.children[w]; ok {
+			if res, found := matchNodeMetaThatSectionRecurse(child, that[1:], topic, depth+1, captures, sets); found {
+				matches = append(matches, matchResultWithType{res, exactMatch})
+			}
+		}
+		// 2. Set match (try all set children)
+		for childKey, childNode := range node.children {
+			if strings.HasPrefix(childKey, "__SET_") && strings.HasSuffix(childKey, "__") {
+				setName := strings.TrimSuffix(strings.TrimPrefix(childKey, "__SET_"), "__")
+				if set, exists := sets[setName]; exists {
+					_, isMember := set[that[0]]
+					if isMember {
+						if res, found := matchNodeMetaThatSectionRecurse(childNode, that[1:], topic, depth+1, captures, sets); found {
+							matches = append(matches, matchResultWithType{res, setMatch})
+						}
+					}
+				}
+			}
+		}
+		// 3. '_' wildcard (single word)
+		if node.under != nil {
+			capCopy := copyCaptures(captures)
+			capCopy["that"] = append([]string{}, captures["that"]...)
+			capCopy["that"] = append(capCopy["that"], that[0])
+			if res, found := matchNodeMetaThatSectionRecurse(node.under, that[1:], topic, depth+1, capCopy, sets); found {
+				matches = append(matches, matchResultWithType{res, underMatch})
+			}
+		}
+		// 4. '*' wildcard (zero or more words, all splits)
+		if node.star != nil {
+			for i := 0; i <= len(that); i++ {
+				capCopy := copyCaptures(captures)
+				capCopy["that"] = append([]string{}, captures["that"]...)
+				capCopy["that"] = append(capCopy["that"], that[:i]...)
+				if res, found := matchNodeMetaThatSectionRecurse(node.star, that[i:], topic, depth+1, capCopy, sets); found {
+					matches = append(matches, matchResultWithType{res, starMatch})
+				}
+			}
+		}
+		return selectBestMatch(matches)
 	}
 	// That exhausted, now match topic
-	if len(pattern) == 0 && len(that) == 0 && len(topic) > 0 {
-		// Only reset 'topic' captures at the transition point
-		return matchNodeMetaTopicSection(node, topic, depth, captures)
+	return matchNodeMetaTopicSection(node, topic, depth, captures, sets)
+}
+
+func matchNodeMetaTopicSection(node *MatchNode, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
+	capCopy := copyCaptures(captures)
+	capCopy["topic"] = []string{}
+	return matchNodeMetaTopicSectionRecurse(node, topic, depth, capCopy, sets)
+}
+
+func matchNodeMetaTopicSectionRecurse(node *MatchNode, topic []string, depth int, captures map[string][]string, sets map[string]map[string]struct{}) (*MatchResult, bool) {
+	if depth > matchRecursionLimit {
+		return nil, false
+	}
+	if len(topic) > 0 {
+		w := topic[0]
+		matches := []matchResultWithType{}
+		// 1. Exact match
+		if child, ok := node.children[w]; ok {
+			if res, found := matchNodeMetaTopicSectionRecurse(child, topic[1:], depth+1, captures, sets); found {
+				matches = append(matches, matchResultWithType{res, exactMatch})
+			}
+		}
+		// 2. Set match (try all set children)
+		for childKey, childNode := range node.children {
+			if strings.HasPrefix(childKey, "__SET_") && strings.HasSuffix(childKey, "__") {
+				setName := strings.TrimSuffix(strings.TrimPrefix(childKey, "__SET_"), "__")
+				if set, exists := sets[setName]; exists {
+					_, isMember := set[topic[0]]
+					if isMember {
+						if res, found := matchNodeMetaTopicSectionRecurse(childNode, topic[1:], depth+1, captures, sets); found {
+							matches = append(matches, matchResultWithType{res, setMatch})
+						}
+					}
+				}
+			}
+		}
+		// 3. '_' wildcard (single word)
+		if node.under != nil {
+			capCopy := copyCaptures(captures)
+			capCopy["topic"] = append([]string{}, captures["topic"]...)
+			capCopy["topic"] = append(capCopy["topic"], topic[0])
+			if res, found := matchNodeMetaTopicSectionRecurse(node.under, topic[1:], depth+1, capCopy, sets); found {
+				matches = append(matches, matchResultWithType{res, underMatch})
+			}
+		}
+		// 4. '*' wildcard (zero or more words, all splits)
+		if node.star != nil {
+			for i := 0; i <= len(topic); i++ {
+				capCopy := copyCaptures(captures)
+				capCopy["topic"] = append([]string{}, captures["topic"]...)
+				capCopy["topic"] = append(capCopy["topic"], topic[:i]...)
+				if res, found := matchNodeMetaTopicSectionRecurse(node.star, topic[i:], depth+1, capCopy, sets); found {
+					matches = append(matches, matchResultWithType{res, starMatch})
+				}
+			}
+		}
+		return selectBestMatch(matches)
 	}
 	// All exhausted, return category if present
 	if node.category != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Matched: Pattern=%q That=%q Topic=%q Template=%q\n", node.category.Pattern, node.category.That, node.category.Topic, node.category.Template)
 		return &MatchResult{
 			Category:         node.category,
 			MatchedPattern:   node.category.Pattern,
@@ -188,101 +364,6 @@ func matchNodeMeta(node *MatchNode, pattern, that, topic []string, depth int, ca
 			Template:         node.category.Template,
 			WildcardCaptures: captures,
 		}, true
-	}
-	return nil, false
-}
-
-// Helper for matching the 'that' section, with correct wildcard capture
-func matchNodeMetaThatSection(node *MatchNode, that, topic []string, depth int, captures map[string][]string) (*MatchResult, bool) {
-	if len(that) == 0 {
-		return matchNodeMeta(node, []string{}, that, topic, depth, captures)
-	}
-	capturesForThat := copyCaptures(captures)
-	capturesForThat["that"] = []string{} // Reset only at the start
-	// Now, recurse through the that section
-	return matchNodeMetaThatSectionRecurse(node, that, topic, depth, capturesForThat)
-}
-
-func matchNodeMetaThatSectionRecurse(node *MatchNode, that, topic []string, depth int, captures map[string][]string) (*MatchResult, bool) {
-	if len(that) == 0 {
-		return matchNodeMeta(node, []string{}, []string{}, topic, depth, captures)
-	}
-	w := that[0]
-	if child, ok := node.children[w]; ok {
-		if res, found := matchNodeMetaThatSectionRecurse(child, that[1:], topic, depth+1, captures); found {
-			return res, true
-		}
-	}
-	if node.under != nil {
-		capCopy := copyCaptures(captures)
-		capCopy["that"] = append([]string{}, captures["that"]...)
-		capCopy["that"] = append(capCopy["that"], w)
-		if res, found := matchNodeMetaThatSectionRecurse(node.under, that[1:], topic, depth+1, capCopy); found {
-			return res, true
-		}
-	}
-	if node.star != nil {
-		for i := 0; i <= len(that); i++ {
-			capCopy := copyCaptures(captures)
-			capCopy["that"] = append([]string{}, captures["that"]...)
-			capCopy["that"] = append(capCopy["that"], that[:i]...)
-			if res, found := matchNodeMetaThatSectionRecurse(node.star, that[i:], topic, depth+1, capCopy); found {
-				return res, true
-			}
-		}
-	}
-	// Fallback: try '*' for this level
-	if child, ok := node.children["*"]; ok {
-		if res, found := matchNodeMetaThatSectionRecurse(child, that[1:], topic, depth+1, captures); found {
-			return res, true
-		}
-	}
-	return nil, false
-}
-
-// Helper for matching the 'topic' section, with correct wildcard capture
-func matchNodeMetaTopicSection(node *MatchNode, topic []string, depth int, captures map[string][]string) (*MatchResult, bool) {
-	if len(topic) == 0 {
-		return matchNodeMeta(node, []string{}, []string{}, []string{}, depth, captures)
-	}
-	capturesForTopic := copyCaptures(captures)
-	capturesForTopic["topic"] = []string{} // Reset only at the start
-	return matchNodeMetaTopicSectionRecurse(node, topic, depth, capturesForTopic)
-}
-
-func matchNodeMetaTopicSectionRecurse(node *MatchNode, topic []string, depth int, captures map[string][]string) (*MatchResult, bool) {
-	if len(topic) == 0 {
-		return matchNodeMeta(node, []string{}, []string{}, []string{}, depth, captures)
-	}
-	w := topic[0]
-	if child, ok := node.children[w]; ok {
-		if res, found := matchNodeMetaTopicSectionRecurse(child, topic[1:], depth+1, captures); found {
-			return res, true
-		}
-	}
-	if node.under != nil {
-		capCopy := copyCaptures(captures)
-		capCopy["topic"] = append([]string{}, captures["topic"]...)
-		capCopy["topic"] = append(capCopy["topic"], w)
-		if res, found := matchNodeMetaTopicSectionRecurse(node.under, topic[1:], depth+1, capCopy); found {
-			return res, true
-		}
-	}
-	if node.star != nil {
-		for i := 0; i <= len(topic); i++ {
-			capCopy := copyCaptures(captures)
-			capCopy["topic"] = append([]string{}, captures["topic"]...)
-			capCopy["topic"] = append(capCopy["topic"], topic[:i]...)
-			if res, found := matchNodeMetaTopicSectionRecurse(node.star, topic[i:], depth+1, capCopy); found {
-				return res, true
-			}
-		}
-	}
-	// Fallback: try '*' for this level
-	if child, ok := node.children["*"]; ok {
-		if res, found := matchNodeMetaTopicSectionRecurse(child, topic[1:], depth+1, captures); found {
-			return res, true
-		}
 	}
 	return nil, false
 }
@@ -297,9 +378,9 @@ func copyCaptures(src map[string][]string) map[string][]string {
 
 // Match is the legacy interface, returns only the template
 func (t *MatchTree) Match(input, that, topic string) (*parser.Category, bool) {
-	res, found := t.MatchWithMeta(input, that, topic)
+	res, found := t.MatchWithMeta(input, that, topic, nil)
 	if !found {
 		return nil, false
 	}
 	return res.Category, true
-} 
+}

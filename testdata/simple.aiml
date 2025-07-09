@@ -18,7 +18,6 @@
     
     <category>
         <pattern>TELL ME A JOKE</pattern>
-        <topic>HUMOR</topic>
         <template>Why don't scientists trust atoms? Because they make up everything!</template>
     </category>
     

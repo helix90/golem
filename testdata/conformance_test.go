@@ -2,8 +2,6 @@ package testdata
 
 import (
 	"golem/engine"
-	"golem/parser"
-	"os"
 	"path/filepath"
 	"testing"
 )
@@ -33,7 +31,7 @@ func TestConformance_SimpleAIML(t *testing.T) {
 		{"EMPTY TEMPLATE", "", "", ""},
 	}
 	for _, tc := range tests {
-		cat, found := bot.MatchTree.MatchWithMeta(tc.input, tc.that, tc.topic)
+		cat, found := bot.MatchTree.MatchWithMeta(tc.input, tc.that, tc.topic, nil)
 		if tc.expect == "" {
 			if found && cat != nil && cat.Template != "" {
 				t.Errorf("Expected no match for input %q, that %q, topic %q, but got: %q", tc.input, tc.that, tc.topic, cat.Template)
@@ -48,4 +46,4 @@ func TestConformance_SimpleAIML(t *testing.T) {
 			t.Errorf("For input %q, that %q, topic %q: expected %q, got %q", tc.input, tc.that, tc.topic, tc.expect, cat.Template)
 		}
 	}
-} 
+}

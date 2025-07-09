@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -66,6 +68,9 @@ func TestParseFile(t *testing.T) {
 				i, expected, actual)
 		}
 	}
+
+	field, _ := reflect.TypeOf(Category{}).FieldByName("Template")
+	fmt.Fprintf(os.Stderr, "Template struct tag at runtime: %q\n", field.Tag)
 }
 
 func TestParseReader(t *testing.T) {
@@ -101,6 +106,9 @@ func TestParseReader(t *testing.T) {
 		t.Errorf("Category mismatch:\nExpected: %+v\nGot:      %+v", 
 			expected, categories[0])
 	}
+
+	field, _ := reflect.TypeOf(Category{}).FieldByName("Template")
+	fmt.Fprintf(os.Stderr, "Template struct tag at runtime: %q\n", field.Tag)
 }
 
 func TestParseFileWithMalformedEntries(t *testing.T) {
@@ -146,6 +154,9 @@ func TestParseFileWithMalformedEntries(t *testing.T) {
 			t.Errorf("Expected pattern %s, got %s", validPatterns[i], category.Pattern)
 		}
 	}
+
+	field, _ := reflect.TypeOf(Category{}).FieldByName("Template")
+	fmt.Fprintf(os.Stderr, "Template struct tag at runtime: %q\n", field.Tag)
 }
 
 func TestParseFileNonExistent(t *testing.T) {
@@ -233,4 +244,34 @@ func TestCategoryValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseTemplateWithInnerXML(t *testing.T) {
+	parser := NewParser(false)
+
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="1.0.1">
+    <category>
+        <pattern>WHAT THE *</pattern>
+        <template><srai>WHAT IS THE <star/></srai></template>
+    </category>
+</aiml>`
+
+	reader := strings.NewReader(aimlContent)
+	categories, err := parser.ParseReader(reader)
+	if err != nil {
+		t.Fatalf("Failed to parse AIML content: %v", err)
+	}
+
+	if len(categories) != 1 {
+		t.Fatalf("Expected 1 category, got %d", len(categories))
+	}
+
+	expectedInnerXML := `<srai>WHAT IS THE <star/></srai>`
+	if categories[0].Template != expectedInnerXML {
+		t.Errorf("Expected template inner XML %q, got %q", expectedInnerXML, categories[0].Template)
+	}
+
+	field, _ := reflect.TypeOf(Category{}).FieldByName("Template")
+	fmt.Fprintf(os.Stderr, "Template struct tag at runtime: %q\n", field.Tag)
 } 

@@ -1,12 +1,14 @@
 package engine
 
 import (
-	"fmt"
-	"os"
-	"strings"
-	"golem/parser"
 	"bufio"
+	"encoding/json"
+	"fmt"
+	"golem/parser"
+	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 )
 
 // Config represents the configuration for the bot
@@ -39,6 +41,42 @@ func NewBot(debug bool) *Bot {
 
 // LoadAIML loads AIML categories from the specified path
 func (b *Bot) LoadAIML(path string) error {
+	field, _ := reflect.TypeOf(parser.Category{}).FieldByName("Template")
+	fmt.Fprintf(os.Stderr, "Template struct tag at runtime: %q\n", field.Tag)
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		// Load all .aiml files in the directory
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".aiml") {
+				filePath := filepath.Join(path, entry.Name())
+				if b.config != nil && b.config.Debug {
+					fmt.Fprintf(os.Stderr, "Loading AIML from: %s\n", filePath)
+				}
+				cats, err := b.parser.ParseFile(filePath)
+				if err != nil {
+					return err
+				}
+				for _, cat := range cats {
+					b.matchTree.Insert(cat)
+				}
+				if b.config != nil && b.config.Debug {
+					fmt.Fprintf(os.Stderr, "Loaded %d categories from %s\n", len(cats), filePath)
+					for _, cat := range cats {
+						fmt.Fprintf(os.Stderr, "Loaded pattern: %q\n", cat.Pattern)
+					}
+				}
+			}
+		}
+		return nil
+	}
+	// Otherwise, treat as a single file
 	if b.config != nil && b.config.Debug {
 		fmt.Fprintf(os.Stderr, "Loading AIML from: %s\n", path)
 	}
@@ -51,6 +89,9 @@ func (b *Bot) LoadAIML(path string) error {
 	}
 	if b.config != nil && b.config.Debug {
 		fmt.Fprintf(os.Stderr, "Loaded %d categories from %s\n", len(cats), path)
+		for _, cat := range cats {
+			fmt.Fprintf(os.Stderr, "Loaded pattern: %q\n", cat.Pattern)
+		}
 	}
 	return nil
 }
@@ -64,7 +105,7 @@ func (b *Bot) Respond(input string, sessionID string) (string, error) {
 	sess := b.sessions.GetOrCreateSession(sessionID)
 	that := sess.That
 	topic := sess.Topic
-	res, found := b.matchTree.MatchWithMeta(inputNorm, that, topic)
+	res, found := b.matchTree.MatchWithMeta(inputNorm, that, topic, b.Sets)
 	if !found {
 		return "I don't have any knowledge loaded yet. Please load some AIML files first.", nil
 	}
@@ -86,7 +127,7 @@ func (b *Bot) Respond(input string, sessionID string) (string, error) {
 		return "[Error evaluating template]", err
 	}
 	// Update session context
-	b.sessions.UpdateThat(sessionID, output)
+	b.sessions.UpdateThat(sessionID, res.MatchedPattern)
 	if res.MatchedTopic != "" {
 		b.sessions.UpdateTopic(sessionID, res.MatchedTopic)
 	}
@@ -104,6 +145,21 @@ func (b *Bot) LoadSet(path string) error {
 	if b.Sets[name] == nil {
 		b.Sets[name] = make(map[string]struct{})
 	}
+	// Try JSON array first
+	var arr []string
+	dec := json.NewDecoder(file)
+	err = dec.Decode(&arr)
+	if err == nil {
+		for _, val := range arr {
+			val = strings.ToUpper(strings.TrimSpace(val))
+			if val != "" {
+				b.Sets[name][val] = struct{}{}
+			}
+		}
+		return nil
+	}
+	// Fallback: reset file and use line-by-line
+	file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		val := strings.ToUpper(strings.TrimSpace(scanner.Text()))
@@ -114,7 +170,7 @@ func (b *Bot) LoadSet(path string) error {
 	return scanner.Err()
 }
 
-// LoadMap loads a .map file (key value per line, map name is file base name)
+// LoadMap loads a .map file (key value per line, or as a JSON object)
 func (b *Bot) LoadMap(path string) error {
 	name := strings.ToUpper(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
 	file, err := os.Open(path)
@@ -125,6 +181,22 @@ func (b *Bot) LoadMap(path string) error {
 	if b.Maps[name] == nil {
 		b.Maps[name] = make(map[string]string)
 	}
+	// Try JSON object first
+	var obj map[string]string
+	dec := json.NewDecoder(file)
+	err = dec.Decode(&obj)
+	if err == nil {
+		for k, v := range obj {
+			key := strings.ToUpper(strings.TrimSpace(k))
+			val := strings.ToUpper(strings.TrimSpace(v))
+			if key != "" && val != "" {
+				b.Maps[name][key] = val
+			}
+		}
+		return nil
+	}
+	// Fallback: reset file and use line-by-line
+	file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -139,4 +211,4 @@ func (b *Bot) LoadMap(path string) error {
 		}
 	}
 	return scanner.Err()
-} 
+}
