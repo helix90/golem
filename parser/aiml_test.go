@@ -268,8 +268,8 @@ func TestParseTemplateWithInnerXML(t *testing.T) {
 	}
 
 	expectedInnerXML := `<srai>WHAT IS THE <star/></srai>`
-	if categories[0].Template != expectedInnerXML {
-		t.Errorf("Expected template inner XML %q, got %q", expectedInnerXML, categories[0].Template)
+	if string(categories[0].Template) != expectedInnerXML {
+		t.Errorf("Expected template inner XML %q, got %q", expectedInnerXML, string(categories[0].Template))
 	}
 
 	field, _ := reflect.TypeOf(Category{}).FieldByName("Template")
@@ -303,7 +303,8 @@ func TestParseFile_NestedTemplateAndPlainPattern(t *testing.T) {
 	}
 
 	// Should contain nested tags in template
-	if !strings.Contains(categories[0].Template, "<think>") || !strings.Contains(categories[0].Template, "<set var=\"foo\">bar</set>") {
-		t.Errorf("Expected template to contain nested <think> and <set> tags, got: %q", categories[0].Template)
+	templateStr := string(categories[0].Template)
+	if !strings.Contains(templateStr, "<think>") || !strings.Contains(templateStr, "<set var=\"foo\">bar</set>") {
+		t.Errorf("Expected template to contain nested <think> and <set> tags, got: %q", templateStr)
 	}
 }

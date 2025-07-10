@@ -433,13 +433,13 @@ func matchNodeMetaTopicSectionRecurse(t *MatchTree, parent *MatchNode, node *Mat
 	}
 	// All exhausted, return category if present
 	if node.category != nil {
-		t.debugf("[DEBUG] Matched: Pattern=%q That=%q Topic=%q Template=%q", node.category.Pattern, node.category.That, node.category.Topic, node.category.Template)
+		t.debugf("[DEBUG] Matched: Pattern=%q That=%q Topic=%q Template=%q", node.category.Pattern, node.category.That, node.category.Topic, string(node.category.Template))
 		return &MatchResult{
 			Category:         node.category,
 			MatchedPattern:   node.category.Pattern,
 			MatchedThat:      node.category.That,
 			MatchedTopic:     node.category.Topic,
-			Template:         node.category.Template,
+			Template:         string(node.category.Template),
 			WildcardCaptures: captures,
 		}, true
 	}

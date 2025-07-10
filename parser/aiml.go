@@ -10,10 +10,11 @@ import (
 
 // Category represents an AIML category entry
 type Category struct {
-	Pattern  string `xml:"pattern"`
-	That     string `xml:"that"`
-	Topic    string `xml:"topic"`
-	Template string `xml:"template,innerxml"`
+	Pattern  string         `xml:"pattern"`
+	That     string         `xml:"that"`
+	Topic    string         `xml:"topic"`
+	Template string         `xml:"template,innerxml"`
+	Unknown  []xml.CharData `xml:",any"` // catch-all for unknown tags (fallback)
 }
 
 // AIML represents the root AIML element
@@ -68,7 +69,8 @@ func (p *Parser) ParseReader(reader io.Reader) ([]Category, error) {
 			category.Pattern = strings.TrimSpace(category.Pattern)
 			category.That = strings.TrimSpace(category.That)
 			category.Topic = strings.TrimSpace(category.Topic)
-			category.Template = strings.TrimSpace(category.Template)
+			tempStr := strings.TrimSpace(category.Template)
+			category.Template = tempStr
 
 			validCategories = append(validCategories, category)
 		}
@@ -93,7 +95,8 @@ func (p *Parser) validateCategory(category Category, index int) bool {
 	}
 
 	// Check for required template
-	if strings.TrimSpace(category.Template) == "" {
+	templateStr := strings.TrimSpace(category.Template)
+	if templateStr == "" {
 		if p.debug {
 			fmt.Fprintf(os.Stderr, "Warning: Category %d has empty template, skipping\n", index)
 		}
