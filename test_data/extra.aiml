@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+    <category>
+        <pattern>GOODBYE</pattern>
+        <template>Goodbye! Have a great day!</template>
+    </category>
+    <category>
+        <pattern>WHAT COLOR IS *</pattern>
+        <template>The color <star/> is <map name="colors"><star/></map>.</template>
+    </category>
+</aiml>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+    <category>
+        <pattern>SAY HELLO</pattern>
+        <template>I'll say <map name="greetings">hello</map> to you!</template>
+    </category>
+    <category>
+        <pattern>HOW ARE YOU FEELING</pattern>
+        <template>I'm feeling <map name="emotions">happy</map> today!</template>
+    </category>
+    <category>
+        <pattern>SAY GOODBYE</pattern>
+        <template>I'll say <map name="greetings">bye</map> and <map name="greetings">thanks</map>!</template>
+    </category>
+</aiml>

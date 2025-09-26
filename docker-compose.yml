@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: golem-telegram-bot
+    restart: unless-stopped
+    environment:
+      # Required: Telegram bot token from @BotFather
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      
+      # Required: Path to AIML files (mounted as volume)
+      - AIML_PATH=/app/aiml-data
+      
+      # Optional: Enable verbose logging
+      - VERBOSE=${VERBOSE:-false}
+      
+      # Optional: Set timezone
+      - TZ=${TZ:-UTC}
+    volumes:
+      # Mount AIML data directory
+      - ./testdata:/app/aiml-data:ro
+      
+      # Optional: Mount custom AIML files
+      # - ./custom-aiml:/app/aiml-data:ro
+    networks:
+      - golem-network
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "telegram-bot"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Add a monitoring service
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: golem-prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #   networks:
+  #     - golem-network
+  #   profiles:
+  #     - monitoring
+
+  # Optional: Add a log aggregator
+  # loki:
+  #   image: grafana/loki:latest
+  #   container_name: golem-loki
+  #   ports:
+  #     - "3100:3100"
+  #   volumes:
+  #     - loki-data:/loki
+  #   networks:
+  #     - golem-network
+  #   profiles:
+  #     - monitoring
+
+networks:
+  golem-network:
+    driver: bridge
+    name: golem-telegram-network
+
+# volumes:
+#   loki-data:
+#     driver: local

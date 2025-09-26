@@ -1,0 +1,6 @@
+[
+  {"key": "RED", "value": "#FF0000"},
+  {"key": "GREEN", "value": "#00FF00"},
+  {"key": "BLUE", "value": "#0000FF"},
+  {"key": "YELLOW", "value": "#FFFF00"}
+]

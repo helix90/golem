@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+    <!-- Sample AIML file following AIML2 specification -->
+    
+    <!-- Basic pattern matching -->
+    <category>
+        <pattern>HELLO</pattern>
+        <template>Hello! How can I help you today?</template>
+    </category>
+    
+    <category>
+        <pattern>WHAT IS YOUR NAME</pattern>
+        <template>My name is <get name="name"/>, your AI assistant.</template>
+    </category>
+    
+    <category>
+        <pattern>WHO ARE YOU</pattern>
+        <template>I am <get name="name"/>, a <get name="species"/> <get name="job"/>. I was created in <get name="birthplace"/> on <get name="birthday"/>.</template>
+    </category>
+    
+    <category>
+        <pattern>WHAT IS YOUR VERSION</pattern>
+        <template>I am version <get name="version"/> of <get name="name"/>.</template>
+    </category>
+    
+    <category>
+        <pattern>WHAT IS YOUR PERSONALITY</pattern>
+        <template>My personality is <get name="personality"/> and I have a <get name="attitude"/> attitude.</template>
+    </category>
+    
+    <!-- Pattern with wildcards -->
+    <category>
+        <pattern>MY NAME IS *</pattern>
+        <template>Nice to meet you, <star/>! How are you doing?</template>
+    </category>
+    
+    <category>
+        <pattern>I AM * YEARS OLD</pattern>
+        <template>That's interesting! You're <star/> years old. What do you like to do for fun?</template>
+    </category>
+    
+    <!-- Pattern with multiple wildcards -->
+    <category>
+        <pattern>I LIKE * AND *</pattern>
+        <template>I see you like <star index="1"/> and <star index="2"/>. Those are great interests!</template>
+    </category>
+    
+    <!-- Pattern with set matching -->
+    <category>
+        <pattern>I AM FEELING <set>emotions</set></pattern>
+        <template>I understand you're feeling <star/>. Would you like to talk about it?</template>
+    </category>
+    
+    <!-- Pattern with that context -->
+    <category>
+        <pattern>YES</pattern>
+        <that>DO YOU LIKE *</that>
+        <template>Great! I'm glad you like <star/>.</template>
+    </category>
+    
+    <!-- Pattern with topic -->
+    <category>
+        <pattern>TELL ME ABOUT <topic>science</topic></pattern>
+        <template>Science is fascinating! What specific aspect of science interests you?</template>
+    </category>
+    
+    <!-- Default responses -->
+    <category>
+        <pattern>DEFAULT</pattern>
+        <template>I'm not sure I understand. Could you rephrase that?</template>
+    </category>
+    
+    <!-- Random responses -->
+    <category>
+        <pattern>HOW ARE YOU</pattern>
+        <template>
+            <random>
+                <li>I'm doing great, thank you!</li>
+                <li>I'm fine, how about you?</li>
+                <li>I'm doing well, thanks for asking!</li>
+            </random>
+        </template>
+    </category>
+    
+    <!-- Conditional responses -->
+    <category>
+        <pattern>DO YOU KNOW *</pattern>
+        <template>
+            <condition name="topic">
+                <li value="science">Yes, I know quite a bit about science!</li>
+                <li value="history">I have some knowledge about history.</li>
+                <li>I might know about <star/>, but I'm not sure.</li>
+            </condition>
+        </template>
+    </category>
+    
+    <!-- SRAI (Substitute, Resubstitute, and Input) -->
+    <category>
+        <pattern>WHAT CAN YOU DO</pattern>
+        <template>
+            I can help you with various tasks. <srai>WHAT IS YOUR NAME</srai>
+        </template>
+    </category>
+    
+    <!-- Think tag (internal processing) -->
+    <category>
+        <pattern>REMEMBER *</pattern>
+        <template>
+            <think>
+                <set name="user_memory"><star/></set>
+            </think>
+            I'll remember that: <star/>
+        </template>
+    </category>
+    
+    <!-- Learn tag -->
+    <category>
+        <pattern>LEARN *</pattern>
+        <template>
+            <learn>
+                <category>
+                    <pattern><star/></pattern>
+                    <template>I learned this from you: <star/></template>
+                </category>
+            </learn>
+            I've learned a new pattern!
+        </template>
+    </category>
+    
+</aiml>
