@@ -40,9 +40,10 @@ docker build --no-cache -t golem-test .
 
 ## Common Solutions
 
-### Solution 1: Use Updated Dockerfile
+### Solution 1: Use Updated Dockerfile (RECOMMENDED)
 The main `Dockerfile` has been updated with better module resolution:
 - Sets `GO111MODULE=on` early
+- Adds local package with `go get github.com/helix/golem/pkg/golem`
 - Runs `go mod tidy` after copying source
 - Includes debug output to verify module structure
 
@@ -60,10 +61,22 @@ docker build -f Dockerfile.minimal -t golem-minimal .
 
 ## Root Causes
 
-1. **Module not initialized**: Go module might not be properly initialized in Docker context
-2. **Build context issues**: Files might not be included in Docker build context
-3. **Timing issues**: Dependencies downloaded before source code copied
-4. **Path resolution**: Module path not resolved correctly in container
+1. **Local package not recognized**: Go doesn't recognize local packages in Docker context
+2. **Module not initialized**: Go module might not be properly initialized in Docker context
+3. **Build context issues**: Files might not be included in Docker build context
+4. **Timing issues**: Dependencies downloaded before source code copied
+5. **Path resolution**: Module path not resolved correctly in container
+
+## The `go get` Solution
+
+When Go suggests adding `go get github.com/helix/golem/pkg/golem`, this is the correct approach for Docker builds. The updated Dockerfiles now include:
+
+```dockerfile
+RUN go get github.com/helix/golem/pkg/golem && \
+    go mod tidy
+```
+
+This explicitly tells Go to treat the local package as a dependency, which resolves the module resolution issue in Docker containers.
 
 ## Verification
 

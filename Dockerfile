@@ -7,17 +7,33 @@ RUN apk add --no-cache git ca-certificates
 # Set working directory
 WORKDIR /app
 
-# Copy go mod files
+# Set Go module mode to ensure local packages are found
+ENV GO111MODULE=on
+ENV CGO_ENABLED=0
+
+# Copy go mod files first
 COPY go.mod go.sum ./
 
 # Download dependencies
 RUN go mod download
 
-# Copy source code
+# Copy the entire source code
 COPY . .
 
+# Add the local package as a dependency and ensure all dependencies are resolved
+RUN go get github.com/helix/golem/pkg/golem && \
+    go mod tidy && \
+    echo "=== Module information ===" && \
+    go list -m all && \
+    echo "=== Directory structure ===" && \
+    ls -la && \
+    echo "=== pkg/golem directory ===" && \
+    ls -la pkg/golem/ && \
+    echo "=== Testing import resolution ===" && \
+    go list -f '{{.ImportPath}}' ./pkg/golem
+
 # Build the Telegram bot application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o telegram-bot examples/telegram_bot.go
+RUN go build -a -installsuffix cgo -o telegram-bot examples/telegram_bot.go
 
 # Final stage - minimal image
 FROM alpine:latest

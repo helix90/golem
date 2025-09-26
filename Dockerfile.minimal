@@ -10,8 +10,9 @@ COPY . .
 ENV GO111MODULE=on
 ENV CGO_ENABLED=0
 
-# Debug: Show what we have
-RUN echo "=== Directory structure ===" && \
+# Add local package and debug
+RUN go get github.com/helix/golem/pkg/golem && \
+    echo "=== Directory structure ===" && \
     ls -la && \
     echo "=== pkg directory ===" && \
     ls -la pkg/ && \
