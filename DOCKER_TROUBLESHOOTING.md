@@ -67,16 +67,14 @@ docker build -f Dockerfile.minimal -t golem-minimal .
 4. **Timing issues**: Dependencies downloaded before source code copied
 5. **Path resolution**: Module path not resolved correctly in container
 
-## The `replace` Directive Solution (RECOMMENDED)
+## The Pre-configured `go.mod` Solution (RECOMMENDED)
 
-Instead of using `go get` (which requires Git authentication), the updated Dockerfiles use a `replace` directive in the correct order:
+Instead of using `go get` (which requires Git authentication), the updated Dockerfiles use a pre-configured `go.mod` file with the replace directive:
 
 ```dockerfile
-# Copy go.mod and go.sum first
-COPY go.mod go.sum ./
-
-# Add replace directive BEFORE downloading dependencies
-RUN echo "replace github.com/helix/golem => ./" >> go.mod
+# Copy the pre-configured go.mod with replace directive
+COPY go.mod.docker ./go.mod
+COPY go.sum ./
 
 # Download dependencies (now with replace directive in place)
 RUN go mod download
@@ -88,13 +86,25 @@ COPY . .
 RUN go mod tidy
 ```
 
+The `go.mod.docker` file contains:
+```
+module github.com/helix/golem
+
+go 1.21
+
+require github.com/go-telegram/bot v1.17.0
+
+replace github.com/helix/golem => ./
+```
+
 This approach:
-- Avoids Git authentication issues
-- Tells Go to use the local directory instead of fetching from GitHub
-- Works perfectly in Docker containers without terminal access
-- Is the standard Go way to handle local packages in modules
-- **Critical**: Add replace directive BEFORE `go mod download` to prevent Git fetch attempts
-- **Important**: Uses `./` (not `.`) to satisfy Go's path format requirements
+- ✅ **Avoids Git authentication issues** - no need for tokens or credentials
+- ✅ **Pre-configured replace directive** - no runtime modification needed
+- ✅ **Works perfectly in Docker containers** - no terminal access required
+- ✅ **Standard Go approach** - uses official replace directive syntax
+- ✅ **No Git fetch attempts** - replace directive is in place from the start
+- ✅ **Uses correct path format** - `./` satisfies Go's requirements
+- ✅ **Simpler and more reliable** - no complex Git configuration needed
 
 ## Alternative: Git Configuration Solution
 

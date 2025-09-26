@@ -4,12 +4,11 @@ FROM golang:1.21-alpine AS builder
 # Install git and ca-certificates for dependencies
 RUN apk add --no-cache git ca-certificates
 
-# Configure Git to use anonymous access for public repositories
+# Configure Git to avoid authentication issues
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/" && \
     git config --global --add url."https://github.com/".insteadOf "git://github.com/" && \
-    git config --global credential.helper store && \
-    echo "https://anonymous:anonymous@github.com" > ~/.git-credentials
+    git config --global advice.detachedHead false
 
 # Set working directory
 WORKDIR /app
@@ -18,11 +17,9 @@ WORKDIR /app
 ENV GO111MODULE=on
 ENV CGO_ENABLED=0
 
-# Copy go mod files first
-COPY go.mod go.sum ./
-
-# Add replace directive BEFORE downloading dependencies
-RUN echo "replace github.com/helix/golem => ./" >> go.mod
+# Copy the pre-configured go.mod with replace directive
+COPY go.mod.docker ./go.mod
+COPY go.sum ./
 
 # Download dependencies (now with replace directive in place)
 RUN go mod download
