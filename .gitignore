@@ -1,0 +1,234 @@
+# =============================================================================
+# IDE and Editor Files
+# =============================================================================
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Cursor
+.cursor/
+.cursorrules
+.cursorignore
+.cursorignore.*
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# =============================================================================
+# Go Specific
+# =============================================================================
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+golem
+telegram-bot
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+coverage.out
+coverage.html
+*.cover
+*.coverprofile
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# =============================================================================
+# Build and Distribution
+# =============================================================================
+
+# Build artifacts
+build/
+dist/
+bin/
+out/
+
+# Compiled binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# =============================================================================
+# Environment and Configuration
+# =============================================================================
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# Configuration files with sensitive data
+config.local.*
+secrets.*
+
+# =============================================================================
+# Logs and Temporary Files
+# =============================================================================
+
+# Log files
+*.log
+logs/
+log/
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+temp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# =============================================================================
+# Docker and Containerization
+# =============================================================================
+
+# Docker volumes
+docker-data/
+.docker/
+
+# =============================================================================
+# Development and Testing
+# =============================================================================
+
+# Local development files
+local/
+dev/
+scratch/
+
+# Test data and fixtures (if they contain sensitive data)
+# testdata/sensitive/
+# testdata/private/
+
+# Profiling data
+*.prof
+*.pprof
+cpu.prof
+mem.prof
+
+# =============================================================================
+# Documentation and Generated Files
+# =============================================================================
+
+# Generated documentation
+docs/generated/
+
+# API documentation
+api-docs/
+
+# =============================================================================
+# Project Specific
+# =============================================================================
+
+# AIML test files (if they contain sensitive patterns)
+# testdata/private/
+# testdata/sensitive/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Archive files
+*.zip
+*.tar.gz
+*.tar.bz2
+*.rar
+*.7z
+
+# =============================================================================
+# CI/CD and Deployment
+# =============================================================================
+
+# CI/CD artifacts
+.ci/
+.github/workflows/local-*
+.gitlab-ci-local.yml
+
+# Deployment files
+deploy/local/
+deploy/dev/
+
+# =============================================================================
+# Security and Secrets
+# =============================================================================
+
+# Private keys and certificates
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+
+# SSH keys
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+# =============================================================================
+# Database and Storage
+# =============================================================================
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache directories
+.cache/
+cache/
+
+# =============================================================================
+# Monitoring and Metrics
+# =============================================================================
+
+# Monitoring data
+metrics/
+monitoring/data/
+
+# Prometheus data
+prometheus_data/
+
+# Grafana data
+grafana_data/

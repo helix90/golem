@@ -1,0 +1,26 @@
+# Minimal test Dockerfile
+FROM golang:1.21-alpine
+
+WORKDIR /app
+
+# Copy everything
+COPY . .
+
+# Set environment
+ENV GO111MODULE=on
+ENV CGO_ENABLED=0
+
+# Debug: Show what we have
+RUN echo "=== Directory structure ===" && \
+    ls -la && \
+    echo "=== pkg directory ===" && \
+    ls -la pkg/ && \
+    echo "=== pkg/golem directory ===" && \
+    ls -la pkg/golem/ && \
+    echo "=== go.mod content ===" && \
+    cat go.mod && \
+    echo "=== go list -m all ===" && \
+    go list -m all
+
+# Try to build
+RUN go build -o telegram-bot examples/telegram_bot.go

@@ -1,0 +1,82 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+*.txt
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+telegram-bot
+
+# Test files
+*_test.go
+test_*.go
+examples/test_*.go
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Docker files (except the ones we need)
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# Dependencies (will be downloaded during build)
+vendor/
+
+# Coverage reports
+coverage.out
+*.cover
+
+# Profiling data
+*.prof
+*.pprof
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Air (live reload) config
+.air.toml
+
+# Local development files
+local/
+dev/
