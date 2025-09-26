@@ -69,11 +69,23 @@ docker build -f Dockerfile.minimal -t golem-minimal .
 
 ## The `replace` Directive Solution (RECOMMENDED)
 
-Instead of using `go get` (which requires Git authentication), the updated Dockerfiles use a `replace` directive:
+Instead of using `go get` (which requires Git authentication), the updated Dockerfiles use a `replace` directive in the correct order:
 
 ```dockerfile
-RUN echo "replace github.com/helix/golem => ." >> go.mod && \
-    go mod tidy
+# Copy go.mod and go.sum first
+COPY go.mod go.sum ./
+
+# Add replace directive BEFORE downloading dependencies
+RUN echo "replace github.com/helix/golem => ./" >> go.mod
+
+# Download dependencies (now with replace directive in place)
+RUN go mod download
+
+# Copy the rest of the source code
+COPY . .
+
+# Ensure all dependencies are resolved
+RUN go mod tidy
 ```
 
 This approach:
@@ -81,6 +93,8 @@ This approach:
 - Tells Go to use the local directory instead of fetching from GitHub
 - Works perfectly in Docker containers without terminal access
 - Is the standard Go way to handle local packages in modules
+- **Critical**: Add replace directive BEFORE `go mod download` to prevent Git fetch attempts
+- **Important**: Uses `./` (not `.`) to satisfy Go's path format requirements
 
 ## Alternative: `go get` Solution
 
@@ -93,6 +107,28 @@ RUN git config --global url."https://github.com/".insteadOf "git@github.com:" &&
 ```
 
 However, the `replace` directive is simpler and more reliable for Docker builds.
+
+## Why Order Matters
+
+The critical issue was the **order of operations**:
+
+❌ **Wrong Order** (causes Git authentication error):
+```dockerfile
+COPY go.mod go.sum ./
+RUN go mod download          # Tries to fetch from GitHub
+COPY . .
+RUN echo "replace ..." >> go.mod  # Too late!
+```
+
+✅ **Correct Order** (avoids Git authentication):
+```dockerfile
+COPY go.mod go.sum ./
+RUN echo "replace ..." >> go.mod  # Add replace FIRST
+RUN go mod download          # Now uses local replacement
+COPY . .
+```
+
+When `go mod download` runs without the replace directive, Go tries to fetch the module from GitHub, causing the authentication error.
 
 ## Verification
 

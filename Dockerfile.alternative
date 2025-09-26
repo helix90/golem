@@ -11,14 +11,21 @@ WORKDIR /app
 ENV GO111MODULE=on
 ENV CGO_ENABLED=0
 
-# Copy the entire project
+# Copy go.mod and go.sum first
+COPY go.mod go.sum ./
+
+# Initialize the module and add replace directive
+RUN go mod init github.com/helix/golem || true
+RUN echo "replace github.com/helix/golem => ./" >> go.mod
+
+# Download dependencies with replace directive in place
+RUN go mod download
+
+# Copy the rest of the project
 COPY . .
 
-# Initialize the module and download dependencies
-RUN go mod init github.com/helix/golem || true
-RUN echo "replace github.com/helix/golem => ." >> go.mod
+# Ensure all dependencies are resolved
 RUN go mod tidy
-RUN go mod download
 
 # Verify the module structure
 RUN go list -m all

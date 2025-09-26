@@ -14,15 +14,17 @@ ENV CGO_ENABLED=0
 # Copy go mod files first
 COPY go.mod go.sum ./
 
-# Download dependencies
+# Add replace directive BEFORE downloading dependencies
+RUN echo "replace github.com/helix/golem => ./" >> go.mod
+
+# Download dependencies (now with replace directive in place)
 RUN go mod download
 
 # Copy the entire source code
 COPY . .
 
-# Use replace directive to handle local package without Git authentication
-RUN echo "replace github.com/helix/golem => ." >> go.mod && \
-    go mod tidy && \
+# Ensure all dependencies are properly resolved
+RUN go mod tidy && \
     echo "=== Module information ===" && \
     go list -m all && \
     echo "=== Directory structure ===" && \
