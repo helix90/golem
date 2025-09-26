@@ -67,16 +67,50 @@ docker build -f Dockerfile.minimal -t golem-minimal .
 4. **Timing issues**: Dependencies downloaded before source code copied
 5. **Path resolution**: Module path not resolved correctly in container
 
-## The Simple Solution (RECOMMENDED)
+## The Proper Multi-Stage Solution (RECOMMENDED)
 
-The correct approach is to build the entire module as one unit without any replace directives:
+The correct approach is to use a proper multi-stage Docker build that compiles the Go binary in one stage and copies only the executable to the final stage:
 
 ```dockerfile
-# Copy the entire project
+# Build stage
+FROM golang:1.21-alpine AS builder
+
+# Install dependencies
+RUN apk add --no-cache git ca-certificates
+
+# Set working directory
+WORKDIR /app
+
+# Set Go module mode
+ENV GO111MODULE=on
+ENV CGO_ENABLED=0
+
+# Copy go.mod and go.sum first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy the source code
 COPY . .
 
-# Build the application directly (no replace directives needed)
-RUN go build -a -installsuffix cgo -o telegram-bot examples/telegram_bot.go
+# Build the application as a static binary
+RUN go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o telegram-bot examples/telegram_bot.go
+
+# Final stage - minimal image with just the binary
+FROM scratch
+
+# Copy ca-certificates from builder stage
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Copy the static binary from builder stage
+COPY --from=builder /app/telegram-bot /telegram-bot
+
+# Copy AIML test data
+COPY --from=builder /app/testdata /testdata
+
+# Run the application
+CMD ["/telegram-bot"]
 ```
 
 ## Why This Works
@@ -98,13 +132,13 @@ Replace directives are meant for:
 They are **not needed** for packages within the same module. When you import `github.com/helix/golem/pkg/golem` from within the `github.com/helix/golem` module, Go automatically resolves it as a local package.
 
 This approach:
-- ✅ **No Git authentication issues** - no external module resolution
-- ✅ **Standard Go module behavior** - local packages work automatically
-- ✅ **Works perfectly in Docker containers** - no terminal access required
-- ✅ **Simple and reliable** - no complex configuration needed
-- ✅ **Follows Go best practices** - how most Go projects are built
-- ✅ **No replace directives needed** - local packages are resolved automatically
-- ✅ **Faster builds** - no unnecessary dependency resolution
+- ✅ **No Git authentication issues** - dependencies downloaded in build stage only
+- ✅ **Minimal final image** - only the compiled binary and data files
+- ✅ **Static binary** - no runtime dependencies needed
+- ✅ **Fast builds** - Docker layer caching for dependencies
+- ✅ **Secure** - minimal attack surface with scratch base image
+- ✅ **Standard Go practice** - how most production Go applications are built
+- ✅ **No module resolution issues** - everything compiled in build stage
 
 ## What NOT to Do
 

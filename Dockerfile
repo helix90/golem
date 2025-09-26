@@ -11,43 +11,32 @@ WORKDIR /app
 ENV GO111MODULE=on
 ENV CGO_ENABLED=0
 
-# Copy the entire project
+# Copy go.mod and go.sum first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy the source code
 COPY . .
 
-# Build the application directly (no replace directives needed)
-RUN go build -a -installsuffix cgo -o telegram-bot examples/telegram_bot.go
+# Build the application as a static binary
+RUN go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o telegram-bot examples/telegram_bot.go
 
-# Final stage - minimal image
-FROM alpine:latest
+# Final stage - minimal image with just the binary
+FROM scratch
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Copy ca-certificates from builder stage
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Create non-root user for security
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
-
-# Set working directory
-WORKDIR /app
-
-# Copy the binary from builder stage
-COPY --from=builder /app/telegram-bot .
+# Copy the static binary from builder stage
+COPY --from=builder /app/telegram-bot /telegram-bot
 
 # Copy AIML test data
-COPY --from=builder /app/testdata ./testdata
+COPY --from=builder /app/testdata /testdata
 
-# Change ownership to non-root user
-RUN chown -R appuser:appgroup /app
-
-# Switch to non-root user
-USER appuser
-
-# Expose port (if needed for health checks)
-EXPOSE 8080
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD pgrep telegram-bot || exit 1
+# Set working directory
+WORKDIR /
 
 # Run the application
-CMD ["./telegram-bot"]
+CMD ["/telegram-bot"]
