@@ -10,8 +10,9 @@ COPY . .
 ENV GO111MODULE=on
 ENV CGO_ENABLED=0
 
-# Add local package and debug
-RUN go get github.com/helix/golem/pkg/golem && \
+# Use replace directive and debug
+RUN echo "replace github.com/helix/golem => ." >> go.mod && \
+    go mod tidy && \
     echo "=== Directory structure ===" && \
     ls -la && \
     echo "=== pkg directory ===" && \

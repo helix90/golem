@@ -43,7 +43,7 @@ docker build --no-cache -t golem-test .
 ### Solution 1: Use Updated Dockerfile (RECOMMENDED)
 The main `Dockerfile` has been updated with better module resolution:
 - Sets `GO111MODULE=on` early
-- Adds local package with `go get github.com/helix/golem/pkg/golem`
+- Uses `replace` directive to handle local package without Git authentication
 - Runs `go mod tidy` after copying source
 - Includes debug output to verify module structure
 
@@ -67,16 +67,32 @@ docker build -f Dockerfile.minimal -t golem-minimal .
 4. **Timing issues**: Dependencies downloaded before source code copied
 5. **Path resolution**: Module path not resolved correctly in container
 
-## The `go get` Solution
+## The `replace` Directive Solution (RECOMMENDED)
 
-When Go suggests adding `go get github.com/helix/golem/pkg/golem`, this is the correct approach for Docker builds. The updated Dockerfiles now include:
+Instead of using `go get` (which requires Git authentication), the updated Dockerfiles use a `replace` directive:
 
 ```dockerfile
-RUN go get github.com/helix/golem/pkg/golem && \
+RUN echo "replace github.com/helix/golem => ." >> go.mod && \
     go mod tidy
 ```
 
-This explicitly tells Go to treat the local package as a dependency, which resolves the module resolution issue in Docker containers.
+This approach:
+- Avoids Git authentication issues
+- Tells Go to use the local directory instead of fetching from GitHub
+- Works perfectly in Docker containers without terminal access
+- Is the standard Go way to handle local packages in modules
+
+## Alternative: `go get` Solution
+
+If you prefer the `go get` approach, you can use it with Git configuration:
+
+```dockerfile
+RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
+    go get github.com/helix/golem/pkg/golem && \
+    go mod tidy
+```
+
+However, the `replace` directive is simpler and more reliable for Docker builds.
 
 ## Verification
 

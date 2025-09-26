@@ -20,8 +20,8 @@ RUN go mod download
 # Copy the entire source code
 COPY . .
 
-# Add the local package as a dependency and ensure all dependencies are resolved
-RUN go get github.com/helix/golem/pkg/golem && \
+# Use replace directive to handle local package without Git authentication
+RUN echo "replace github.com/helix/golem => ." >> go.mod && \
     go mod tidy && \
     echo "=== Module information ===" && \
     go list -m all && \
