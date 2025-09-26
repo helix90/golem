@@ -95,7 +95,18 @@ go 1.21
 require github.com/go-telegram/bot v1.17.0
 
 replace github.com/helix/golem => ./
+replace github.com/helix/golem/pkg/golem => ./pkg/golem
 ```
+
+**Important**: The second replace directive is crucial because Go treats `github.com/helix/golem/pkg/golem` as a separate module path that needs its own replacement.
+
+## Why Two Replace Directives?
+
+Go modules work hierarchically:
+- `github.com/helix/golem` - The main module
+- `github.com/helix/golem/pkg/golem` - A subpackage that Go treats as a separate module path
+
+Even though they're in the same repository, Go's module resolution treats them as distinct paths that each need their own replace directive.
 
 This approach:
 - ✅ **Avoids Git authentication issues** - no need for tokens or credentials
