@@ -4,6 +4,13 @@ FROM golang:1.21-alpine AS builder
 # Install git and ca-certificates for dependencies
 RUN apk add --no-cache git ca-certificates
 
+# Configure Git to use anonymous access for public repositories
+RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
+    git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/" && \
+    git config --global --add url."https://github.com/".insteadOf "git://github.com/" && \
+    git config --global credential.helper store && \
+    echo "https://anonymous:anonymous@github.com" > ~/.git-credentials
+
 # Set working directory
 WORKDIR /app
 

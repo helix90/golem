@@ -96,6 +96,25 @@ This approach:
 - **Critical**: Add replace directive BEFORE `go mod download` to prevent Git fetch attempts
 - **Important**: Uses `./` (not `.`) to satisfy Go's path format requirements
 
+## Alternative: Git Configuration Solution
+
+If the replace directive still causes issues, you can configure Git to use anonymous access:
+
+```dockerfile
+# Configure Git for anonymous access to public repositories
+RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
+    git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/" && \
+    git config --global --add url."https://github.com/".insteadOf "git://github.com/" && \
+    git config --global credential.helper store && \
+    echo "https://anonymous:anonymous@github.com" > ~/.git-credentials
+```
+
+This approach:
+- Forces Git to use HTTPS instead of SSH
+- Provides anonymous credentials for public repositories
+- Works with both `go get` and `replace` directive approaches
+- Handles the "terminal prompts disabled" error
+
 ## Alternative: `go get` Solution
 
 If you prefer the `go get` approach, you can use it with Git configuration:
@@ -106,7 +125,7 @@ RUN git config --global url."https://github.com/".insteadOf "git@github.com:" &&
     go mod tidy
 ```
 
-However, the `replace` directive is simpler and more reliable for Docker builds.
+However, the `replace` directive with Git configuration is the most reliable approach for Docker builds.
 
 ## Why Order Matters
 
@@ -129,6 +148,16 @@ COPY . .
 ```
 
 When `go mod download` runs without the replace directive, Go tries to fetch the module from GitHub, causing the authentication error.
+
+## Why Public Repos Need Authentication
+
+Even though GitHub repositories are public, Git still requires authentication for:
+- **Rate limiting**: GitHub limits anonymous requests
+- **Protocol detection**: Git tries SSH first, then falls back to HTTPS
+- **Credential caching**: Git expects credentials to be available
+- **Docker context**: No terminal available for interactive authentication
+
+The Git configuration forces HTTPS with anonymous credentials, bypassing these issues.
 
 ## Verification
 
