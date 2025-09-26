@@ -67,118 +67,60 @@ docker build -f Dockerfile.minimal -t golem-minimal .
 4. **Timing issues**: Dependencies downloaded before source code copied
 5. **Path resolution**: Module path not resolved correctly in container
 
-## The Pre-configured `go.mod` Solution (RECOMMENDED)
+## The Simple Solution (RECOMMENDED)
 
-Instead of using `go get` (which requires Git authentication), the updated Dockerfiles use a pre-configured `go.mod` file with the replace directive:
+The correct approach is to build the entire module as one unit without any replace directives:
 
 ```dockerfile
-# Copy the pre-configured go.mod with replace directive
-COPY go.mod.docker ./go.mod
-COPY go.sum ./
-
-# Download dependencies (now with replace directive in place)
-RUN go mod download
-
-# Copy the rest of the source code
+# Copy the entire project
 COPY . .
 
-# Ensure all dependencies are resolved
-RUN go mod tidy
+# Build the application directly (no replace directives needed)
+RUN go build -a -installsuffix cgo -o telegram-bot examples/telegram_bot.go
 ```
 
-The `go.mod.docker` file contains:
-```
-module github.com/helix/golem
+## Why This Works
 
-go 1.21
+Most Go programs deployed in Docker work because they:
+1. **Build the entire module together** - no external module resolution needed
+2. **Use proper module structure** - local packages are part of the same module
+3. **Don't try to resolve local packages as external dependencies**
 
-require github.com/go-telegram/bot v1.17.0
+The key insight is that `github.com/helix/golem/pkg/golem` is a **local package** within the same module, not an external dependency that needs to be fetched from GitHub.
 
-replace github.com/helix/golem => ./
-replace github.com/helix/golem/pkg/golem => ./pkg/golem
-```
+## Why Replace Directives Don't Work
 
-**Important**: The second replace directive is crucial because Go treats `github.com/helix/golem/pkg/golem` as a separate module path that needs its own replacement.
+Replace directives are meant for:
+- Replacing external dependencies with local versions
+- Using forks of external packages
+- Testing with local versions of dependencies
 
-## Why Two Replace Directives?
-
-Go modules work hierarchically:
-- `github.com/helix/golem` - The main module
-- `github.com/helix/golem/pkg/golem` - A subpackage that Go treats as a separate module path
-
-Even though they're in the same repository, Go's module resolution treats them as distinct paths that each need their own replace directive.
+They are **not needed** for packages within the same module. When you import `github.com/helix/golem/pkg/golem` from within the `github.com/helix/golem` module, Go automatically resolves it as a local package.
 
 This approach:
-- ✅ **Avoids Git authentication issues** - no need for tokens or credentials
-- ✅ **Pre-configured replace directive** - no runtime modification needed
+- ✅ **No Git authentication issues** - no external module resolution
+- ✅ **Standard Go module behavior** - local packages work automatically
 - ✅ **Works perfectly in Docker containers** - no terminal access required
-- ✅ **Standard Go approach** - uses official replace directive syntax
-- ✅ **No Git fetch attempts** - replace directive is in place from the start
-- ✅ **Uses correct path format** - `./` satisfies Go's requirements
-- ✅ **Simpler and more reliable** - no complex Git configuration needed
+- ✅ **Simple and reliable** - no complex configuration needed
+- ✅ **Follows Go best practices** - how most Go projects are built
+- ✅ **No replace directives needed** - local packages are resolved automatically
+- ✅ **Faster builds** - no unnecessary dependency resolution
 
-## Alternative: Git Configuration Solution
+## What NOT to Do
 
-If the replace directive still causes issues, you can configure Git to use anonymous access:
+❌ **Don't use replace directives for local packages** - they're meant for external dependencies
+❌ **Don't try to fetch local packages from GitHub** - they're already in your module
+❌ **Don't use complex Git configuration** - it's unnecessary for local packages
+❌ **Don't copy go.mod separately** - copy the entire project at once
 
-```dockerfile
-# Configure Git for anonymous access to public repositories
-RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
-    git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/" && \
-    git config --global --add url."https://github.com/".insteadOf "git://github.com/" && \
-    git config --global credential.helper store && \
-    echo "https://anonymous:anonymous@github.com" > ~/.git-credentials
-```
+## The Root Cause
 
-This approach:
-- Forces Git to use HTTPS instead of SSH
-- Provides anonymous credentials for public repositories
-- Works with both `go get` and `replace` directive approaches
-- Handles the "terminal prompts disabled" error
+The fundamental issue was **misunderstanding Go modules**:
+- We treated local packages as external dependencies
+- We tried to use replace directives for packages within the same module
+- We overcomplicated a simple build process
 
-## Alternative: `go get` Solution
-
-If you prefer the `go get` approach, you can use it with Git configuration:
-
-```dockerfile
-RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
-    go get github.com/helix/golem/pkg/golem && \
-    go mod tidy
-```
-
-However, the `replace` directive with Git configuration is the most reliable approach for Docker builds.
-
-## Why Order Matters
-
-The critical issue was the **order of operations**:
-
-❌ **Wrong Order** (causes Git authentication error):
-```dockerfile
-COPY go.mod go.sum ./
-RUN go mod download          # Tries to fetch from GitHub
-COPY . .
-RUN echo "replace ..." >> go.mod  # Too late!
-```
-
-✅ **Correct Order** (avoids Git authentication):
-```dockerfile
-COPY go.mod go.sum ./
-RUN echo "replace ..." >> go.mod  # Add replace FIRST
-RUN go mod download          # Now uses local replacement
-COPY . .
-```
-
-When `go mod download` runs without the replace directive, Go tries to fetch the module from GitHub, causing the authentication error.
-
-## Why Public Repos Need Authentication
-
-Even though GitHub repositories are public, Git still requires authentication for:
-- **Rate limiting**: GitHub limits anonymous requests
-- **Protocol detection**: Git tries SSH first, then falls back to HTTPS
-- **Credential caching**: Git expects credentials to be available
-- **Docker context**: No terminal available for interactive authentication
-
-The Git configuration forces HTTPS with anonymous credentials, bypassing these issues.
+The solution is to understand that `github.com/helix/golem/pkg/golem` is a **local package** within the `github.com/helix/golem` module, not an external dependency.
 
 ## Verification
 
