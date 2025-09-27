@@ -43,7 +43,7 @@ tramp
 *.dll
 *.so
 *.dylib
-golem
+/golem
 telegram-bot
 
 # Test binary, built with `go test -c`
