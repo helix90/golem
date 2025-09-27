@@ -1,4 +1,4 @@
-module github.com/helix/golem
+module github.com/helix90/golem
 
 go 1.21
 

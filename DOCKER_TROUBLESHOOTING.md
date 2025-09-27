@@ -69,7 +69,9 @@ docker build -f Dockerfile.minimal -t golem-minimal .
 
 ## The Proper Multi-Stage Solution (RECOMMENDED)
 
-The correct approach is to use a proper multi-stage Docker build that compiles the Go binary in one stage and copies only the executable to the final stage:
+The correct approach is to use a proper multi-stage Docker build that compiles the Go binary in one stage and copies only the executable to the final stage.
+
+**Key Fix**: Ensure the Go import paths use the full module path (`github.com/helix/golem/pkg/golem`) rather than relative paths (`../pkg/golem`), as Go modules don't support relative imports.
 
 ```dockerfile
 # Build stage
