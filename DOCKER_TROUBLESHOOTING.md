@@ -4,7 +4,7 @@
 
 If you encounter the error:
 ```
-examples/telegram_bot.go:13:2: no required module provides package github.com/helix/golem/pkg/golem; to add it
+examples/telegram_bot.go:13:2: no required module provides package github.com/helix90/golem/pkg/golem; to add it
 ```
 
 ## Debugging Steps
@@ -71,7 +71,7 @@ docker build -f Dockerfile.minimal -t golem-minimal .
 
 The correct approach is to use a proper multi-stage Docker build that compiles the Go binary in one stage and copies only the executable to the final stage.
 
-**Key Fix**: Ensure the Go import paths use the full module path (`github.com/helix/golem/pkg/golem`) rather than relative paths (`../pkg/golem`), as Go modules don't support relative imports.
+**Key Fix**: Ensure the Go import paths use the full module path (`github.com/helix90/golem/pkg/golem`) rather than relative paths (`../pkg/golem`), as Go modules don't support relative imports.
 
 ```dockerfile
 # Build stage
@@ -122,7 +122,7 @@ Most Go programs deployed in Docker work because they:
 2. **Use proper module structure** - local packages are part of the same module
 3. **Don't try to resolve local packages as external dependencies**
 
-The key insight is that `github.com/helix/golem/pkg/golem` is a **local package** within the same module, not an external dependency that needs to be fetched from GitHub.
+The key insight is that `github.com/helix90/golem/pkg/golem` is a **local package** within the same module, not an external dependency that needs to be fetched from GitHub.
 
 ## Why Replace Directives Don't Work
 
@@ -131,7 +131,7 @@ Replace directives are meant for:
 - Using forks of external packages
 - Testing with local versions of dependencies
 
-They are **not needed** for packages within the same module. When you import `github.com/helix/golem/pkg/golem` from within the `github.com/helix/golem` module, Go automatically resolves it as a local package.
+They are **not needed** for packages within the same module. When you import `github.com/helix90/golem/pkg/golem` from within the `github.com/helix90/golem` module, Go automatically resolves it as a local package.
 
 This approach:
 - ✅ **No Git authentication issues** - dependencies downloaded in build stage only
@@ -156,7 +156,7 @@ The fundamental issue was **misunderstanding Go modules**:
 - We tried to use replace directives for packages within the same module
 - We overcomplicated a simple build process
 
-The solution is to understand that `github.com/helix/golem/pkg/golem` is a **local package** within the `github.com/helix/golem` module, not an external dependency.
+The solution is to understand that `github.com/helix90/golem/pkg/golem` is a **local package** within the `github.com/helix90/golem` module, not an external dependency.
 
 ## Verification
 

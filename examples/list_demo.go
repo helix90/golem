@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/helix/golem/pkg/golem"
+	"github.com/helix90/golem/pkg/golem"
 )
 
 func main() {
@@ -150,7 +150,7 @@ func main() {
 	}
 
 	// Create a new chat session
-	session := g.NewSession("demo-session")
+	session := g.CreateSession("demo-session")
 
 	fmt.Println("=== Golem List and Array Demo ===")
 	fmt.Println("Type 'quit' to exit")
@@ -183,7 +183,11 @@ func main() {
 
 	for _, input := range inputs {
 		fmt.Printf("User: %s\n", input)
-		response := g.ProcessInput(input, session)
+		response, err := g.ProcessInput(input, session)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			continue
+		}
 		fmt.Printf("Bot: %s\n\n", response)
 	}
 }
