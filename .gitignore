@@ -232,3 +232,4 @@ prometheus_data/
 
 # Grafana data
 grafana_data/
+examples/
