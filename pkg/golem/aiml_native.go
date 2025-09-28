@@ -20,10 +20,11 @@ type AIML struct {
 
 // Category represents an AIML category (pattern-template pair)
 type Category struct {
-	Pattern  string
-	Template string
-	That     string
-	Topic    string
+	Pattern   string
+	Template  string
+	That      string
+	ThatIndex int // Index for that context (1-based, 0 means last response)
+	Topic     string
 }
 
 // AIMLKnowledgeBase stores the parsed AIML data for efficient searching
@@ -111,10 +112,13 @@ func (g *Golem) aimlToKnowledgeBase(aiml *AIML) *AIMLKnowledgeBase {
 	// Build pattern index
 	for i := range kb.Categories {
 		pattern := NormalizePattern(kb.Categories[i].Pattern)
-		// Create a unique key that includes pattern, that, and topic
+		// Create a unique key that includes pattern, that, topic, and that index
 		key := pattern
 		if kb.Categories[i].That != "" {
 			key += "|THAT:" + NormalizePattern(kb.Categories[i].That)
+			if kb.Categories[i].ThatIndex != 0 {
+				key += fmt.Sprintf("|THATINDEX:%d", kb.Categories[i].ThatIndex)
+			}
 		}
 		if kb.Categories[i].Topic != "" {
 			key += "|TOPIC:" + strings.ToUpper(kb.Categories[i].Topic)
@@ -653,10 +657,29 @@ func (g *Golem) parseCategory(content string) (Category, error) {
 		category.Template = strings.TrimSpace(templateMatch[1])
 	}
 
-	// Extract that (optional)
-	thatMatch := regexp.MustCompile(`(?s)<that>(.*?)</that>`).FindStringSubmatch(content)
-	if len(thatMatch) > 1 {
-		category.That = strings.TrimSpace(thatMatch[1])
+	// Extract that (optional) with index support
+	thatMatch := regexp.MustCompile(`(?s)<that(?:\s+index="(\d+)")?>(.*?)</that>`).FindStringSubmatch(content)
+	if len(thatMatch) > 2 {
+		category.That = strings.TrimSpace(thatMatch[2])
+		// Parse index if provided (1-based, 0 means last response)
+		if thatMatch[1] != "" {
+			if index, err := strconv.Atoi(thatMatch[1]); err == nil {
+				// Validate index range (1-10 for reasonable history depth)
+				if index < 1 || index > 10 {
+					return Category{}, fmt.Errorf("that index must be between 1 and 10, got %d", index)
+				}
+				category.ThatIndex = index
+			} else {
+				return Category{}, fmt.Errorf("invalid that index: %s", thatMatch[1])
+			}
+		} else {
+			category.ThatIndex = 0 // Default to last response when no index specified
+		}
+
+		// Validate that pattern
+		if err := validateThatPattern(category.That); err != nil {
+			return Category{}, fmt.Errorf("invalid that pattern: %v", err)
+		}
 	}
 
 	// Extract topic (optional)
@@ -759,13 +782,18 @@ func (kb *AIMLKnowledgeBase) MatchPattern(input string) (*Category, map[string]s
 
 // MatchPatternWithTopicAndThat attempts to match user input against AIML patterns with topic and that filtering
 func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThat(input string, topic string, that string) (*Category, map[string]string, error) {
+	return kb.MatchPatternWithTopicAndThatIndex(input, topic, that, 0)
+}
+
+// MatchPatternWithTopicAndThatIndex attempts to match user input against AIML patterns with topic and that filtering with index support
+func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndex(input string, topic string, that string, thatIndex int) (*Category, map[string]string, error) {
 	// Normalize input for matching (use same normalization as patterns)
 	input = NormalizePattern(input)
 
-	// Normalize that for matching
+	// Normalize that for matching using enhanced that normalization
 	normalizedThat := ""
 	if that != "" {
-		normalizedThat = NormalizePattern(that)
+		normalizedThat = NormalizeThatPattern(that)
 	}
 
 	// Try exact match first (highest priority)
@@ -773,13 +801,44 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThat(input string, topic st
 	exactKey := input
 	if normalizedThat != "" {
 		exactKey += "|THAT:" + normalizedThat
+		if thatIndex != 0 {
+			exactKey += fmt.Sprintf("|THATINDEX:%d", thatIndex)
+		}
+		// For thatIndex = 0, also try without the THATINDEX part
+		if thatIndex == 0 {
+			exactKeyWithoutIndex := input + "|THAT:" + normalizedThat
+			if topic != "" {
+				exactKeyWithoutIndex += "|TOPIC:" + strings.ToUpper(topic)
+			}
+			if category, exists := kb.Patterns[exactKeyWithoutIndex]; exists {
+				if category.ThatIndex == 0 {
+					return category, make(map[string]string), nil
+				}
+			}
+		}
 	}
 	if topic != "" {
 		exactKey += "|TOPIC:" + strings.ToUpper(topic)
 	}
 
 	if category, exists := kb.Patterns[exactKey]; exists {
-		return category, make(map[string]string), nil
+
+		// Check if the exact match also has the correct that index
+		if category.That != "" {
+			// If we're looking for a specific index, only match categories with that exact index
+			if thatIndex != 0 && category.ThatIndex != thatIndex {
+				// Skip this exact match, continue to pattern matching
+			} else if thatIndex == 0 && category.ThatIndex != 0 {
+				// If we're looking for index 0, skip categories with specific indices
+			} else {
+				return category, make(map[string]string), nil
+			}
+		} else {
+			// Category has no that pattern, only return if we're not looking for a specific index
+			if thatIndex == 0 {
+				return category, make(map[string]string), nil
+			}
+		}
 	}
 
 	// Collect all matching patterns with their priorities
@@ -812,11 +871,31 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThat(input string, topic st
 		// Check that match - if pattern has a that, it must match the current that
 		thatMatched := true
 		if category.That != "" {
+
+			// Check if the category's that index matches the requested index
+			// If category has a specific index, it must match the requested index
+			// If category has index 0 (default), it matches any index
+			if category.ThatIndex != 0 && thatIndex != 0 && category.ThatIndex != thatIndex {
+				continue // Skip patterns with different that index
+			}
+			// If we're looking for index 0 (most recent), only match categories with index 0
+			if thatIndex == 0 && category.ThatIndex != 0 {
+				continue // Skip patterns with specific indices when looking for most recent
+			}
+			// If we're looking for a specific index, only match categories with that index or index 0
+			if thatIndex != 0 && category.ThatIndex != 0 && category.ThatIndex != thatIndex {
+				continue // Skip patterns with different specific indices
+			}
+
 			// Use wildcard matching for that context
 			thatMatched, _ = matchPatternWithWildcardsAndSets(normalizedThat, category.That, kb)
 			if !thatMatched {
 				continue // Skip patterns that don't match the that context
 			}
+		} else if thatIndex != 0 {
+			// If we're looking for a specific index but this category has no that pattern,
+			// skip it (we only want categories with that patterns when index is specified)
+			continue
 		}
 
 		// Try enhanced matching with sets first
@@ -826,7 +905,19 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThat(input string, topic st
 
 			// Boost priority for patterns with that context
 			if category.That != "" {
-				priority.Priority += 200 // High boost for that context
+				priority.Priority += 300 // High boost for that context
+				// Additional boost for exact that matches
+				if normalizedThat != "" && category.That == normalizedThat {
+					priority.Priority += 100 // Extra boost for exact that match
+				}
+				// Additional boost for that patterns with wildcards (more specific)
+				if strings.Contains(category.That, "*") {
+					priority.Priority += 50 // Boost for wildcard that patterns
+				}
+				// Additional boost for patterns with specific indices (more specific than index 0)
+				if category.ThatIndex != 0 {
+					priority.Priority += 200 // Extra boost for specific index patterns
+				}
 			}
 
 			// Boost priority for patterns with topic context
@@ -1306,7 +1397,6 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 		g.logger.Printf("After list processing: '%s'", response)
 	}
 
-	// Debug: Check if we're continuing with array processing
 	if g.verbose {
 		g.logger.Printf("About to process array tags...")
 	}
@@ -3055,6 +3145,22 @@ func (session *ChatSession) GetResponseByIndex(index int) string {
 	return session.ResponseHistory[actualIndex]
 }
 
+// GetThatByIndex returns a that context by index (1-based, where 1 is most recent, 0 means last)
+func (session *ChatSession) GetThatByIndex(index int) string {
+	if index == 0 {
+		// 0 means last response (most recent)
+		return session.GetLastThat()
+	}
+	if index < 1 || index > len(session.ThatHistory) {
+		return ""
+	}
+	// Convert to 0-based index (most recent is at the end)
+	// Index 1 = most recent (last item in array)
+	// Index 2 = second most recent (second to last item in array)
+	actualIndex := len(session.ThatHistory) - index
+	return session.ThatHistory[actualIndex]
+}
+
 // processTopicSettingTagsWithContext processes <set name="topic"> tags
 func (g *Golem) processTopicSettingTagsWithContext(template string, ctx *VariableContext) string {
 	// Find all <set name="topic"> tags
@@ -3687,6 +3793,118 @@ func NormalizePattern(pattern string) string {
 	text = strings.TrimSpace(text)
 
 	return text
+}
+
+// NormalizeThatPattern normalizes a that pattern for matching with enhanced sentence boundary handling
+func NormalizeThatPattern(pattern string) string {
+	// Patterns need special handling for set and topic tags
+	// First, preserve set and topic tags before case conversion
+	tempSetTags := make(map[string]string)
+	tempTopicTags := make(map[string]string)
+
+	// Replace set tags temporarily
+	setPattern := regexp.MustCompile(`<set>([^<]+)</set>`)
+	setMatches := setPattern.FindAllString(pattern, -1)
+	for i, match := range setMatches {
+		placeholder := fmt.Sprintf("__TEMP_SET_%d__", i)
+		tempSetTags[placeholder] = match
+		pattern = strings.Replace(pattern, match, placeholder, 1)
+	}
+
+	// Replace topic tags temporarily
+	topicPattern := regexp.MustCompile(`<topic>([^<]+)</topic>`)
+	topicMatches := topicPattern.FindAllString(pattern, -1)
+	for i, match := range topicMatches {
+		placeholder := fmt.Sprintf("__TEMP_TOPIC_%d__", i)
+		tempTopicTags[placeholder] = match
+		pattern = strings.Replace(pattern, match, placeholder, 1)
+	}
+
+	text := strings.ToUpper(strings.TrimSpace(pattern))
+
+	// Restore set and topic tags with preserved case
+	for placeholder, original := range tempSetTags {
+		text = strings.ReplaceAll(text, strings.ToUpper(placeholder), original)
+	}
+	for placeholder, original := range tempTopicTags {
+		text = strings.ReplaceAll(text, strings.ToUpper(placeholder), original)
+	}
+
+	// Normalize whitespace
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+
+	// Handle sentence boundaries - remove trailing punctuation for better matching
+	text = regexp.MustCompile(`[.!?]+$`).ReplaceAllString(text, "")
+
+	// Remove punctuation that might interfere with matching
+	text = strings.ReplaceAll(text, ".", "")
+	text = strings.ReplaceAll(text, ",", "")
+	text = strings.ReplaceAll(text, "!", "")
+	text = strings.ReplaceAll(text, "?", "")
+	text = strings.ReplaceAll(text, ";", "")
+	text = strings.ReplaceAll(text, ":", "")
+	text = strings.ReplaceAll(text, "'", "") // Remove apostrophes
+	text = strings.ReplaceAll(text, "-", " ")
+
+	// Normalize common contractions and abbreviations for better matching
+	text = strings.ReplaceAll(text, "I'M", "I AM")
+	text = strings.ReplaceAll(text, "YOU'RE", "YOU ARE")
+	text = strings.ReplaceAll(text, "DON'T", "DO NOT")
+	text = strings.ReplaceAll(text, "WON'T", "WILL NOT")
+	text = strings.ReplaceAll(text, "CAN'T", "CANNOT")
+	text = strings.ReplaceAll(text, "ISN'T", "IS NOT")
+	text = strings.ReplaceAll(text, "AREN'T", "ARE NOT")
+	text = strings.ReplaceAll(text, "WASN'T", "WAS NOT")
+	text = strings.ReplaceAll(text, "WEREN'T", "WERE NOT")
+	text = strings.ReplaceAll(text, "HASN'T", "HAS NOT")
+	text = strings.ReplaceAll(text, "HAVEN'T", "HAVE NOT")
+	text = strings.ReplaceAll(text, "HADN'T", "HAD NOT")
+	text = strings.ReplaceAll(text, "WOULDN'T", "WOULD NOT")
+	text = strings.ReplaceAll(text, "SHOULDN'T", "SHOULD NOT")
+	text = strings.ReplaceAll(text, "COULDN'T", "COULD NOT")
+	text = strings.ReplaceAll(text, "MUSTN'T", "MUST NOT")
+	text = strings.ReplaceAll(text, "SHAN'T", "SHALL NOT")
+
+	// Clean up whitespace
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+	text = strings.TrimSpace(text)
+
+	return text
+}
+
+// validateThatPattern validates a that pattern for proper syntax
+func validateThatPattern(pattern string) error {
+	if pattern == "" {
+		return fmt.Errorf("that pattern cannot be empty")
+	}
+
+	// Check for balanced wildcards
+	starCount := strings.Count(pattern, "*")
+	if starCount > 9 {
+		return fmt.Errorf("that pattern contains too many wildcards (max 9), got %d", starCount)
+	}
+
+	// Check for valid characters (basic validation) - allow apostrophes and punctuation for contractions
+	validChars := regexp.MustCompile(`^[A-Z0-9\s\*_<>/'.!?,-]+$`)
+	if !validChars.MatchString(pattern) {
+		return fmt.Errorf("that pattern contains invalid characters")
+	}
+
+	// Check for balanced set tags
+	setOpenCount := strings.Count(pattern, "<set>")
+	setCloseCount := strings.Count(pattern, "</set>")
+	if setOpenCount != setCloseCount {
+		return fmt.Errorf("unbalanced set tags in that pattern")
+	}
+
+	// Check for balanced topic tags
+	topicOpenCount := strings.Count(pattern, "<topic>")
+	topicCloseCount := strings.Count(pattern, "</topic>")
+	if topicOpenCount != topicCloseCount {
+		return fmt.Errorf("unbalanced topic tags in that pattern")
+	}
+
+	return nil
 }
 
 // parseLearnContent parses AIML content within learn/learnf tags

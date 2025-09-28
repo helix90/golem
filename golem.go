@@ -34,9 +34,6 @@ const (
 
 // Re-export commonly used functions
 var (
-	// CreateSession creates a new chat session
-	CreateSession = golem.CreateSession
-
 	// NewAIMLKnowledgeBase creates a new AIML knowledge base
 	NewAIMLKnowledgeBase = golem.NewAIMLKnowledgeBase
 )

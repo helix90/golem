@@ -431,14 +431,73 @@ func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error)
 	currentTopic := session.GetSessionTopic()
 	lastThat := session.GetLastThat()
 
-	// Normalize the that context for matching
+	// Normalize the that context for matching using enhanced that normalization
 	normalizedThat := ""
 	if lastThat != "" {
-		normalizedThat = NormalizePattern(lastThat)
+		normalizedThat = NormalizeThatPattern(lastThat)
 	}
 
-	// Try to match pattern with full context
-	category, wildcards, err := g.aimlKB.MatchPatternWithTopicAndThat(normalizedInput, currentTopic, normalizedThat)
+	// Try to match pattern with full context (using index 0 for last response)
+	category, wildcards, err := g.aimlKB.MatchPatternWithTopicAndThatIndex(normalizedInput, currentTopic, normalizedThat, 0)
+	if err != nil {
+		return "", err
+	}
+
+	// Capture that context from template before processing (for next input)
+	// This needs to be done before the template is processed because <set> tags might change the content
+	nextThatContext := g.extractThatContextFromTemplate(category.Template)
+
+	// Process template with context
+	response := g.ProcessTemplateWithContext(category.Template, wildcards, session)
+
+	// Add to history
+	session.History = append(session.History, input)
+	session.LastActivity = time.Now().Format(time.RFC3339)
+
+	// Add to request history for <request> tag support
+	session.AddToRequestHistory(input)
+
+	// Add the extracted that context to history for future context matching
+	if nextThatContext != "" {
+		session.AddToThatHistory(nextThatContext)
+	}
+
+	// Add to response history for <response> tag support
+	session.AddToResponseHistory(response)
+
+	return response, nil
+}
+
+// ProcessInputWithThatIndex processes user input with specific that context index
+func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, thatIndex int) (string, error) {
+	if g.aimlKB == nil {
+		return "", fmt.Errorf("no AIML knowledge base loaded")
+	}
+
+	if g.verbose {
+		g.logger.Printf("Processing input with that index %d: %s", thatIndex, input)
+	}
+
+	// Normalize input
+	normalizedInput := NormalizePattern(input)
+
+	// Get current topic and that context by index
+	currentTopic := session.GetSessionTopic()
+	thatContext := session.GetThatByIndex(thatIndex)
+
+	if g.verbose {
+		g.logger.Printf("That context for index %d: '%s'", thatIndex, thatContext)
+		g.logger.Printf("That history: %v", session.ThatHistory)
+	}
+
+	// Normalize the that context for matching using enhanced that normalization
+	normalizedThat := ""
+	if thatContext != "" {
+		normalizedThat = NormalizeThatPattern(thatContext)
+	}
+
+	// Try to match pattern with full context and specific that index
+	category, wildcards, err := g.aimlKB.MatchPatternWithTopicAndThatIndex(normalizedInput, currentTopic, normalizedThat, thatIndex)
 	if err != nil {
 		return "", err
 	}
