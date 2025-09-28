@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+  <category>
+    <pattern>WHAT IS THE WEATHER IN *</pattern>
+    <template>
+      <sraix service="weather_service">What is the weather in <star/>?</sraix>
+    </template>
+  </category>
+
+  <category>
+    <pattern>TRANSLATE * TO SPANISH</pattern>
+    <template>
+      <sraix service="translation_service">Translate "<star/>" to Spanish</sraix>
+    </template>
+  </category>
+
+  <category>
+    <pattern>ASK AI *</pattern>
+    <template>
+      <sraix service="chatgpt_service">Please answer: <star/></sraix>
+    </template>
+  </category>
+
+  <category>
+    <pattern>ECHO *</pattern>
+    <template>
+      <sraix service="simple_text_service">Echo: <star/></sraix>
+    </template>
+  </category>
+
+  <category>
+    <pattern>COMPLEX WEATHER REQUEST FOR * IN *</pattern>
+    <template>
+      I'll check the weather for you. <sraix service="weather_service">Get detailed weather information for <star1/> in <star2/></sraix>
+    </template>
+  </category>
+
+  <category>
+    <pattern>HELP WITH SRAIX</pattern>
+    <template>
+      SRAIX allows me to connect to external services! I can:
+      - Check weather: "What is the weather in New York?"
+      - Translate text: "Translate hello to Spanish"
+      - Ask AI questions: "Ask AI what is machine learning?"
+      - Echo text: "Echo hello world"
+      
+      <sraix service="chatgpt_service">Can you explain what SRAIX is in AIML?</sraix>
+    </template>
+  </category>
+
+  <category>
+    <pattern>FALLBACK TEST</pattern>
+    <template>
+      This will test fallback: <sraix service="nonexistent_service">This should fail</sraix>
+    </template>
+  </category>
+</aiml>

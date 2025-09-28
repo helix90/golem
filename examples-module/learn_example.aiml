@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+  <!-- Basic learn tag example -->
+  <category>
+    <pattern>TEACH ME *</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>I KNOW *</pattern>
+          <template>Yes, I know about <star/>.</template>
+        </category>
+      </learn>
+      I've learned that pattern! Now you can say "I know something" and I'll respond.
+    </template>
+  </category>
+
+  <!-- Learnf tag example (persistent learning) -->
+  <category>
+    <pattern>SAVE KNOWLEDGE *</pattern>
+    <template>
+      <learnf>
+        <category>
+          <pattern>SAVED *</pattern>
+          <template>I remember: <star/></template>
+        </category>
+      </learnf>
+      Knowledge saved permanently! This will be remembered across sessions.
+    </template>
+  </category>
+
+  <!-- Learning multiple categories at once -->
+  <category>
+    <pattern>LEARN GREETINGS</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>GOOD MORNING</pattern>
+          <template>Good morning! How are you today?</template>
+        </category>
+        <category>
+          <pattern>GOOD EVENING</pattern>
+          <template>Good evening! How was your day?</template>
+        </category>
+        <category>
+          <pattern>GOOD NIGHT</pattern>
+          <template>Good night! Sleep well!</template>
+        </category>
+      </learn>
+      I've learned several greeting patterns! Try saying "Good morning", "Good evening", or "Good night".
+    </template>
+  </category>
+
+  <!-- Learning with wildcards -->
+  <category>
+    <pattern>LEARN ABOUT *</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>WHAT IS *</pattern>
+          <template>I know that <star/> is something you taught me about!</template>
+        </category>
+      </learn>
+      I've learned about <star/>! Now you can ask "What is <star/>?" and I'll remember.
+    </template>
+  </category>
+
+  <!-- Learning with complex templates -->
+  <category>
+    <pattern>LEARN MATH</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>CALCULATE * PLUS *</pattern>
+          <template>
+            <think>
+              <set name="num1"><star/></set>
+              <set name="num2"><star index="2"/></set>
+            </think>
+            <star/> plus <star index="2"/> equals <get name="num1"/> + <get name="num2"/>.
+          </template>
+        </category>
+      </learn>
+      I've learned basic addition! Try saying "Calculate 5 plus 3".
+    </template>
+  </category>
+
+  <!-- Learning with SRAI -->
+  <category>
+    <pattern>LEARN RESPONSE TO *</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>RESPONSE TO *</pattern>
+          <template>
+            <srai>HELLO</srai> I remember you asked about <star/>.
+          </template>
+        </category>
+      </learn>
+      I've learned a response pattern! Now you can say "Response to something" and I'll use it.
+    </template>
+  </category>
+
+  <!-- Learning with conditions -->
+  <category>
+    <pattern>LEARN CONDITIONAL *</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>CONDITIONAL *</pattern>
+          <template>
+            <condition name="mood">
+              <li value="happy">I'm happy about <star/>!</li>
+              <li value="sad">I'm sad about <star/>.</li>
+              <li>I feel neutral about <star/>.</li>
+            </condition>
+          </template>
+        </category>
+      </learn>
+      I've learned a conditional pattern! Set your mood and try "Conditional something".
+    </template>
+  </category>
+
+  <!-- Learning with random responses -->
+  <category>
+    <pattern>LEARN RANDOM *</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>RANDOM *</pattern>
+          <template>
+            <random>
+              <li>I like <star/>!</li>
+              <li><star/> is interesting!</li>
+              <li>Tell me more about <star/>!</li>
+            </random>
+          </template>
+        </category>
+      </learn>
+      I've learned a random response pattern! Try "Random something" for varied responses.
+    </template>
+  </category>
+
+  <!-- Learning with date/time -->
+  <category>
+    <pattern>LEARN TIME RESPONSE</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>WHAT TIME IS IT</pattern>
+          <template>
+            The current time is <time format="short"/> on <date format="long"/>.
+          </template>
+        </category>
+      </learn>
+      I've learned a time response! Ask "What time is it?" to see it in action.
+    </template>
+  </category>
+
+  <!-- Learning with properties -->
+  <category>
+    <pattern>LEARN ABOUT BOT</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>WHO ARE YOU</pattern>
+          <template>
+            I am <get name="name"/>, your AI assistant. I was created to help you learn and grow.
+          </template>
+        </category>
+      </learn>
+      I've learned about myself! Ask "Who are you?" to see my self-description.
+    </template>
+  </category>
+
+  <!-- Learning with maps -->
+  <category>
+    <pattern>LEARN TRANSLATION *</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>TRANSLATE * TO SPANISH</pattern>
+          <template>
+            <map name="spanish"><star/></map>
+          </template>
+        </category>
+      </learn>
+      I've learned Spanish translation! Try "Translate hello to Spanish" (if you have a Spanish map loaded).
+    </template>
+  </category>
+
+  <!-- Learning with sets -->
+  <category>
+    <pattern>LEARN COLORS</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>WHAT COLORS DO YOU KNOW</pattern>
+          <template>
+            I know these colors: <set>colors</set>.
+          </template>
+        </category>
+      </learn>
+      I've learned about colors! Ask "What colors do you know?" (if you have a colors set loaded).
+    </template>
+  </category>
+
+  <!-- Learning with topics -->
+  <category>
+    <pattern>LEARN TOPIC *</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>TOPIC *</pattern>
+          <template>
+            <topic name="<star/>">
+              <category>
+                <pattern>TELL ME MORE</pattern>
+                <template>I can tell you more about <star/> in the <topic/> topic.</template>
+              </category>
+            </topic>
+            I've learned about the <star/> topic! Try "Tell me more" while in that topic.
+          </template>
+        </category>
+      </learn>
+      I've learned a topic pattern! This creates nested learning.
+    </template>
+  </category>
+
+  <!-- Learning with SRAIX (external services) -->
+  <category>
+    <pattern>LEARN WEATHER *</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>WEATHER IN *</pattern>
+          <template>
+            <sraix service="weather_service">What's the weather like in <star/>?</sraix>
+          </template>
+        </category>
+      </learn>
+      I've learned weather checking! Try "Weather in New York" (if you have a weather service configured).
+    </template>
+  </category>
+
+  <!-- Learning with validation -->
+  <category>
+    <pattern>LEARN SAFE *</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>SAFE *</pattern>
+          <template>
+            <think>
+              <set name="safe_content"><star/></set>
+            </think>
+            I've safely learned about <get name="safe_content"/>.
+          </template>
+        </category>
+      </learn>
+      I've learned a safe pattern with validation! This includes internal processing.
+    </template>
+  </category>
+
+  <!-- Learning with recursive learning -->
+  <category>
+    <pattern>LEARN TO LEARN</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>TEACH ME SOMETHING NEW</pattern>
+          <template>
+            <learn>
+              <category>
+                <pattern>I LEARNED *</pattern>
+                <template>Great! You learned <star/>. I'm proud of you!</template>
+              </category>
+            </learn>
+            I've learned how to learn! Now I can teach you to learn recursively.
+          </template>
+        </category>
+      </learn>
+      I've learned recursive learning! This is getting meta!
+    </template>
+  </category>
+
+  <!-- Learning with error handling -->
+  <category>
+    <pattern>LEARN INVALID</pattern>
+    <template>
+      <learn>
+        <invalid>This is not valid AIML</invalid>
+      </learn>
+      I tried to learn something invalid, but I handled the error gracefully.
+    </template>
+  </category>
+
+  <!-- Learning with empty content -->
+  <category>
+    <pattern>LEARN NOTHING</pattern>
+    <template>
+      <learn></learn>
+      I tried to learn nothing, but that's okay too.
+    </template>
+  </category>
+
+  <!-- Learning with complex nested structures -->
+  <category>
+    <pattern>LEARN COMPLEX *</pattern>
+    <template>
+      <learn>
+        <category>
+          <pattern>COMPLEX *</pattern>
+          <template>
+            <think>
+              <set name="complex_var"><star/></set>
+            </think>
+            <random>
+              <li>Complex processing of <get name="complex_var"/>: <srai>HELLO</srai></li>
+              <li>Advanced handling of <get name="complex_var"/>: <date format="short"/></li>
+              <li>Sophisticated analysis of <get name="complex_var"/>: <time format="long"/></li>
+            </random>
+          </template>
+        </category>
+      </learn>
+      I've learned a complex pattern with multiple AIML features! Try "Complex something".
+    </template>
+  </category>
+</aiml>
