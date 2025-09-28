@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+    <!-- Basic SR tag examples -->
+    <category>
+        <pattern>GREETING *</pattern>
+        <template>Nice to meet you! <sr/></template>
+    </category>
+    
+    <category>
+        <pattern>HELLO</pattern>
+        <template>Hello! How can I help you today?</template>
+    </category>
+    
+    <category>
+        <pattern>HI</pattern>
+        <template>Hi there!</template>
+    </category>
+    
+    <!-- Synonym handling with SR -->
+    <category>
+        <pattern>HOWDY</pattern>
+        <template><srai>HELLO</srai></template>
+    </category>
+    
+    <category>
+        <pattern>GOOD MORNING</pattern>
+        <template><srai>HELLO</srai></template>
+    </category>
+    
+    <!-- Complex SR usage -->
+    <category>
+        <pattern>WELCOME *</pattern>
+        <template>Welcome! <sr/></template>
+    </category>
+    
+    <category>
+        <pattern>GREETING *</pattern>
+        <template>Nice to meet you! <sr/></template>
+    </category>
+    
+    <!-- SR with multiple wildcards -->
+    <category>
+        <pattern>SAY * TO *</pattern>
+        <template>I'll say <star1/> to <star2/>. <sr/></template>
+    </category>
+    
+    <category>
+        <pattern>HELLO</pattern>
+        <template>Hello!</template>
+    </category>
+    
+    <!-- SR for spelling correction -->
+    <category>
+        <pattern>H3LLO</pattern>
+        <template><srai>HELLO</srai></template>
+    </category>
+    
+    <category>
+        <pattern>H3Y</pattern>
+        <template><srai>HI</srai></template>
+    </category>
+    
+    <!-- SR for phrase normalization -->
+    <category>
+        <pattern>HELLO THERE</pattern>
+        <template><srai>HELLO</srai></template>
+    </category>
+    
+    <category>
+        <pattern>HI THERE</pattern>
+        <template><srai>HI</srai></template>
+    </category>
+    
+    <!-- SR with bot properties -->
+    <category>
+        <pattern>WHAT IS YOUR NAME</pattern>
+        <template>My name is <bot name="name"/></template>
+    </category>
+    
+    <category>
+        <pattern>WHO ARE YOU</pattern>
+        <template><srai>WHAT IS YOUR NAME</srai></template>
+    </category>
+    
+    <category>
+        <pattern>INTRODUCE YOURSELF</pattern>
+        <template><srai>WHAT IS YOUR NAME</srai></template>
+    </category>
+    
+    <!-- SR for question handling -->
+    <category>
+        <pattern>HOW ARE YOU</pattern>
+        <template>I'm doing well, thank you for asking!</template>
+    </category>
+    
+    <category>
+        <pattern>HOW DO YOU DO</pattern>
+        <template><srai>HOW ARE YOU</srai></template>
+    </category>
+    
+    <category>
+        <pattern>HOWS IT GOING</pattern>
+        <template><srai>HOW ARE YOU</srai></template>
+    </category>
+    
+    <!-- SR for goodbye variations -->
+    <category>
+        <pattern>GOODBYE</pattern>
+        <template>Goodbye! Have a great day!</template>
+    </category>
+    
+    <category>
+        <pattern>BYE</pattern>
+        <template><srai>GOODBYE</srai></template>
+    </category>
+    
+    <category>
+        <pattern>SEE YOU LATER</pattern>
+        <template><srai>GOODBYE</srai></template>
+    </category>
+    
+    <category>
+        <pattern>FAREWELL</pattern>
+        <template><srai>GOODBYE</srai></template>
+    </category>
+    
+    <!-- SR with wildcard patterns -->
+    <category>
+        <pattern>TELL ME ABOUT *</pattern>
+        <template>I'd be happy to tell you about <star1/>. <sr/></template>
+    </category>
+    
+    <category>
+        <pattern>HELLO</pattern>
+        <template>Hello! How can I help you today?</template>
+    </category>
+    
+    <category>
+        <pattern>HI</pattern>
+        <template>Hi there!</template>
+    </category>
+    
+    <!-- SR for error handling -->
+    <category>
+        <pattern>I DONT UNDERSTAND</pattern>
+        <template>I'm sorry, I didn't understand that. Could you please rephrase?</template>
+    </category>
+    
+    <category>
+        <pattern>WHAT</pattern>
+        <template><srai>I DONT UNDERSTAND</srai></template>
+    </category>
+    
+    <category>
+        <pattern>HUH</pattern>
+        <template><srai>I DONT UNDERSTAND</srai></template>
+    </category>
+</aiml>

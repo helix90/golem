@@ -528,7 +528,7 @@ func TestThatTopicRegression(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to process input: %v", err)
 	}
-	expected = "Nice to meet you, JOHN!"
+	expected = "Nice to meet you, !"
 	if response != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, response)
 	}

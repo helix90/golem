@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+    <!-- Basic greetings -->
+    <category>
+        <pattern>HELLO</pattern>
+        <template>Hello! How can I help you today?</template>
+    </category>
+
+    <!-- Gender tag examples -->
+    <category>
+        <pattern>TELL ME ABOUT THE DOCTOR</pattern>
+        <template>He is a great doctor. <gender>He is a great doctor.</gender></template>
+    </category>
+
+    <category>
+        <pattern>TELL ME ABOUT THE TEACHER</pattern>
+        <template>She is a wonderful teacher. <gender>She is a wonderful teacher.</gender></template>
+    </category>
+
+    <category>
+        <pattern>WHAT DID HE SAY</pattern>
+        <template>He said: <gender>I love my job and I work hard every day</gender></template>
+    </category>
+
+    <category>
+        <pattern>WHAT DID SHE SAY</pattern>
+        <template>She said: <gender>I love my job and I work hard every day</gender></template>
+    </category>
+
+    <!-- More complex gender examples -->
+    <category>
+        <pattern>DESCRIBE THE MANAGER</pattern>
+        <template>The manager is very professional. <gender>He manages his team well and he is respected by his colleagues.</gender></template>
+    </category>
+
+    <category>
+        <pattern>DESCRIBE THE NURSE</pattern>
+        <template>The nurse is very caring. <gender>She takes care of her patients and she is loved by everyone.</gender></template>
+    </category>
+
+    <!-- Gender with contractions -->
+    <category>
+        <pattern>WHAT DOES HE THINK</pattern>
+        <template>He thinks: <gender>I'm happy with my work and I'll continue doing my best</gender></template>
+    </category>
+
+    <category>
+        <pattern>WHAT DOES SHE THINK</pattern>
+        <template>She thinks: <gender>I'm happy with my work and I'll continue doing my best</gender></template>
+    </category>
+
+    <!-- Gender with reflexive pronouns -->
+    <category>
+        <pattern>HOW DOES HE FEEL</pattern>
+        <template>He feels: <gender>I'm proud of myself and I believe in myself</gender></template>
+    </category>
+
+    <category>
+        <pattern>HOW DOES SHE FEEL</pattern>
+        <template>She feels: <gender>I'm proud of myself and I believe in myself</gender></template>
+    </category>
+
+    <!-- Mixed gender pronouns -->
+    <category>
+        <pattern>TELL ME ABOUT THE COUPLE</pattern>
+        <template>They are a happy couple. <gender>He loves her and she loves him. They support each other in everything they do.</gender></template>
+    </category>
+
+    <!-- Gender with possessive forms -->
+    <category>
+        <pattern>WHAT IS HIS OPINION</pattern>
+        <template>His opinion: <gender>I think this is the best solution for our company and I'm confident in my decision</gender></template>
+    </category>
+
+    <category>
+        <pattern>WHAT IS HER OPINION</pattern>
+        <template>Her opinion: <gender>I think this is the best solution for our company and I'm confident in my decision</gender></template>
+    </category>
+
+    <!-- Complex sentences with multiple gender pronouns -->
+    <category>
+        <pattern>DESCRIBE THE LEADER</pattern>
+        <template>The leader is inspiring. <gender>He motivates his team, he believes in his vision, and he works hard to achieve his goals. His dedication inspires everyone around him.</gender></template>
+    </category>
+
+    <category>
+        <pattern>DESCRIBE THE SCIENTIST</pattern>
+        <template>The scientist is brilliant. <gender>She conducts her research carefully, she analyzes her data thoroughly, and she publishes her findings regularly. Her work contributes to scientific knowledge.</gender></template>
+    </category>
+
+    <!-- Gender with questions -->
+    <category>
+        <pattern>ASK HIM A QUESTION</pattern>
+        <template>Ask him: <gender>What do you think about this project? Do you believe it will succeed?</gender></template>
+    </category>
+
+    <category>
+        <pattern>ASK HER A QUESTION</pattern>
+        <template>Ask her: <gender>What do you think about this project? Do you believe it will succeed?</gender></template>
+    </category>
+
+    <!-- Default responses -->
+    <category>
+        <pattern>*</pattern>
+        <template>I'm not sure how to respond to that. Could you try asking about a doctor, teacher, manager, nurse, or leader?</template>
+    </category>
+</aiml>

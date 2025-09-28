@@ -823,6 +823,17 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThat(input string, topic st
 		matched, _ := matchPatternWithWildcardsAndSets(input, basePattern, kb)
 		if matched && thatMatched {
 			priority := calculatePatternPriority(basePattern)
+
+			// Boost priority for patterns with that context
+			if category.That != "" {
+				priority.Priority += 200 // High boost for that context
+			}
+
+			// Boost priority for patterns with topic context
+			if category.Topic != "" {
+				priority.Priority += 100 // Medium boost for topic context
+			}
+
 			matchingPatterns = append(matchingPatterns, PatternPriority{
 				Pattern:          basePattern,
 				Category:         category,
@@ -1237,8 +1248,20 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 		}
 	}
 
+	// Process SR tags (shorthand for <srai><star/></srai>) AFTER wildcard replacement
+	if g.verbose {
+		g.logger.Printf("Before SR processing: '%s'", response)
+	}
+	response = g.processSRTagsWithContext(response, wildcards, ctx)
+	if g.verbose {
+		g.logger.Printf("After SR processing: '%s'", response)
+	}
+
 	// Replace property tags
 	response = g.replacePropertyTags(response)
+
+	// Process bot tags (short form of property access)
+	response = g.processBotTagsWithContext(response, ctx)
 
 	// Process think tags FIRST (internal processing, no output)
 	// This allows local variables to be set before variable replacement
@@ -1283,14 +1306,333 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 		g.logger.Printf("After list processing: '%s'", response)
 	}
 
+	// Debug: Check if we're continuing with array processing
+	if g.verbose {
+		g.logger.Printf("About to process array tags...")
+	}
+
 	// Process array tags
+	if g.verbose {
+		g.logger.Printf("Before array processing: '%s'", response)
+	}
 	response = g.processArrayTagsWithContext(response, ctx)
+	if g.verbose {
+		g.logger.Printf("After array processing: '%s'", response)
+	}
+
+	// Process person tags (pronoun substitution)
+	if g.verbose {
+		g.logger.Printf("Before person processing: '%s'", response)
+	}
+	response = g.processPersonTagsWithContext(response, ctx)
+	if g.verbose {
+		g.logger.Printf("After person processing: '%s'", response)
+	}
+
+	// Process gender tags (gender pronoun substitution)
+	if g.verbose {
+		g.logger.Printf("Before gender processing: '%s'", response)
+	}
+	response = g.processGenderTagsWithContext(response, ctx)
+	if g.verbose {
+		g.logger.Printf("After gender processing: '%s'", response)
+	}
+
+	// Process request tags (user input history)
+	if g.verbose {
+		g.logger.Printf("Before request processing: '%s'", response)
+	}
+	response = g.processRequestTags(response, ctx)
+	if g.verbose {
+		g.logger.Printf("After request processing: '%s'", response)
+	}
+
+	// Process response tags (bot response history)
+	if g.verbose {
+		g.logger.Printf("Before response processing: '%s'", response)
+	}
+	response = g.processResponseTags(response, ctx)
+	if g.verbose {
+		g.logger.Printf("After response processing: '%s'", response)
+	}
 
 	if g.verbose {
 		g.logger.Printf("Final response: '%s'", response)
 	}
 
 	return strings.TrimSpace(response)
+}
+
+// processPersonTagsWithContext processes <person> tags for pronoun substitution
+func (g *Golem) processPersonTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <person> tags (including multiline content)
+	personTagRegex := regexp.MustCompile(`(?s)<person>(.*?)</person>`)
+	matches := personTagRegex.FindAllStringSubmatch(template, -1)
+
+	if g.verbose {
+		g.logger.Printf("Person tag processing: found %d matches in template: '%s'", len(matches), template)
+	}
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Normalize whitespace before processing
+			content = strings.Join(strings.Fields(content), " ")
+			substitutedContent := g.SubstitutePronouns(content)
+			if g.verbose {
+				g.logger.Printf("Person tag: '%s' -> '%s'", match[1], substitutedContent)
+			}
+			template = strings.ReplaceAll(template, match[0], substitutedContent)
+		}
+	}
+
+	if g.verbose {
+		g.logger.Printf("Person tag processing result: '%s'", template)
+	}
+
+	return template
+}
+
+// processGenderTagsWithContext processes <gender> tags for gender pronoun substitution
+func (g *Golem) processGenderTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <gender> tags (including multiline content)
+	genderTagRegex := regexp.MustCompile(`(?s)<gender>(.*?)</gender>`)
+	matches := genderTagRegex.FindAllStringSubmatch(template, -1)
+
+	if g.verbose {
+		g.logger.Printf("Gender tag processing: found %d matches in template: '%s'", len(matches), template)
+	}
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Normalize whitespace before processing
+			content = strings.Join(strings.Fields(content), " ")
+			substitutedContent := g.SubstituteGenderPronouns(content)
+			if g.verbose {
+				g.logger.Printf("Gender tag: '%s' -> '%s'", match[1], substitutedContent)
+			}
+			template = strings.ReplaceAll(template, match[0], substitutedContent)
+		}
+	}
+
+	if g.verbose {
+		g.logger.Printf("Gender tag processing result: '%s'", template)
+	}
+
+	return template
+}
+
+// SubstitutePronouns performs pronoun substitution for person tags
+func (g *Golem) SubstitutePronouns(text string) string {
+	// Comprehensive pronoun mapping for first/second person substitution
+	pronounMap := map[string]string{
+		// First person to second person
+		"I": "you", "i": "you",
+		"me": "you",
+		"my": "your", "My": "Your",
+		"mine": "yours", "Mine": "Yours",
+		"we": "you", "We": "you",
+		"us": "you", "Us": "you",
+		"our": "your", "Our": "your",
+		"ours": "yours", "Ours": "yours",
+		"myself": "yourself", "Myself": "yourself",
+		"ourselves": "yourselves", "Ourselves": "yourselves",
+
+		// Second person to first person
+		"you": "I", "You": "I",
+		"your": "my", "Your": "my",
+		"yours": "mine", "Yours": "mine",
+		"yourself": "myself", "Yourself": "myself",
+		"yourselves": "ourselves", "Yourselves": "ourselves",
+
+		// Contractions - first person to second person
+		"I'm": "you're", "i'm": "you're", "I'M": "you're",
+		"I've": "you've", "i've": "you've", "I'VE": "you've",
+		"I'll": "you'll", "i'll": "you'll", "I'LL": "you'll",
+		"I'd": "you'd", "i'd": "you'd", "I'D": "you'd",
+
+		// Contractions - second person to first person
+		"you're": "I'm", "You're": "I'm", "YOU'RE": "I'm",
+		"you've": "I've", "You've": "I've", "YOU'VE": "I've",
+		"you'll": "I'll", "You'll": "I'll", "YOU'LL": "I'll",
+		"you'd": "I'd", "You'd": "I'd", "YOU'D": "I'd",
+	}
+
+	// Split text into words while preserving whitespace
+	words := strings.Fields(text)
+	substitutedWords := make([]string, len(words))
+
+	for i, word := range words {
+		// Check for exact match first
+		if substitution, exists := pronounMap[word]; exists {
+			substitutedWords[i] = substitution
+			continue
+		}
+
+		// Handle contractions and possessives more carefully
+		substituted := word
+
+		// Check for contractions (apostrophe)
+		if strings.Contains(word, "'") {
+			// Split on apostrophe and check each part
+			parts := strings.Split(word, "'")
+			if len(parts) == 2 {
+				firstPart := parts[0]
+				secondPart := parts[1]
+
+				// Check if first part needs substitution
+				if sub, exists := pronounMap[firstPart]; exists {
+					substituted = sub + "'" + secondPart
+				} else if sub, exists := pronounMap[firstPart+"'"]; exists {
+					substituted = sub + secondPart
+				}
+			}
+		}
+
+		// Check for possessive forms (ending with 's or s')
+		if strings.HasSuffix(word, "'s") || strings.HasSuffix(word, "s'") {
+			base := strings.TrimSuffix(strings.TrimSuffix(word, "'s"), "s'")
+			if sub, exists := pronounMap[base]; exists {
+				if strings.HasSuffix(word, "'s") {
+					substituted = sub + "'s"
+				} else {
+					substituted = sub + "s'"
+				}
+			}
+		}
+
+		// Check for words ending with common suffixes that might be pronouns
+		if strings.HasSuffix(word, "ing") || strings.HasSuffix(word, "ed") || strings.HasSuffix(word, "er") || strings.HasSuffix(word, "est") {
+			// Don't substitute if it's a verb form
+			substituted = word
+		}
+
+		substitutedWords[i] = substituted
+	}
+
+	result := strings.Join(substitutedWords, " ")
+
+	// Handle verb agreement after pronoun substitution
+	result = g.fixVerbAgreement(result)
+
+	if g.verbose {
+		g.logger.Printf("Person substitution: '%s' -> '%s'", text, result)
+	}
+
+	return result
+}
+
+// fixVerbAgreement fixes verb agreement after pronoun substitution
+func (g *Golem) fixVerbAgreement(text string) string {
+	// Common verb agreement fixes
+	verbFixes := map[string]string{
+		"you am":  "you are",
+		"I are":   "I am",
+		"you is":  "you are",
+		"I is":    "I am",
+		"you was": "you were",
+		"I were":  "I was",
+		"you has": "you have",
+		"I have":  "I have", // Keep as is
+	}
+
+	result := text
+	for wrong, correct := range verbFixes {
+		result = strings.ReplaceAll(result, wrong, correct)
+	}
+
+	return result
+}
+
+// SubstituteGenderPronouns performs gender-based pronoun substitution for gender tags
+func (g *Golem) SubstituteGenderPronouns(text string) string {
+	// Split text into words for more precise substitution
+	words := strings.Fields(text)
+	result := make([]string, len(words))
+
+	for i, word := range words {
+		// Clean word for matching (remove punctuation)
+		cleanWord := strings.Trim(word, ".,!?;:\"'()[]{}")
+		lowerWord := strings.ToLower(cleanWord)
+
+		// Gender pronoun mapping (masculine to feminine and vice versa)
+		genderMap := map[string]string{
+			// Masculine to feminine
+			"he": "she", "him": "her", "his": "her", "himself": "herself",
+			"he's": "she's", "he'll": "she'll", "he'd": "she'd",
+
+			// Feminine to masculine
+			"she": "he", "her": "his", "hers": "his", "herself": "himself",
+			"she's": "he's", "she'll": "he'll", "she'd": "he'd",
+		}
+
+		// Check if we need to substitute
+		if substitute, exists := genderMap[lowerWord]; exists {
+			// Preserve original case
+			if strings.ToUpper(cleanWord) == cleanWord {
+				// All caps
+				result[i] = strings.ToUpper(substitute)
+			} else if len(cleanWord) > 0 && cleanWord[0] >= 'A' && cleanWord[0] <= 'Z' {
+				// Title case (first letter capitalized)
+				if len(substitute) > 0 {
+					result[i] = strings.ToUpper(string(substitute[0])) + strings.ToLower(substitute[1:])
+				} else {
+					result[i] = substitute
+				}
+			} else {
+				// Lower case
+				result[i] = substitute
+			}
+
+			// Add back any punctuation that was removed
+			if len(cleanWord) < len(word) {
+				suffix := word[len(cleanWord):]
+				result[i] += suffix
+			}
+		} else {
+			// No substitution needed
+			result[i] = word
+		}
+	}
+
+	// Join words back together
+	finalResult := strings.Join(result, " ")
+
+	// Fix verb agreement after gender substitution
+	finalResult = g.fixGenderVerbAgreement(finalResult)
+
+	if g.verbose {
+		g.logger.Printf("Gender substitution: '%s' -> '%s'", text, finalResult)
+	}
+
+	return finalResult
+}
+
+// fixGenderVerbAgreement fixes verb agreement after gender pronoun substitution
+func (g *Golem) fixGenderVerbAgreement(text string) string {
+	// Common verb agreement fixes for gender pronouns
+	verbFixes := map[string]string{
+		"she am":   "she is",
+		"he am":    "he is",
+		"she are":  "she is",
+		"he are":   "he is",
+		"she was":  "she was", // Keep as is
+		"he was":   "he was",  // Keep as is
+		"she were": "she was",
+		"he were":  "he was",
+		"she has":  "she has", // Keep as is
+		"he has":   "he has",  // Keep as is
+		"she have": "she has",
+		"he have":  "he has",
+	}
+
+	result := text
+	for wrong, correct := range verbFixes {
+		result = strings.ReplaceAll(result, wrong, correct)
+	}
+
+	return result
 }
 
 // processSRAITagsWithContext processes <srai> tags with variable context
@@ -1322,6 +1664,54 @@ func (g *Golem) processSRAITagsWithContext(template string, ctx *VariableContext
 					}
 					// Don't replace the SRAI tag - leave it as is
 				}
+			}
+		}
+	}
+
+	return template
+}
+
+// processSRTagsWithContext processes <sr> tags with variable context
+// <sr> is shorthand for <srai><star/></srai>
+func (g *Golem) processSRTagsWithContext(template string, wildcards map[string]string, ctx *VariableContext) string {
+	// Find all <sr/> tags (self-closing)
+	srRegex := regexp.MustCompile(`<sr\s*/>`)
+	matches := srRegex.FindAllString(template, -1)
+
+	for _, match := range matches {
+		if g.verbose {
+			g.logger.Printf("Processing SR tag: '%s'", match)
+		}
+
+		// Get the first wildcard (star1) from the wildcards map
+		starContent := ""
+		if wildcards != nil {
+			if star1, exists := wildcards["star1"]; exists {
+				starContent = star1
+			}
+		}
+
+		if starContent != "" {
+			// Process as SRAI with the star content
+			if g.aimlKB != nil {
+				// Try to match the star content as a pattern
+				category, srWildcards, err := g.aimlKB.MatchPattern(starContent)
+				if err == nil && category != nil {
+					// Process the matched template with context
+					response := g.processTemplateWithContext(category.Template, srWildcards, ctx)
+					template = strings.ReplaceAll(template, match, response)
+				} else {
+					// No match found, leave the SR tag unchanged
+					if g.verbose {
+						g.logger.Printf("SR no match for: '%s'", starContent)
+					}
+					// Don't replace the SR tag - leave it as is
+				}
+			}
+		} else {
+			// No star content available, leave the SR tag unchanged
+			if g.verbose {
+				g.logger.Printf("SR tag found but no star content available")
 			}
 		}
 	}
@@ -1649,7 +2039,8 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 			}
 
 			// Process the variable value through the template pipeline to handle wildcards
-			processedValue := g.processTemplateWithContext(varValue, make(map[string]string), ctx)
+			// Use a special processing that doesn't output the result
+			processedValue := g.processTemplateContentForVariable(varValue, make(map[string]string), ctx)
 
 			// Set the variable in the appropriate scope
 			g.setVariable(varName, processedValue, ScopeSession, ctx)
@@ -1660,6 +2051,67 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 	}
 
 	return template
+}
+
+// processTemplateContentForVariable processes template content for variable assignment without outputting
+func (g *Golem) processTemplateContentForVariable(template string, wildcards map[string]string, ctx *VariableContext) string {
+	response := template
+
+	if g.verbose {
+		g.logger.Printf("Processing variable content: '%s'", response)
+		g.logger.Printf("Wildcards: %v", wildcards)
+	}
+
+	// Replace wildcards
+	for key, value := range wildcards {
+		if key == "star1" {
+			response = strings.ReplaceAll(response, "<star/>", value)
+			response = strings.ReplaceAll(response, "<star index=\"1\"/>", value)
+			response = strings.ReplaceAll(response, "<star1/>", value)
+		} else if key == "star2" {
+			response = strings.ReplaceAll(response, "<star index=\"2\"/>", value)
+			response = strings.ReplaceAll(response, "<star2/>", value)
+		}
+	}
+
+	// Replace property tags
+	response = g.replacePropertyTags(response)
+
+	// Replace session variable tags using context
+	response = g.replaceSessionVariableTagsWithContext(response, ctx)
+
+	// Process SRAI tags (recursive)
+	response = g.processSRAITagsWithContext(response, ctx)
+
+	// Process SRAIX tags (external services)
+	response = g.processSRAIXTagsWithContext(response, ctx)
+
+	// Process learn tags (dynamic learning)
+	response = g.processLearnTagsWithContext(response, ctx)
+
+	// Process condition tags
+	response = g.processConditionTagsWithContext(response, ctx)
+
+	// Process date and time tags
+	response = g.processDateTimeTags(response)
+
+	// Process random tags
+	response = g.processRandomTags(response)
+
+	// Process map tags
+	response = g.processMapTagsWithContext(response, ctx)
+
+	// Process list tags
+	response = g.processListTagsWithContext(response, ctx)
+
+	// Process array tags
+	response = g.processArrayTagsWithContext(response, ctx)
+
+	if g.verbose {
+		g.logger.Printf("Variable content result: '%s'", response)
+	}
+
+	return strings.TrimSpace(response)
 }
 
 // replacePropertyTags replaces <get name="property"/> tags with property values
@@ -1678,6 +2130,39 @@ func (g *Golem) replacePropertyTags(template string) string {
 			propertyValue := g.aimlKB.GetProperty(propertyName)
 			if propertyValue != "" {
 				template = strings.ReplaceAll(template, match[0], propertyValue)
+			}
+		}
+	}
+
+	return template
+}
+
+// processBotTagsWithContext processes <bot name="property"/> tags with variable context
+func (g *Golem) processBotTagsWithContext(template string, ctx *VariableContext) string {
+	if ctx.KnowledgeBase == nil {
+		return template
+	}
+
+	// Find all <bot name="property"/> tags
+	botTagRegex := regexp.MustCompile(`<bot name="([^"]+)"/>`)
+	matches := botTagRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			propertyName := match[1]
+			propertyValue := ctx.KnowledgeBase.GetProperty(propertyName)
+
+			if g.verbose {
+				g.logger.Printf("Bot tag: property='%s', value='%s'", propertyName, propertyValue)
+			}
+
+			if propertyValue != "" {
+				template = strings.ReplaceAll(template, match[0], propertyValue)
+			} else {
+				// If property not found, leave the bot tag unchanged
+				if g.verbose {
+					g.logger.Printf("Bot property '%s' not found", propertyName)
+				}
 			}
 		}
 	}
@@ -1987,6 +2472,11 @@ func (g *Golem) setVariable(varName, varValue string, scope VariableScope, ctx *
 				ctx.Session.Variables = make(map[string]string)
 			}
 			ctx.Session.Variables[varName] = varValue
+
+			// Special case: if setting the topic variable, also set the session topic
+			if varName == "topic" {
+				ctx.Session.SetSessionTopic(varValue)
+			}
 		}
 	case ScopeTopic:
 		// TODO: Implement topic variables
@@ -2076,6 +2566,86 @@ func (g *Golem) processTimeTags(template string) string {
 
 		// Replace the time tag with the formatted time
 		template = strings.ReplaceAll(template, match[0], timeStr)
+	}
+
+	return template
+}
+
+// processRequestTags processes <request> tags with index support
+func (g *Golem) processRequestTags(template string, ctx *VariableContext) string {
+	if ctx.Session == nil {
+		return template
+	}
+
+	// Find all <request> tags with optional index attribute
+	requestRegex := regexp.MustCompile(`<request(?: index="(\d+)")?/>`)
+	matches := requestRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		index := 1 // Default to most recent request
+		if len(match) > 1 && match[1] != "" {
+			// Parse the index from the attribute
+			if parsedIndex, err := strconv.Atoi(match[1]); err == nil && parsedIndex > 0 {
+				index = parsedIndex
+			}
+		}
+
+		if g.verbose {
+			g.logger.Printf("Processing request tag with index: %d", index)
+		}
+
+		// Get the request by index
+		requestValue := ctx.Session.GetRequestByIndex(index)
+		if requestValue == "" {
+			if g.verbose {
+				g.logger.Printf("No request found at index %d", index)
+			}
+			// Replace with empty string if no request found
+			template = strings.ReplaceAll(template, match[0], "")
+		} else {
+			// Replace the request tag with the actual request
+			template = strings.ReplaceAll(template, match[0], requestValue)
+		}
+	}
+
+	return template
+}
+
+// processResponseTags processes <response> tags with index support
+func (g *Golem) processResponseTags(template string, ctx *VariableContext) string {
+	if ctx.Session == nil {
+		return template
+	}
+
+	// Find all <response> tags with optional index attribute
+	responseRegex := regexp.MustCompile(`<response(?: index="(\d+)")?/>`)
+	matches := responseRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		index := 1 // Default to most recent response
+		if len(match) > 1 && match[1] != "" {
+			// Parse the index from the attribute
+			if parsedIndex, err := strconv.Atoi(match[1]); err == nil && parsedIndex > 0 {
+				index = parsedIndex
+			}
+		}
+
+		if g.verbose {
+			g.logger.Printf("Processing response tag with index: %d", index)
+		}
+
+		// Get the response by index
+		responseValue := ctx.Session.GetResponseByIndex(index)
+		if responseValue == "" {
+			if g.verbose {
+				g.logger.Printf("No response found at index %d", index)
+			}
+			// Replace with empty string if no response found
+			template = strings.ReplaceAll(template, match[0], "")
+		} else {
+			// Replace the response tag with the actual response
+			template = strings.ReplaceAll(template, match[0], responseValue)
+		}
 	}
 
 	return template
@@ -2435,6 +3005,54 @@ func (session *ChatSession) GetLastThat() string {
 // GetThatHistory returns the that history
 func (session *ChatSession) GetThatHistory() []string {
 	return session.ThatHistory
+}
+
+// AddToRequestHistory adds a user request to the request history
+func (session *ChatSession) AddToRequestHistory(request string) {
+	// Keep only the last 10 requests to prevent memory bloat
+	if len(session.RequestHistory) >= 10 {
+		session.RequestHistory = session.RequestHistory[1:]
+	}
+	session.RequestHistory = append(session.RequestHistory, request)
+}
+
+// GetRequestHistory returns the request history
+func (session *ChatSession) GetRequestHistory() []string {
+	return session.RequestHistory
+}
+
+// GetRequestByIndex returns a request by index (1-based, where 1 is most recent)
+func (session *ChatSession) GetRequestByIndex(index int) string {
+	if index < 1 || index > len(session.RequestHistory) {
+		return ""
+	}
+	// Convert to 0-based index (most recent is at the end)
+	actualIndex := len(session.RequestHistory) - index
+	return session.RequestHistory[actualIndex]
+}
+
+// AddToResponseHistory adds a bot response to the response history
+func (session *ChatSession) AddToResponseHistory(response string) {
+	// Keep only the last 10 responses to prevent memory bloat
+	if len(session.ResponseHistory) >= 10 {
+		session.ResponseHistory = session.ResponseHistory[1:]
+	}
+	session.ResponseHistory = append(session.ResponseHistory, response)
+}
+
+// GetResponseHistory returns the response history
+func (session *ChatSession) GetResponseHistory() []string {
+	return session.ResponseHistory
+}
+
+// GetResponseByIndex returns a response by index (1-based, where 1 is most recent)
+func (session *ChatSession) GetResponseByIndex(index int) string {
+	if index < 1 || index > len(session.ResponseHistory) {
+		return ""
+	}
+	// Convert to 0-based index (most recent is at the end)
+	actualIndex := len(session.ResponseHistory) - index
+	return session.ResponseHistory[actualIndex]
 }
 
 // processTopicSettingTagsWithContext processes <set name="topic"> tags

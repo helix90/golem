@@ -13,13 +13,15 @@ import (
 
 // ChatSession represents a single chat session
 type ChatSession struct {
-	ID           string
-	Variables    map[string]string
-	History      []string
-	CreatedAt    string
-	LastActivity string
-	Topic        string   // Current conversation topic
-	ThatHistory  []string // History of bot responses for that matching
+	ID              string
+	Variables       map[string]string
+	History         []string
+	CreatedAt       string
+	LastActivity    string
+	Topic           string   // Current conversation topic
+	ThatHistory     []string // History of bot responses for that matching
+	RequestHistory  []string // History of user requests for <request> tag
+	ResponseHistory []string // History of bot responses for <response> tag
 }
 
 // Golem represents the main library instance
@@ -285,6 +287,9 @@ func (g *Golem) chatCommand(args []string) error {
 	// Add to history
 	session.History = append(session.History, "User: "+input)
 
+	// Add to request history for <request> tag support
+	session.AddToRequestHistory(input)
+
 	// Match pattern and get response
 	category, wildcards, err := g.aimlKB.MatchPattern(input)
 	if err != nil {
@@ -301,6 +306,9 @@ func (g *Golem) chatCommand(args []string) error {
 	response := g.ProcessTemplateWithSession(category.Template, wildcards, session)
 	fmt.Printf("Golem: %s\n", response)
 	session.History = append(session.History, "Golem: "+response)
+
+	// Add to response history for <response> tag support
+	session.AddToResponseHistory(response)
 
 	return nil
 }
@@ -446,10 +454,16 @@ func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error)
 	session.History = append(session.History, input)
 	session.LastActivity = time.Now().Format(time.RFC3339)
 
+	// Add to request history for <request> tag support
+	session.AddToRequestHistory(input)
+
 	// Add the extracted that context to history for future context matching
 	if nextThatContext != "" {
 		session.AddToThatHistory(nextThatContext)
 	}
+
+	// Add to response history for <response> tag support
+	session.AddToResponseHistory(response)
 
 	return response, nil
 }
@@ -662,11 +676,13 @@ func (g *Golem) createSession(sessionID string) *ChatSession {
 
 	now := "now" // In a real implementation, use time.Now().Format()
 	session := &ChatSession{
-		ID:           sessionID,
-		Variables:    make(map[string]string),
-		History:      []string{},
-		CreatedAt:    now,
-		LastActivity: now,
+		ID:              sessionID,
+		Variables:       make(map[string]string),
+		History:         []string{},
+		CreatedAt:       now,
+		LastActivity:    now,
+		RequestHistory:  []string{},
+		ResponseHistory: []string{},
 	}
 
 	g.sessions[sessionID] = session

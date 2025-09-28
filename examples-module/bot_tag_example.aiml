@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+    <category>
+        <pattern>WHAT IS YOUR NAME</pattern>
+        <template>My name is <bot name="name"/>.</template>
+    </category>
+    
+    <category>
+        <pattern>WHAT VERSION ARE YOU</pattern>
+        <template>I am version <bot name="version"/>.</template>
+    </category>
+    
+    <category>
+        <pattern>TELL ME ABOUT YOURSELF</pattern>
+        <template>I am <bot name="name"/> version <bot name="version"/> and I speak <bot name="language"/>.</template>
+    </category>
+    
+    <category>
+        <pattern>MIXED TAGS</pattern>
+        <template>I am <bot name="name"/> and my version is <get name="version"/>.</template>
+    </category>
+    
+    <category>
+        <pattern>WHO CREATED YOU</pattern>
+        <template>I was created by <bot name="author"/>.</template>
+    </category>
+</aiml>

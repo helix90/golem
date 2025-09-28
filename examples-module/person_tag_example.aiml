@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+    <category>
+        <pattern>WHAT DID I SAY</pattern>
+        <template>You said: <person>I am happy with my results</person></template>
+    </category>
+    
+    <category>
+        <pattern>WHAT DO YOU THINK</pattern>
+        <template>I think <person>you should do what you want with your life</person></template>
+    </category>
+    
+    <category>
+        <pattern>TELL ME ABOUT YOURSELF</pattern>
+        <template>I am <bot name="name"/> and <person>I am happy to help you with your questions</person></template>
+    </category>
+    
+    <category>
+        <pattern>WHAT ARE YOUR PLANS</pattern>
+        <template>My plans are <person>I want to help you achieve your goals</person></template>
+    </category>
+    
+    <category>
+        <pattern>COMPLEX RESPONSE</pattern>
+        <template>You said: <person>I think you should tell me about your plans for our future</person> and I agree.</template>
+    </category>
+    
+    <category>
+        <pattern>CONTRACTIONS</pattern>
+        <template>You said: <person>I'm going to my house and I've been working hard</person></template>
+    </category>
+    
+    <category>
+        <pattern>POSSESSIVES</pattern>
+        <template>You said: <person>This is mine and that is yours</person></template>
+    </category>
+    
+    <category>
+        <pattern>REFLEXIVE</pattern>
+        <template>You said: <person>I did it myself and you did it yourself</person></template>
+    </category>
+    
+    <category>
+        <pattern>MIXED PRONOUNS</pattern>
+        <template>You said: <person>I think you should do what you want with your life</person></template>
+    </category>
+    
+    <category>
+        <pattern>NO PRONOUNS</pattern>
+        <template>You said: <person>The cat sat on the mat</person></template>
+    </category>
+</aiml>

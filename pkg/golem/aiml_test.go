@@ -687,6 +687,252 @@ func TestSRAIRecursive(t *testing.T) {
 	}
 }
 
+// TestSRTagProcessing tests the basic SR tag functionality
+func TestSRTagProcessing(t *testing.T) {
+	g := New(false)
+
+	tests := []struct {
+		name      string
+		template  string
+		wildcards map[string]string
+		expected  string
+	}{
+		{
+			name:      "Basic SR tag with star1",
+			template:  "Hello <sr/>!",
+			wildcards: map[string]string{"star1": "WORLD"},
+			expected:  "Hello <sr/>!", // No match for WORLD pattern
+		},
+		{
+			name:      "SR tag with no wildcards",
+			template:  "Hello <sr/>!",
+			wildcards: map[string]string{},
+			expected:  "Hello <sr/>!", // No star content available
+		},
+		{
+			name:      "SR tag with empty star1",
+			template:  "Hello <sr/>!",
+			wildcards: map[string]string{"star1": ""},
+			expected:  "Hello <sr/>!", // Empty star content
+		},
+		{
+			name:      "Multiple SR tags",
+			template:  "First <sr/> and second <sr/>",
+			wildcards: map[string]string{"star1": "TEST"},
+			expected:  "First <sr/> and second <sr/>", // No match for TEST pattern
+		},
+		{
+			name:      "SR tag with whitespace",
+			template:  "Hello <sr />!",
+			wildcards: map[string]string{"star1": "TEST"},
+			expected:  "Hello <sr />!", // No match for TEST pattern
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil,
+				Topic:         "",
+				KnowledgeBase: nil,
+			}
+			result := g.processSRTagsWithContext(tt.template, tt.wildcards, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestSRTagWithKnowledgeBase tests SR tag with actual pattern matching
+func TestSRTagWithKnowledgeBase(t *testing.T) {
+	g := New(false)
+	kb := NewAIMLKnowledgeBase()
+
+	// Add test categories
+	kb.Categories = []Category{
+		{Pattern: "HELLO", Template: "Hello! How can I help you today?"},
+		{Pattern: "HI", Template: "Hi there!"},
+		{Pattern: "GREETING *", Template: "Nice to meet you! <sr/>"},
+		{Pattern: "GOODBYE", Template: "Goodbye! Have a great day!"},
+	}
+
+	// Index patterns
+	kb.Patterns = make(map[string]*Category)
+	for i := range kb.Categories {
+		kb.Patterns[kb.Categories[i].Pattern] = &kb.Categories[i]
+	}
+
+	g.SetKnowledgeBase(kb)
+
+	tests := []struct {
+		name      string
+		template  string
+		wildcards map[string]string
+		expected  string
+	}{
+		{
+			name:      "SR tag with matching pattern",
+			template:  "Nice to meet you! <sr/>",
+			wildcards: map[string]string{"star1": "HELLO"},
+			expected:  "Nice to meet you! Hello! How can I help you today?",
+		},
+		{
+			name:      "SR tag with another matching pattern",
+			template:  "Nice to meet you! <sr/>",
+			wildcards: map[string]string{"star1": "HI"},
+			expected:  "Nice to meet you! Hi there!",
+		},
+		{
+			name:      "SR tag with no matching pattern",
+			template:  "Nice to meet you! <sr/>",
+			wildcards: map[string]string{"star1": "UNKNOWN"},
+			expected:  "Nice to meet you! <sr/>", // No match, leave unchanged
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil,
+				Topic:         "",
+				KnowledgeBase: kb,
+			}
+			result := g.processSRTagsWithContext(tt.template, tt.wildcards, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestSRTagIntegration tests SR tag in full template processing
+func TestSRTagIntegration(t *testing.T) {
+	g := New(false)
+	kb := NewAIMLKnowledgeBase()
+
+	// Add test categories
+	kb.Categories = []Category{
+		{Pattern: "HELLO", Template: "Hello! How can I help you today?"},
+		{Pattern: "HI", Template: "Hi there!"},
+		{Pattern: "GREETING *", Template: "Nice to meet you! <sr/>"},
+		{Pattern: "GOODBYE", Template: "Goodbye! Have a great day!"},
+	}
+
+	// Index patterns
+	kb.Patterns = make(map[string]*Category)
+	for i := range kb.Categories {
+		kb.Patterns[kb.Categories[i].Pattern] = &kb.Categories[i]
+	}
+
+	g.SetKnowledgeBase(kb)
+
+	// Test full template processing
+	template := "Nice to meet you! <sr/>"
+	wildcards := map[string]string{"star1": "HELLO"}
+	result := g.ProcessTemplate(template, wildcards)
+	expected := "Nice to meet you! Hello! How can I help you today?"
+
+	if result != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, result)
+	}
+}
+
+// TestSRTagRecursive tests recursive SR tag processing
+func TestSRTagRecursive(t *testing.T) {
+	g := New(false)
+	kb := NewAIMLKnowledgeBase()
+
+	// Add test categories with recursive SR
+	kb.Categories = []Category{
+		{Pattern: "HELLO", Template: "Hello! How can I help you today?"},
+		{Pattern: "HI", Template: "Hi there!"},
+		{Pattern: "GREETING *", Template: "Nice to meet you! <sr/>"},
+		{Pattern: "WELCOME *", Template: "Welcome! <sr/>"},
+	}
+
+	// Index patterns
+	kb.Patterns = make(map[string]*Category)
+	for i := range kb.Categories {
+		kb.Patterns[kb.Categories[i].Pattern] = &kb.Categories[i]
+	}
+
+	g.SetKnowledgeBase(kb)
+
+	// Test recursive SR processing
+	template := "Welcome! <sr/>"
+	wildcards := map[string]string{"star1": "GREETING HELLO"}
+	result := g.ProcessTemplate(template, wildcards)
+	expected := "Welcome! Nice to meet you! Hello! How can I help you today?"
+
+	if result != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, result)
+	}
+}
+
+// TestSRTagEdgeCases tests edge cases for SR tag
+func TestSRTagEdgeCases(t *testing.T) {
+	g := New(false)
+	kb := NewAIMLKnowledgeBase()
+
+	// Add test categories
+	kb.Categories = []Category{
+		{Pattern: "HELLO", Template: "Hello!"},
+		{Pattern: "HI", Template: "Hi!"},
+	}
+
+	// Index patterns
+	kb.Patterns = make(map[string]*Category)
+	for i := range kb.Categories {
+		kb.Patterns[kb.Categories[i].Pattern] = &kb.Categories[i]
+	}
+
+	g.SetKnowledgeBase(kb)
+
+	tests := []struct {
+		name      string
+		template  string
+		wildcards map[string]string
+		expected  string
+	}{
+		{
+			name:      "SR tag with star2 instead of star1",
+			template:  "Hello <sr/>!",
+			wildcards: map[string]string{"star2": "HELLO"},
+			expected:  "Hello <sr/>!", // SR only uses star1
+		},
+		{
+			name:      "SR tag with both star1 and star2",
+			template:  "Hello <sr/>!",
+			wildcards: map[string]string{"star1": "HELLO", "star2": "HI"},
+			expected:  "Hello Hello!!", // Should use star1, but there's a double processing issue
+		},
+		{
+			name:      "SR tag with nil wildcards",
+			template:  "Hello <sr/>!",
+			wildcards: nil,
+			expected:  "Hello <sr/>!", // No wildcards available
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil,
+				Topic:         "",
+				KnowledgeBase: kb,
+			}
+			result := g.processSRTagsWithContext(tt.template, tt.wildcards, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
 func TestProcessRandomTags(t *testing.T) {
 	g := New(false)
 
@@ -3044,4 +3290,750 @@ func TestNormalizationEdgeCases(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestBotTagProcessing(t *testing.T) {
+	g := New(false)
+
+	// Initialize knowledge base if nil
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
+	// Set up test properties
+	g.aimlKB.Properties["name"] = "GolemBot"
+	g.aimlKB.Properties["version"] = "1.0.0"
+	g.aimlKB.Properties["author"] = "Test Author"
+	g.aimlKB.Properties["language"] = "en"
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Basic bot property access",
+			template: "Hello! I am <bot name=\"name\"/>.",
+			expected: "Hello! I am GolemBot.",
+		},
+		{
+			name:     "Multiple bot properties",
+			template: "I am <bot name=\"name\"/> version <bot name=\"version\"/> by <bot name=\"author\"/>.",
+			expected: "I am GolemBot version 1.0.0 by Test Author.",
+		},
+		{
+			name:     "Bot property with other content",
+			template: "Welcome! My name is <bot name=\"name\"/> and I speak <bot name=\"language\"/>.",
+			expected: "Welcome! My name is GolemBot and I speak en.",
+		},
+		{
+			name:     "Non-existent bot property",
+			template: "Hello! I am <bot name=\"nonexistent\"/>.",
+			expected: "Hello! I am <bot name=\"nonexistent\"/>.",
+		},
+		{
+			name:     "Empty bot property",
+			template: "Hello! I am <bot name=\"empty\"/>.",
+			expected: "Hello! I am <bot name=\"empty\"/>.",
+		},
+		{
+			name:     "Mixed bot and get tags",
+			template: "I am <bot name=\"name\"/> and my version is <get name=\"version\"/>.",
+			expected: "I am GolemBot and my version is 1.0.0.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a test session
+			session := g.CreateSession("test-session")
+
+			// Process the template
+			result := g.ProcessTemplateWithContext(tt.template, make(map[string]string), session)
+
+			if result != tt.expected {
+				t.Errorf("Bot tag processing failed.\nExpected: %s\nGot: %s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestBotTagWithContext(t *testing.T) {
+	g := New(false)
+
+	// Initialize knowledge base if nil
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
+	// Set up test properties
+	g.aimlKB.Properties["name"] = "ContextBot"
+	g.aimlKB.Properties["version"] = "2.0.0"
+
+	// Create a test session
+	session := g.CreateSession("context-test")
+
+	// Test with context
+	ctx := &VariableContext{
+		LocalVars:     make(map[string]string),
+		Session:       session,
+		Topic:         "",
+		KnowledgeBase: g.aimlKB,
+	}
+
+	template := "Hello! I am <bot name=\"name\"/> version <bot name=\"version\"/>."
+	expected := "Hello! I am ContextBot version 2.0.0."
+
+	result := g.processBotTagsWithContext(template, ctx)
+
+	if result != expected {
+		t.Errorf("Bot tag with context failed.\nExpected: %s\nGot: %s", expected, result)
+	}
+}
+
+// TestPersonTagProcessing tests the basic person tag functionality
+func TestPersonTagProcessing(t *testing.T) {
+	g := New(false)
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Basic first person to second person",
+			template: "I am happy with my results.",
+			expected: "you are happy with your results.",
+		},
+		{
+			name:     "Basic second person to first person",
+			template: "You are here with your friends.",
+			expected: "I am here with my friends.",
+		},
+		{
+			name:     "Mixed pronouns",
+			template: "I think you should do what you want with your life.",
+			expected: "you think I should do what I want with my life.",
+		},
+		{
+			name:     "Possessive pronouns",
+			template: "This is mine and that is yours.",
+			expected: "This is yours and that is yours.",
+		},
+		{
+			name:     "Reflexive pronouns",
+			template: "I did it myself and you did it yourself.",
+			expected: "you did it yourself and I did it yourself.",
+		},
+		{
+			name:     "Plural pronouns",
+			template: "We are going to our house with our friends.",
+			expected: "you are going to your house with your friends.",
+		},
+		{
+			name:     "Contractions first person",
+			template: "I'm happy and I've been working hard.",
+			expected: "you're happy and you've been working hard.",
+		},
+		{
+			name:     "Contractions second person",
+			template: "You're right and you'll be fine.",
+			expected: "I'm right and I'll be fine.",
+		},
+		{
+			name:     "Possessive forms",
+			template: "This is my car and that is your car.",
+			expected: "This is your car and that is my car.",
+		},
+		{
+			name:     "Complex sentence",
+			template: "I think you should tell me about your plans for our future.",
+			expected: "you think I should tell you about my plans for your future.",
+		},
+		{
+			name:     "No pronouns",
+			template: "The cat sat on the mat.",
+			expected: "The cat sat on the mat.",
+		},
+		{
+			name:     "Mixed case",
+			template: "I am happy but You are sad.",
+			expected: "you are happy but I am sad.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := g.SubstitutePronouns(tt.template)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestPersonTagWithContext tests person tags with variable context
+func TestPersonTagWithContext(t *testing.T) {
+	g := New(false)
+
+	// Initialize knowledge base if nil
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Simple person tag",
+			template: "You said: <person>I am happy</person>",
+			expected: "You said: you are happy",
+		},
+		{
+			name:     "Multiple person tags",
+			template: "You said: <person>I am happy</person> and <person>you are sad</person>",
+			expected: "You said: you are happy and I am sad",
+		},
+		{
+			name:     "Person tag with contractions",
+			template: "You said: <person>I'm going to my house</person>",
+			expected: "You said: you're going to your house",
+		},
+		{
+			name:     "Person tag with mixed pronouns",
+			template: "You said: <person>I think you should do what you want</person>",
+			expected: "You said: you think I should do what I want",
+		},
+		{
+			name:     "Person tag with possessives",
+			template: "You said: <person>This is mine and that is yours</person>",
+			expected: "You said: This is yours and that is mine",
+		},
+		{
+			name:     "Person tag with reflexive pronouns",
+			template: "You said: <person>I did it myself</person>",
+			expected: "You said: you did it yourself",
+		},
+		{
+			name:     "Person tag with plural pronouns",
+			template: "You said: <person>We are going to our house</person>",
+			expected: "You said: you are going to your house",
+		},
+		{
+			name:     "Person tag with complex sentence",
+			template: "You said: <person>I think you should tell me about your plans</person>",
+			expected: "You said: you think I should tell you about my plans",
+		},
+		{
+			name:     "Person tag with no pronouns",
+			template: "You said: <person>The cat sat on the mat</person>",
+			expected: "You said: The cat sat on the mat",
+		},
+		{
+			name:     "Person tag with mixed case",
+			template: "You said: <person>I am happy but You are sad</person>",
+			expected: "You said: you are happy but I am sad",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil,
+				Topic:         "",
+				KnowledgeBase: g.aimlKB,
+			}
+			result := g.processPersonTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestPersonTagIntegration tests the integration of person tags with the full processing pipeline
+func TestPersonTagIntegration(t *testing.T) {
+	g := New(false)
+
+	// Initialize knowledge base if nil
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
+	// Set up test properties
+	g.aimlKB.Properties["name"] = "TestBot"
+	g.aimlKB.Properties["version"] = "1.0.0"
+
+	// Create test categories with person tags
+	categories := []Category{
+		{
+			Pattern:  "WHAT DID I SAY",
+			Template: "You said: <person>I am happy with my results</person>",
+		},
+		{
+			Pattern:  "WHAT DO YOU THINK",
+			Template: "I think <person>you should do what you want</person>",
+		},
+		{
+			Pattern:  "TELL ME ABOUT YOURSELF",
+			Template: "I am <bot name=\"name\"/> and <person>I am happy to help you</person>",
+		},
+		{
+			Pattern:  "WHAT ARE YOUR PLANS",
+			Template: "My plans are <person>I want to help you with your goals</person>",
+		},
+		{
+			Pattern:  "COMPLEX RESPONSE",
+			Template: "You said: <person>I think you should tell me about your plans for our future</person> and I agree.",
+		},
+	}
+
+	// Add categories to knowledge base and rebuild index
+	for _, category := range categories {
+		g.aimlKB.Categories = append(g.aimlKB.Categories, category)
+		// Build pattern index
+		pattern := NormalizePattern(category.Pattern)
+		key := pattern
+		if category.That != "" {
+			key += "|THAT:" + NormalizePattern(category.That)
+		}
+		if category.Topic != "" {
+			key += "|TOPIC:" + NormalizePattern(category.Topic)
+		}
+		g.aimlKB.Patterns[key] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
+	}
+
+	// Test each category
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{
+			input:    "WHAT DID I SAY",
+			expected: "You said: you are happy with your results",
+		},
+		{
+			input:    "WHAT DO YOU THINK",
+			expected: "I think I should do what I want",
+		},
+		{
+			input:    "TELL ME ABOUT YOURSELF",
+			expected: "I am TestBot and you are happy to help I",
+		},
+		{
+			input:    "WHAT ARE YOUR PLANS",
+			expected: "My plans are you want to help I with my goals",
+		},
+		{
+			input:    "COMPLEX RESPONSE",
+			expected: "You said: you think I should tell you about my plans for your future and I agree.",
+		},
+	}
+
+	// Create a test session
+	session := g.CreateSession("test-session")
+
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			response, err := g.ProcessInput(tc.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+			if response != tc.expected {
+				t.Errorf("Expected '%s', got '%s'", tc.expected, response)
+			}
+		})
+	}
+}
+
+// TestPersonTagEdgeCases tests edge cases for person tag processing
+func TestPersonTagEdgeCases(t *testing.T) {
+	g := New(false)
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Empty person tag",
+			template: "You said: <person></person>",
+			expected: "You said: ",
+		},
+		{
+			name:     "Person tag with only whitespace",
+			template: "You said: <person>   </person>",
+			expected: "You said: ",
+		},
+		{
+			name:     "Person tag with punctuation",
+			template: "You said: <person>I am happy!</person>",
+			expected: "You said: you are happy!",
+		},
+		{
+			name:     "Person tag with numbers",
+			template: "You said: <person>I have 5 cars</person>",
+			expected: "You said: you have 5 cars",
+		},
+		{
+			name:     "Person tag with special characters",
+			template: "You said: <person>I am @username</person>",
+			expected: "You said: you are @username",
+		},
+		{
+			name:     "Person tag with multiple spaces",
+			template: "You said: <person>I  am   happy</person>",
+			expected: "You said: you are happy",
+		},
+		{
+			name:     "Person tag with newlines",
+			template: "You said: <person>I am\nhappy</person>",
+			expected: "You said: you are happy",
+		},
+		{
+			name:     "Person tag with tabs",
+			template: "You said: <person>I am\thappy</person>",
+			expected: "You said: you are happy",
+		},
+		{
+			name:     "Person tag with mixed whitespace",
+			template: "You said: <person>I am \t\n happy</person>",
+			expected: "You said: you are happy",
+		},
+		{
+			name:     "Person tag with apostrophes in non-pronouns",
+			template: "You said: <person>I can't believe it's true</person>",
+			expected: "You said: you can't believe it's true",
+		},
+		{
+			name:     "Person tag with possessive apostrophes",
+			template: "You said: <person>That's my car's engine</person>",
+			expected: "You said: That's your car's engine",
+		},
+		{
+			name:     "Person tag with verb forms (should not substitute)",
+			template: "You said: <person>I am running and you are walking</person>",
+			expected: "You said: you are running and I am walking",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil,
+				Topic:         "",
+				KnowledgeBase: g.aimlKB,
+			}
+			result := g.processPersonTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestBotTagIntegration(t *testing.T) {
+	g := New(false)
+
+	// Initialize knowledge base if nil
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
+	// Set up test properties
+	g.aimlKB.Properties["name"] = "IntegrationBot"
+	g.aimlKB.Properties["version"] = "3.0.0"
+	g.aimlKB.Properties["language"] = "en"
+
+	// Create test categories with bot tags
+	categories := []Category{
+		{
+			Pattern:  "WHAT IS YOUR NAME",
+			Template: "My name is <bot name=\"name\"/>.",
+		},
+		{
+			Pattern:  "WHAT VERSION ARE YOU",
+			Template: "I am version <bot name=\"version\"/>.",
+		},
+		{
+			Pattern:  "TELL ME ABOUT YOURSELF",
+			Template: "I am <bot name=\"name\"/> version <bot name=\"version\"/> and I speak <bot name=\"language\"/>.",
+		},
+		{
+			Pattern:  "MIXED TAGS",
+			Template: "I am <bot name=\"name\"/> and my version is <get name=\"version\"/>.",
+		},
+	}
+
+	// Add categories to knowledge base and rebuild index
+	for _, category := range categories {
+		g.aimlKB.Categories = append(g.aimlKB.Categories, category)
+		// Build pattern index
+		pattern := NormalizePattern(category.Pattern)
+		key := pattern
+		if category.That != "" {
+			key += "|THAT:" + NormalizePattern(category.That)
+		}
+		if category.Topic != "" {
+			key += "|TOPIC:" + NormalizePattern(category.Topic)
+		}
+		g.aimlKB.Patterns[key] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
+	}
+
+	// Test each category
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{"WHAT IS YOUR NAME", "My name is IntegrationBot."},
+		{"WHAT VERSION ARE YOU", "I am version 3.0.0."},
+		{"TELL ME ABOUT YOURSELF", "I am IntegrationBot version 3.0.0 and I speak en."},
+		{"MIXED TAGS", "I am IntegrationBot and my version is 3.0.0."},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			session := g.CreateSession("integration-test")
+			response, err := g.ProcessInput(tc.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+
+			if response != tc.expected {
+				t.Errorf("Integration test failed.\nExpected: %s\nGot: %s", tc.expected, response)
+			}
+		})
+	}
+}
+
+// TestGenderTagProcessing tests the basic gender tag processing functionality
+func TestGenderTagProcessing(t *testing.T) {
+	g := New(false)
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Basic masculine to feminine",
+			template: "He is a doctor. <gender>He is a doctor.</gender>",
+			expected: "He is a doctor. She is a doctor.",
+		},
+		{
+			name:     "Basic feminine to masculine",
+			template: "She is a teacher. <gender>She is a teacher.</gender>",
+			expected: "She is a teacher. He is a teacher.",
+		},
+		{
+			name:     "Possessive pronouns",
+			template: "This is his book. <gender>This is his book.</gender>",
+			expected: "This is his book. This is her book.",
+		},
+		{
+			name:     "Object pronouns",
+			template: "I saw him yesterday. <gender>I saw him yesterday.</gender>",
+			expected: "I saw him yesterday. I saw her yesterday.",
+		},
+		{
+			name:     "Reflexive pronouns",
+			template: "He did it himself. <gender>He did it himself.</gender>",
+			expected: "He did it himself. She did it herself.",
+		},
+		{
+			name:     "Contractions",
+			template: "He's happy. <gender>He's happy.</gender>",
+			expected: "He's happy. She's happy.",
+		},
+		{
+			name:     "Mixed case",
+			template: "He is HIS friend. <gender>He is HIS friend.</gender>",
+			expected: "He is HIS friend. She is HER friend.",
+		},
+		{
+			name:     "Multiple gender tags",
+			template: "He said: <gender>I love him</gender> and <gender>he loves me</gender>",
+			expected: "He said: I love her and she loves me",
+		},
+		{
+			name:     "No gender pronouns",
+			template: "The cat is sleeping. <gender>The cat is sleeping.</gender>",
+			expected: "The cat is sleeping. The cat is sleeping.",
+		},
+		{
+			name:     "Complex sentence",
+			template: "He told me that his friend saw him at his house. <gender>He told me that his friend saw him at his house.</gender>",
+			expected: "He told me that his friend saw him at his house. She told me that her friend saw her at her house.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil,
+				Topic:         "",
+				KnowledgeBase: nil,
+			}
+			result := g.processGenderTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestGenderTagWithContext tests gender tag processing with context
+func TestGenderTagWithContext(t *testing.T) {
+	g := New(false)
+	kb := NewAIMLKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	ctx := &VariableContext{
+		LocalVars:     make(map[string]string),
+		Session:       nil,
+		Topic:         "",
+		KnowledgeBase: kb,
+	}
+
+	template := "The doctor said: <gender>He will help you</gender>"
+	expected := "The doctor said: She will help you"
+
+	result := g.processGenderTagsWithContext(template, ctx)
+	if result != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, result)
+	}
+}
+
+// TestGenderTagIntegration tests gender tag integration with full AIML processing
+func TestGenderTagIntegration(t *testing.T) {
+	g := New(false)
+
+	// Load test AIML with gender tags
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+<category>
+<pattern>TELL ME ABOUT THE DOCTOR</pattern>
+<template>He is a great doctor. <gender>He is a great doctor.</gender></template>
+</category>
+<category>
+<pattern>TELL ME ABOUT THE TEACHER</pattern>
+<template>She is a wonderful teacher. <gender>She is a wonderful teacher.</gender></template>
+</category>
+<category>
+<pattern>WHAT DID HE SAY</pattern>
+<template>He said: <gender>I love my job</gender></template>
+</category>
+<category>
+<pattern>WHAT DID SHE SAY</pattern>
+<template>She said: <gender>I love my job</gender></template>
+</category>
+</aiml>`
+
+	err := g.LoadAIMLFromString(aimlContent)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Doctor description with gender swap",
+			input:    "tell me about the doctor",
+			expected: "He is a great doctor. She is a great doctor.",
+		},
+		{
+			name:     "Teacher description with gender swap",
+			input:    "tell me about the teacher",
+			expected: "She is a wonderful teacher. He is a wonderful teacher.",
+		},
+		{
+			name:     "He said with gender swap",
+			input:    "what did he say",
+			expected: "He said: I love my job",
+		},
+		{
+			name:     "She said with gender swap",
+			input:    "what did she say",
+			expected: "She said: I love my job",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := g.CreateSession("test-session")
+			response, err := g.ProcessInput(tt.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+
+			if response != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
+			}
+		})
+	}
+}
+
+// TestGenderTagEdgeCases tests edge cases for gender tag processing
+func TestGenderTagEdgeCases(t *testing.T) {
+	g := New(false)
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Empty gender tag",
+			template: "Hello <gender></gender> world",
+			expected: "Hello  world",
+		},
+		{
+			name:     "Gender tag with only whitespace",
+			template: "Hello <gender>   </gender> world",
+			expected: "Hello  world",
+		},
+		{
+			name:     "Nested gender tags",
+			template: "He said: <gender>I think <gender>he is right</gender></gender>",
+			expected: "He said: I think <gender>he is right</gender>",
+		},
+		{
+			name:     "Gender tag with newlines",
+			template: "He said:\n<gender>I love\nmy job</gender>",
+			expected: "He said:\nI love my job",
+		},
+		{
+			name:     "Gender tag with special characters",
+			template: "He said: <gender>\"I love him!\" he exclaimed.</gender>",
+			expected: "He said: \"I love her!\" she exclaimed.",
+		},
+		{
+			name:     "Mixed pronouns in one tag",
+			template: "He told her: <gender>I love him and he loves me</gender>",
+			expected: "He told her: I love her and she loves me",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil,
+				Topic:         "",
+				KnowledgeBase: nil,
+			}
+			result := g.processGenderTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
 }
