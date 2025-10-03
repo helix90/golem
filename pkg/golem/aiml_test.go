@@ -2190,6 +2190,128 @@ func TestDateTimeTagsWithAllFormats(t *testing.T) {
 	})
 }
 
+func TestCustomTimeFormats(t *testing.T) {
+	g := New(false)
+
+	// Test C-style format strings
+	testCases := []struct {
+		format        string
+		description   string
+		expectedRegex string
+	}{
+		{
+			format:        "%H",
+			description:   "C-style 24-hour format (hour only)",
+			expectedRegex: `^\d{1,2}$`,
+		},
+		{
+			format:        "%H:%M",
+			description:   "C-style 24-hour format with minutes",
+			expectedRegex: `^\d{1,2}:\d{2}$`,
+		},
+		{
+			format:        "%H:%M:%S",
+			description:   "C-style 24-hour format with seconds",
+			expectedRegex: `^\d{1,2}:\d{2}:\d{2}$`,
+		},
+		{
+			format:        "%I:%M %p",
+			description:   "C-style 12-hour format with AM/PM",
+			expectedRegex: `^\d{1,2}:\d{2} (AM|PM)$`,
+		},
+		{
+			format:        "%Y-%m-%d",
+			description:   "C-style date format",
+			expectedRegex: `^\d{4}-\d{2}-\d{2}$`,
+		},
+		{
+			format:        "%A, %B %d",
+			description:   "C-style weekday and month format",
+			expectedRegex: `^[A-Za-z]+, [A-Za-z]+ \d{1,2}$`,
+		},
+		{
+			format:        "HH:MM",
+			description:   "Alternative 24-hour format",
+			expectedRegex: `^\d{1,2}:\d{2}$`,
+		},
+		{
+			format:        "YYYY-MM-DD",
+			description:   "Alternative date format",
+			expectedRegex: `^\d{4}-\d{2}-\d{2}$`,
+		},
+		{
+			format:        "15",
+			description:   "Go-style hour format",
+			expectedRegex: `^\d{1,2}$`,
+		},
+		{
+			format:        "15:04",
+			description:   "Go-style 24-hour format",
+			expectedRegex: `^\d{1,2}:\d{2}$`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			template := fmt.Sprintf("Time: <time format=\"%s\"/>", tc.format)
+			result := g.ProcessTemplate(template, make(map[string]string))
+
+			if strings.Contains(result, "<time") {
+				t.Errorf("Expected <time> tag to be replaced for format '%s', got '%s'", tc.format, result)
+				return
+			}
+
+			// Extract the time part (after "Time: ")
+			parts := strings.Split(result, "Time: ")
+			if len(parts) != 2 {
+				t.Errorf("Expected 'Time: ' prefix, got '%s'", result)
+				return
+			}
+
+			timeStr := parts[1]
+			if timeStr == "" {
+				t.Errorf("Expected non-empty time for format '%s', got empty", tc.format)
+				return
+			}
+
+			// Validate the format using regex
+			matched, err := regexp.MatchString(tc.expectedRegex, timeStr)
+			if err != nil {
+				t.Errorf("Error matching regex for format '%s': %v", tc.format, err)
+				return
+			}
+
+			if !matched {
+				t.Errorf("Expected result '%s' to match pattern '%s' for format '%s' (%s)", timeStr, tc.expectedRegex, tc.format, tc.description)
+			}
+		})
+	}
+
+	// Test that unknown formats still fall back to default
+	t.Run("unknown_format_fallback", func(t *testing.T) {
+		template := "Time: <time format=\"unknown_format\"/>"
+		result := g.ProcessTemplate(template, make(map[string]string))
+
+		if strings.Contains(result, "<time") {
+			t.Errorf("Expected <time> tag to be replaced, got '%s'", result)
+			return
+		}
+
+		// Should contain the default 12-hour format
+		parts := strings.Split(result, "Time: ")
+		if len(parts) != 2 {
+			t.Errorf("Expected 'Time: ' prefix, got '%s'", result)
+			return
+		}
+
+		timeStr := parts[1]
+		matched, _ := regexp.MatchString(`^\d{1,2}:\d{2} (AM|PM)$`, timeStr)
+		if !matched {
+			t.Errorf("Expected unknown format to fall back to default 12-hour format, got '%s'", timeStr)
+		}
+	})
+}
+
 func TestProcessTemplateWithDateTime(t *testing.T) {
 	g := New(false)
 	kb := NewAIMLKnowledgeBase()

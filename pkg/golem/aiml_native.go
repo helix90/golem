@@ -3051,9 +3051,130 @@ func (g *Golem) formatTime(format string) string {
 	case "stampnano":
 		return now.Format(time.StampNano)
 	default:
+		// Check if it's a custom time format string
+		if g.isCustomTimeFormat(format) {
+			// Convert C-style format strings to Go format strings
+			goFormat := g.convertToGoTimeFormat(format)
+			return now.Format(goFormat)
+		}
 		// Default format: "3:04 PM"
 		return now.Format("3:04 PM")
 	}
+}
+
+// isCustomTimeFormat checks if the format string contains Go time format verbs
+func (g *Golem) isCustomTimeFormat(format string) bool {
+	// Common Go time format verbs
+	timeVerbs := []string{
+		"%Y", "%y", "%m", "%d", "%H", "%I", "%M", "%S", "%f", "%z", "%Z",
+		"2006", "01", "02", "15", "04", "05", "Mon", "Monday", "Jan", "January",
+		"1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
+		"PM", "pm", "AM", "am", "MST", "UTC", "Z07:00", "-07:00",
+	}
+
+	for _, verb := range timeVerbs {
+		if strings.Contains(format, verb) {
+			return true
+		}
+	}
+
+	// Also check for patterns that look like time formats
+	// e.g., "HH", "MM", "SS", "YYYY", etc.
+	timePatterns := []string{
+		"HH", "MM", "SS", "YYYY", "YY", "DD", "hh", "mm", "ss",
+		"HH:MM", "HH:MM:SS", "YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY",
+	}
+
+	for _, pattern := range timePatterns {
+		if strings.Contains(format, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// convertToGoTimeFormat converts C-style time format strings to Go time format strings
+func (g *Golem) convertToGoTimeFormat(format string) string {
+	// Common C-style to Go time format conversions
+	conversions := map[string]string{
+		// Hours
+		"%H": "15", // 24-hour format (00-23)
+		"%I": "03", // 12-hour format (01-12)
+		"%h": "3",  // 12-hour format (1-12)
+
+		// Minutes and seconds
+		"%M": "04",     // Minutes (00-59)
+		"%S": "05",     // Seconds (00-59)
+		"%f": "000000", // Microseconds (000000-999999)
+
+		// Date
+		"%Y": "2006", // 4-digit year
+		"%y": "06",   // 2-digit year
+		"%m": "01",   // Month (01-12)
+		"%d": "02",   // Day (01-31)
+		"%j": "002",  // Day of year (001-366)
+
+		// Weekday
+		"%w": "0",      // Weekday (0-6, Sunday=0)
+		"%u": "1",      // Weekday (1-7, Monday=1)
+		"%A": "Monday", // Full weekday name
+		"%a": "Mon",    // Abbreviated weekday name
+		"%W": "01",     // Week number (00-53)
+
+		// Month
+		"%B": "January", // Full month name
+		"%b": "Jan",     // Abbreviated month name
+
+		// Timezone
+		"%Z": "MST",   // Timezone abbreviation
+		"%z": "-0700", // Timezone offset
+
+		// AM/PM
+		"%p": "PM", // AM/PM indicator
+
+		// Common patterns
+		"HH":   "15",   // 24-hour format
+		"MM":   "04",   // Minutes
+		"SS":   "05",   // Seconds
+		"YYYY": "2006", // 4-digit year
+		"YY":   "06",   // 2-digit year
+		"DD":   "02",   // Day
+		"hh":   "03",   // 12-hour format
+		"mm":   "04",   // Minutes
+		"ss":   "05",   // Seconds
+	}
+
+	result := format
+
+	// Apply conversions
+	for cStyle, goStyle := range conversions {
+		result = strings.ReplaceAll(result, cStyle, goStyle)
+	}
+
+	// If no conversions were made and it looks like a Go format, return as-is
+	if result == format && g.looksLikeGoTimeFormat(format) {
+		return format
+	}
+
+	return result
+}
+
+// looksLikeGoTimeFormat checks if the format string looks like a Go time format
+func (g *Golem) looksLikeGoTimeFormat(format string) bool {
+	goTimeVerbs := []string{
+		"2006", "01", "02", "15", "04", "05", "Mon", "Monday", "Jan", "January",
+		"1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
+		"PM", "pm", "AM", "am", "MST", "UTC", "Z07:00", "-07:00",
+	}
+
+	for _, verb := range goTimeVerbs {
+		if strings.Contains(format, verb) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // processRandomTags processes <random> tags and selects a random <li> element
