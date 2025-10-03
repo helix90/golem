@@ -11,6 +11,17 @@ import (
 	"time"
 )
 
+// LogLevel represents the logging level
+type LogLevel int
+
+const (
+	LogLevelError LogLevel = iota
+	LogLevelWarn
+	LogLevelInfo
+	LogLevelDebug
+	LogLevelTrace
+)
+
 // ChatSession represents a single chat session
 type ChatSession struct {
 	ID              string
@@ -41,6 +52,7 @@ type ChatSession struct {
 // for all three usage patterns.
 type Golem struct {
 	verbose   bool
+	logLevel  LogLevel
 	logger    *log.Logger
 	aimlKB    *AIMLKnowledgeBase
 	sessions  map[string]*ChatSession
@@ -48,11 +60,20 @@ type Golem struct {
 	sessionID int
 	oobMgr    *OOBManager
 	sraixMgr  *SRAIXManager
+	// Text processing components
+	sentenceSplitter     *SentenceSplitter
+	wordBoundaryDetector *WordBoundaryDetector
 }
 
 // New creates a new Golem instance
 func New(verbose bool) *Golem {
 	logger := log.New(os.Stdout, "[GOLEM] ", log.LstdFlags)
+
+	// Set log level based on verbose flag
+	logLevel := LogLevelInfo
+	if verbose {
+		logLevel = LogLevelDebug
+	}
 
 	// Create OOB manager and register built-in handlers
 	oobMgr := NewOOBManager(verbose, logger)
@@ -67,15 +88,115 @@ func New(verbose bool) *Golem {
 	// Create SRAIX manager
 	sraixMgr := NewSRAIXManager(logger, verbose)
 
+	// Create text processing components
+	sentenceSplitter := NewSentenceSplitter()
+	wordBoundaryDetector := NewWordBoundaryDetector()
+
 	return &Golem{
-		verbose:   verbose,
-		logger:    logger,
-		sessions:  make(map[string]*ChatSession),
-		sessionID: 1,
-		oobMgr:    oobMgr,
-		sraixMgr:  sraixMgr,
+		verbose:              verbose,
+		logLevel:             logLevel,
+		logger:               logger,
+		sessions:             make(map[string]*ChatSession),
+		sessionID:            1,
+		oobMgr:               oobMgr,
+		sraixMgr:             sraixMgr,
+		sentenceSplitter:     sentenceSplitter,
+		wordBoundaryDetector: wordBoundaryDetector,
 	}
 }
+
+// LogError logs an error message
+func (g *Golem) LogError(format string, args ...interface{}) {
+	if g.logLevel >= LogLevelError {
+		g.logger.Printf("[ERROR] "+format, args...)
+	}
+}
+
+// LogWarn logs a warning message
+func (g *Golem) LogWarn(format string, args ...interface{}) {
+	if g.logLevel >= LogLevelWarn {
+		g.logger.Printf("[WARN] "+format, args...)
+	}
+}
+
+// LogInfo logs an info message
+func (g *Golem) LogInfo(format string, args ...interface{}) {
+	if g.logLevel >= LogLevelInfo {
+		g.logger.Printf("[INFO] "+format, args...)
+	}
+}
+
+// LogDebug logs a debug message
+func (g *Golem) LogDebug(format string, args ...interface{}) {
+	if g.logLevel >= LogLevelDebug {
+		g.logger.Printf("[DEBUG] "+format, args...)
+	}
+}
+
+// LogTrace logs a trace message
+func (g *Golem) LogTrace(format string, args ...interface{}) {
+	if g.logLevel >= LogLevelTrace {
+		g.logger.Printf("[TRACE] "+format, args...)
+	}
+}
+
+// SetLogLevel sets the logging level
+func (g *Golem) SetLogLevel(level LogLevel) {
+	g.logLevel = level
+}
+
+// GetLogLevel returns the current logging level
+func (g *Golem) GetLogLevel() LogLevel {
+	return g.logLevel
+}
+
+// LogVerbose logs a message only if verbose mode is enabled (for backward compatibility)
+// This is a convenience function that maps to LogDebug for backward compatibility
+func (g *Golem) LogVerbose(format string, args ...interface{}) {
+	if g.verbose {
+		g.LogDebug(format, args...)
+	}
+}
+
+/*
+Logging Usage Examples:
+
+Replace verbose logging patterns like this:
+
+OLD PATTERN:
+	if g.verbose {
+		g.logger.Printf("Loading AIML from string")
+	}
+
+NEW PATTERN (using level-based logging):
+	g.LogDebug("Loading AIML from string")
+
+OLD PATTERN:
+	if g.verbose {
+		g.logger.Printf("Total categories: %d", len(g.aimlKB.Categories))
+	}
+
+NEW PATTERN:
+	g.LogDebug("Total categories: %d", len(g.aimlKB.Categories))
+
+OLD PATTERN:
+	if g.verbose {
+		g.logger.Printf("Failed to parse learnf content: %v", err)
+	}
+
+NEW PATTERN (for errors):
+	g.LogError("Failed to parse learnf content: %v", err)
+
+Available log levels:
+- LogError: Error messages
+- LogWarn: Warning messages
+- LogInfo: Informational messages
+- LogDebug: Debug messages (replaces most verbose logging)
+- LogTrace: Very detailed trace messages
+
+Set log level:
+	g.SetLogLevel(LogLevelDebug)
+*/
 
 // Execute runs the specified command with arguments
 //
@@ -438,7 +559,7 @@ func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error)
 	}
 
 	// Try to match pattern with full context (using index 0 for last response)
-	category, wildcards, err := g.aimlKB.MatchPatternWithTopicAndThatIndex(normalizedInput, currentTopic, normalizedThat, 0)
+	category, wildcards, err := g.aimlKB.MatchPatternWithTopicAndThatIndexOriginal(normalizedInput, input, currentTopic, normalizedThat, 0)
 	if err != nil {
 		return "", err
 	}
@@ -497,7 +618,7 @@ func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, th
 	}
 
 	// Try to match pattern with full context and specific that index
-	category, wildcards, err := g.aimlKB.MatchPatternWithTopicAndThatIndex(normalizedInput, currentTopic, normalizedThat, thatIndex)
+	category, wildcards, err := g.aimlKB.MatchPatternWithTopicAndThatIndexOriginal(normalizedInput, input, currentTopic, normalizedThat, thatIndex)
 	if err != nil {
 		return "", err
 	}

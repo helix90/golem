@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+
+    <!-- Basic sentence splitting examples -->
+    <category>
+        <pattern>SPLIT SENTENCES</pattern>
+        <template>Here are the sentences: <sentence>Hello world. How are you? I am fine!</sentence></template>
+    </category>
+
+    <category>
+        <pattern>SPLIT COMPLEX SENTENCES</pattern>
+        <template>Sentences: <sentence>Dr. Smith is here. He works at Inc. Corp. The meeting is at 3 p.m. Dr. Jones will attend.</sentence></template>
+    </category>
+
+    <!-- Basic word splitting examples -->
+    <category>
+        <pattern>SPLIT WORDS</pattern>
+        <template>Here are the words: <word>Hello, world! How are you?</word></template>
+    </category>
+
+    <category>
+        <pattern>SPLIT COMPLEX WORDS</pattern>
+        <template>Words: <word>What?! Really? Yes! The price is $100.50 (50% off!)</word></template>
+    </category>
+
+    <!-- Combined processing examples -->
+    <category>
+        <pattern>COMBINED PROCESSING</pattern>
+        <template>Sentences: <sentence>First sentence. Second sentence!</sentence> Words: <word>Hello, world!</word></template>
+    </category>
+
+    <category>
+        <pattern>ANALYZE TEXT</pattern>
+        <template>Let me analyze this text: <sentence>This is a test. It has multiple sentences!</sentence> Now the words: <word>This, is, a, test!</word></template>
+    </category>
+
+    <!-- Text processing with other tags -->
+    <category>
+        <pattern>PROCESS WITH PERSON</pattern>
+        <template>I'll process this: <sentence>I love my job. I work hard every day!</sentence> Now with person tags: <person>I love my job. I work hard every day!</person></template>
+    </category>
+
+    <category>
+        <pattern>PROCESS WITH GENDER</pattern>
+        <template>Gender processing: <gender>He is a doctor. She is a teacher.</gender> Word processing: <word>He is a doctor. She is a teacher.</word></template>
+    </category>
+
+    <!-- Edge cases -->
+    <category>
+        <pattern>EMPTY TEXT</pattern>
+        <template>Empty sentence: <sentence></sentence> Empty word: <word></word></template>
+    </category>
+
+    <category>
+        <pattern>WHITESPACE TEXT</pattern>
+        <template>Whitespace sentence: <sentence>   Hello    world.    How    are    you?   </sentence> Whitespace word: <word>   Hello    world!    How    are    you?   </word></template>
+    </category>
+
+    <!-- Default fallback -->
+    <category>
+        <pattern>*</pattern>
+        <template>I can help you with text processing! Try asking me to "split sentences", "split words", "combined processing", or "analyze text".</template>
+    </category>
+
+</aiml>

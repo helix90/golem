@@ -134,8 +134,8 @@ func TestTopicTagMatching(t *testing.T) {
 	}
 
 	// Verify topic was set
-	if session.GetSessionTopic() != "MOVIES" {
-		t.Errorf("Expected topic 'MOVIES', got '%s'", session.GetSessionTopic())
+	if session.GetSessionTopic() != "movies" {
+		t.Errorf("Expected topic 'movies', got '%s'", session.GetSessionTopic())
 	}
 
 	// Test 2: Ask about favorite movie in movies topic
@@ -159,8 +159,8 @@ func TestTopicTagMatching(t *testing.T) {
 	}
 
 	// Verify topic was changed
-	if session.GetSessionTopic() != "BOOKS" {
-		t.Errorf("Expected topic 'BOOKS', got '%s'", session.GetSessionTopic())
+	if session.GetSessionTopic() != "books" {
+		t.Errorf("Expected topic 'books', got '%s'", session.GetSessionTopic())
 	}
 
 	// Test 4: Ask about favorite book in books topic
@@ -323,7 +323,7 @@ func TestTopicManagement(t *testing.T) {
 	// Test setting and getting topic
 	session.SetSessionTopic("movies")
 	topic := session.GetSessionTopic()
-	expected := "MOVIES"
+	expected := "movies"
 	if topic != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, topic)
 	}
@@ -331,7 +331,7 @@ func TestTopicManagement(t *testing.T) {
 	// Test changing topic
 	session.SetSessionTopic("books")
 	topic = session.GetSessionTopic()
-	expected = "BOOKS"
+	expected = "books"
 	if topic != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, topic)
 	}
@@ -448,14 +448,14 @@ func TestTopicTagWithWildcards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to process input: %v", err)
 	}
-	expected := "Sure! What would you like to know about MUSIC?"
+	expected := "Sure! What would you like to know about music?"
 	if response != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, response)
 	}
 
 	// Verify topic was set
-	if session.GetSessionTopic() != "MUSIC" {
-		t.Errorf("Expected topic 'MUSIC', got '%s'", session.GetSessionTopic())
+	if session.GetSessionTopic() != "music" {
+		t.Errorf("Expected topic 'music', got '%s'", session.GetSessionTopic())
 	}
 
 	// Test 2: Ask about favorite with topic context
@@ -463,7 +463,7 @@ func TestTopicTagWithWildcards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to process input: %v", err)
 	}
-	expected = "I love SONG! It's one of my favorites."
+	expected = "I love song! It's one of my favorites."
 	if response != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, response)
 	}
@@ -538,7 +538,7 @@ func TestThatTopicRegression(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to process input: %v", err)
 	}
-	expected = "My name is JOHN."
+	expected = "My name is John."
 	if response != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, response)
 	}

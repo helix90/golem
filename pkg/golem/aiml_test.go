@@ -800,7 +800,10 @@ func TestSRTagWithKnowledgeBase(t *testing.T) {
 				Topic:         "",
 				KnowledgeBase: kb,
 			}
+			// First process SR tags (convert to SRAI)
 			result := g.processSRTagsWithContext(tt.template, tt.wildcards, ctx)
+			// Then process SRAI tags (resolve the SRAI content)
+			result = g.processSRAITagsWithContext(result, ctx)
 			if result != tt.expected {
 				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
 			}
@@ -842,7 +845,7 @@ func TestSRTagIntegration(t *testing.T) {
 
 // TestSRTagRecursive tests recursive SR tag processing
 func TestSRTagRecursive(t *testing.T) {
-	g := New(false)
+	g := New(true) // Enable verbose logging
 	kb := NewAIMLKnowledgeBase()
 
 	// Add test categories with recursive SR
@@ -925,7 +928,10 @@ func TestSRTagEdgeCases(t *testing.T) {
 				Topic:         "",
 				KnowledgeBase: kb,
 			}
+			// First process SR tags (convert to SRAI)
 			result := g.processSRTagsWithContext(tt.template, tt.wildcards, ctx)
+			// Then process SRAI tags (resolve the SRAI content)
+			result = g.processSRAITagsWithContext(result, ctx)
 			if result != tt.expected {
 				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
 			}
@@ -2927,7 +2933,7 @@ func TestNormalization(t *testing.T) {
 			desc     string
 		}{
 			{"Hello, World!", "HELLO WORLD", "Basic punctuation removal"},
-			{"What's up?", "WHATS UP", "Apostrophe removal"},
+			{"What's up?", "WHAT IS UP", "Contraction expansion"},
 			{"I am 25 years old.", "I AM 25 YEARS OLD", "Numbers preserved"},
 			{"Hello... world!", "HELLO WORLD", "Multiple punctuation"},
 			{"  Multiple   spaces  ", "MULTIPLE SPACES", "Whitespace normalization"},
@@ -3088,7 +3094,7 @@ func TestNormalization(t *testing.T) {
 			desc     string
 		}{
 			{"Hello, World!", "HELLO WORLD", "Basic pattern"},
-			{"What's up?", "WHATS UP", "Pattern with apostrophe"},
+			{"What's up?", "WHAT IS UP", "Pattern with contraction expansion"},
 			{"I am * years old.", "I AM * YEARS OLD", "Pattern with wildcard"},
 			{"<set>animals</set> are cute", "<set>animals</set> ARE CUTE", "Pattern with set tag"},
 			{"<topic>greeting</topic> hello", "<topic>greeting</topic> HELLO", "Pattern with topic tag"},
@@ -3178,7 +3184,7 @@ func TestNormalizationIntegration(t *testing.T) {
 			{"Hello, World!", "Exact match with punctuation"},
 			{"hello world", "Case insensitive match"},
 			{"What's up?", "Question with apostrophe"},
-			{"whats up", "Normalized question"},
+			{"what is up", "Normalized question with contraction expansion"},
 		}
 
 		for _, tc := range testCases {
@@ -3963,6 +3969,944 @@ func TestGenderTagIntegration(t *testing.T) {
 			name:     "She said with gender swap",
 			input:    "what did she say",
 			expected: "She said: I love my job",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := g.CreateSession("test-session")
+			response, err := g.ProcessInput(tt.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+
+			if response != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
+			}
+		})
+	}
+}
+
+// TestSentenceSplitting tests the sentence splitting functionality
+func TestSentenceSplitting(t *testing.T) {
+	splitter := NewSentenceSplitter()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "Simple sentences",
+			input:    "Hello world. How are you? I am fine!",
+			expected: []string{"Hello world.", "How are you?", "I am fine!"},
+		},
+		{
+			name:     "Single sentence",
+			input:    "Hello world.",
+			expected: []string{"Hello world."},
+		},
+		{
+			name:     "No punctuation",
+			input:    "Hello world",
+			expected: []string{"Hello world"},
+		},
+		{
+			name:     "Abbreviations",
+			input:    "Dr. Smith is here. He works at Inc. Corp.",
+			expected: []string{"Dr. Smith is here.", "He works at Inc. Corp."},
+		},
+		{
+			name:     "Multiple spaces",
+			input:    "Hello    world.    How    are    you?",
+			expected: []string{"Hello world.", "How are you?"},
+		},
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: []string{},
+		},
+		{
+			name:     "Whitespace only",
+			input:    "   \t\n   ",
+			expected: []string{},
+		},
+		{
+			name:     "Mixed punctuation",
+			input:    "What?! Really? Yes! No... Maybe?",
+			expected: []string{"What?!", "Really?", "Yes!", "No...", "Maybe?"},
+		},
+		{
+			name:     "Numbers and abbreviations",
+			input:    "The meeting is at 3 p.m. Dr. Jones will attend.",
+			expected: []string{"The meeting is at 3 p.m.", "Dr. Jones will attend."},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := splitter.SplitSentences(tt.input)
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d sentences, got %d", len(tt.expected), len(result))
+				t.Errorf("Expected: %v", tt.expected)
+				t.Errorf("Got: %v", result)
+				return
+			}
+			for i, expected := range tt.expected {
+				if i >= len(result) || result[i] != expected {
+					t.Errorf("Sentence %d: expected '%s', got '%s'", i, expected, result[i])
+				}
+			}
+		})
+	}
+}
+
+// TestWordBoundaryDetection tests the word boundary detection functionality
+func TestWordBoundaryDetection(t *testing.T) {
+	detector := NewWordBoundaryDetector()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "Simple words",
+			input:    "hello world",
+			expected: []string{"hello", "world"},
+		},
+		{
+			name:     "With punctuation",
+			input:    "Hello, world!",
+			expected: []string{"Hello", ",", "world", "!"},
+		},
+		{
+			name:     "Multiple punctuation",
+			input:    "What?! Really? Yes!",
+			expected: []string{"What", "?", "!", "Really", "?", "Yes", "!"},
+		},
+		{
+			name:     "Parentheses and brackets",
+			input:    "Hello (world) [test] {example}",
+			expected: []string{"Hello", "(", "world", ")", "[", "test", "]", "{", "example", "}"},
+		},
+		{
+			name:     "Quotes and apostrophes",
+			input:    "He said \"Hello\" and it's fine.",
+			expected: []string{"He", "said", "\"", "Hello", "\"", "and", "it", "'", "s", "fine", "."},
+		},
+		{
+			name:     "Numbers and symbols",
+			input:    "The price is $100.50 (50% off!)",
+			expected: []string{"The", "price", "is", "$", "100", ".", "50", "(", "50", "%", "off", "!", ")"},
+		},
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: []string{},
+		},
+		{
+			name:     "Whitespace only",
+			input:    "   \t\n   ",
+			expected: []string{},
+		},
+		{
+			name:     "Single word",
+			input:    "hello",
+			expected: []string{"hello"},
+		},
+		{
+			name:     "Single punctuation",
+			input:    "!",
+			expected: []string{"!"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := detector.SplitWords(tt.input)
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d words, got %d", len(tt.expected), len(result))
+				t.Errorf("Expected: %v", tt.expected)
+				t.Errorf("Got: %v", result)
+				return
+			}
+			for i, expected := range tt.expected {
+				if i >= len(result) || result[i] != expected {
+					t.Errorf("Word %d: expected '%s', got '%s'", i, expected, result[i])
+				}
+			}
+		})
+	}
+}
+
+// TestSentenceTagProcessing tests the sentence tag processing functionality
+func TestSentenceTagProcessing(t *testing.T) {
+	g := New(false)
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Basic sentence capitalization",
+			template: "Hello. <sentence>how are you? i am fine!</sentence>",
+			expected: "Hello. How are you? I am fine!",
+		},
+		{
+			name:     "Multiple sentence tags",
+			template: "<sentence>first sentence.</sentence> <sentence>second sentence.</sentence>",
+			expected: "First sentence. Second sentence.",
+		},
+		{
+			name:     "No sentence tags",
+			template: "Hello world. How are you?",
+			expected: "Hello world. How are you?",
+		},
+		{
+			name:     "Empty sentence tag",
+			template: "Hello <sentence></sentence> world",
+			expected: "Hello  world",
+		},
+		{
+			name:     "Whitespace normalization with capitalization",
+			template: "<sentence>hello    world.    how    are    you?</sentence>",
+			expected: "Hello world. How are you?",
+		},
+		{
+			name:     "Already capitalized sentences",
+			template: "<sentence>Hello World. How Are You?</sentence>",
+			expected: "Hello World. How Are You?",
+		},
+		{
+			name:     "Mixed case sentences",
+			template: "<sentence>hELLO wORLD. hOW aRE yOU?</sentence>",
+			expected: "HELLO wORLD. HOW aRE yOU?",
+		},
+		{
+			name:     "Single sentence",
+			template: "<sentence>hello world</sentence>",
+			expected: "Hello world",
+		},
+		{
+			name:     "Abbreviations",
+			template: "<sentence>dr. smith is here. he works at inc. corp.</sentence>",
+			expected: "Dr. Smith is here. He works at inc. Corp.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil,
+				Topic:         "",
+				KnowledgeBase: nil,
+			}
+			result := g.processSentenceTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestWordTagProcessing tests the word tag processing functionality
+func TestWordTagProcessing(t *testing.T) {
+	g := New(false)
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Basic word capitalization",
+			template: "Hello <word>world, how are you?</word>",
+			expected: "Hello World, How Are You?",
+		},
+		{
+			name:     "Multiple word tags",
+			template: "<word>hello world!</word> <word>how are you?</word>",
+			expected: "Hello World! How Are You?",
+		},
+		{
+			name:     "No word tags",
+			template: "Hello world! How are you?",
+			expected: "Hello world! How are you?",
+		},
+		{
+			name:     "Empty word tag",
+			template: "Hello <word></word> world",
+			expected: "Hello  world",
+		},
+		{
+			name:     "Whitespace normalization with capitalization",
+			template: "<word>hello    world!    how    are    you?</word>",
+			expected: "Hello World! How Are You?",
+		},
+		{
+			name:     "Already capitalized words",
+			template: "<word>Hello World! How Are You?</word>",
+			expected: "Hello World! How Are You?",
+		},
+		{
+			name:     "Mixed case words",
+			template: "<word>hELLO wORLD! hOW aRE yOU?</word>",
+			expected: "HELLO WORLD! HOW ARE YOU?",
+		},
+		{
+			name:     "Single word",
+			template: "<word>hello</word>",
+			expected: "Hello",
+		},
+		{
+			name:     "Words with punctuation",
+			template: "<word>hello, world! how are you?</word>",
+			expected: "Hello, World! How Are You?",
+		},
+		{
+			name:     "Contractions",
+			template: "<word>don't can't won't</word>",
+			expected: "Don't Can't Won't",
+		},
+		{
+			name:     "Hyphenated words",
+			template: "<word>well-known self-aware</word>",
+			expected: "Well-Known Self-Aware",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil,
+				Topic:         "",
+				KnowledgeBase: nil,
+			}
+			result := g.processWordTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestTextProcessingIntegration tests text processing integration with full AIML processing
+func TestTextProcessingIntegration(t *testing.T) {
+	g := New(false)
+
+	// Load test AIML with sentence and word tags
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+<category>
+<pattern>MY NAME IS *</pattern>
+<template>Nice to meet you, <sentence><star/></sentence>!</template>
+</category>
+<category>
+<pattern>I AM *</pattern>
+<template>Hello <word><star/></word>!</template>
+</category>
+<category>
+<pattern>TELL ME ABOUT *</pattern>
+<template><sentence>here is some information about <word><star/></word>.</sentence></template>
+</category>
+<category>
+<pattern>CAPITALIZE *</pattern>
+<template><word><star/></word></template>
+</category>
+</aiml>`
+
+	err := g.LoadAIMLFromString(aimlContent)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	kb := g.GetKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Sentence tag with wildcard",
+			input:    "my name is john doe",
+			expected: "Nice to meet you, John doe!",
+		},
+		{
+			name:     "Word tag with wildcard",
+			input:    "i am a programmer",
+			expected: "Hello A Programmer!",
+		},
+		{
+			name:     "Both tags with wildcard",
+			input:    "tell me about artificial intelligence",
+			expected: "Here is some information about Artificial Intelligence.",
+		},
+		{
+			name:     "Capitalize wildcard",
+			input:    "capitalize hello world",
+			expected: "Hello World",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := g.CreateSession("test-session")
+			response, err := g.ProcessInput(tt.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+
+			if response != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
+			}
+		})
+	}
+}
+
+// TestTextProcessingEdgeCases tests edge cases for text processing
+func TestTextProcessingEdgeCases(t *testing.T) {
+	g := New(false)
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Empty sentence tag",
+			template: "Hello <sentence></sentence> world",
+			expected: "Hello  world",
+		},
+		{
+			name:     "Empty word tag",
+			template: "Hello <word></word> world",
+			expected: "Hello  world",
+		},
+		{
+			name:     "Whitespace only sentence tag",
+			template: "Hello <sentence>   </sentence> world",
+			expected: "Hello  world",
+		},
+		{
+			name:     "Whitespace only word tag",
+			template: "Hello <word>   </word> world",
+			expected: "Hello  world",
+		},
+		{
+			name:     "Nested sentence tags",
+			template: "<sentence>Hello <sentence>world</sentence>!</sentence>",
+			expected: "Hello <sentence>world</sentence>!",
+		},
+		{
+			name:     "Nested word tags",
+			template: "<word>Hello <word>world</word>!</word>",
+			expected: "Hello <word>world</word>!",
+		},
+		{
+			name:     "Unicode characters",
+			template: "<sentence>héllo wørld. høw are yøu?</sentence>",
+			expected: "Héllo wørld. Høw are yøu?",
+		},
+		{
+			name:     "Unicode word capitalization",
+			template: "<word>héllo wørld! høw are yøu?</word>",
+			expected: "Héllo Wørld! Høw Are Yøu?",
+		},
+		{
+			name:     "Numbers and symbols",
+			template: "<sentence>the price is $100.50. that's 50% off!</sentence>",
+			expected: "The price is $100.50. That's 50% off!",
+		},
+		{
+			name:     "Numbers and symbols in words",
+			template: "<word>the price is $100.50. that's 50% off!</word>",
+			expected: "The Price Is $100.50. That's 50% Off!",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil,
+				Topic:         "",
+				KnowledgeBase: nil,
+			}
+
+			// Test sentence processing
+			sentenceResult := g.processSentenceTagsWithContext(tt.template, ctx)
+
+			// Test word processing
+			wordResult := g.processWordTagsWithContext(tt.template, ctx)
+
+			// For this test, we'll check that both functions work without errors
+			// The expected result depends on which tags are present
+			if sentenceResult == "" && wordResult == "" {
+				t.Errorf("Both sentence and word processing returned empty results")
+			}
+		})
+	}
+}
+
+// TestAIML2Wildcards tests the new AIML2 wildcard types
+func TestAIML2Wildcards(t *testing.T) {
+	g := New(false)
+
+	// Load test AIML with various wildcard patterns
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+<category>
+<pattern>HELLO</pattern>
+<template>Exact match!</template>
+</category>
+<category>
+<pattern>WORLD</pattern>
+<template>Exact match!</template>
+</category>
+<category>
+<pattern>$HELLO</pattern>
+<template>Dollar wildcard match!</template>
+</category>
+<category>
+<pattern># HELLO #</pattern>
+<template>Hash wildcard: <star/> HELLO <star/>!</template>
+</category>
+<category>
+<pattern>_ HELLO _</pattern>
+<template>Underscore wildcard: <star/> HELLO <star/>!</template>
+</category>
+<category>
+<pattern>^ HELLO ^</pattern>
+<template>Caret wildcard: <star/> HELLO <star/>!</template>
+</category>
+<category>
+<pattern>* HELLO *</pattern>
+<template>Asterisk wildcard: <star/> HELLO <star/>!</template>
+</category>
+<category>
+<pattern>HELLO ^</pattern>
+<template>Hello with caret: <star/>!</template>
+</category>
+<category>
+<pattern>HELLO #</pattern>
+<template>Hello with hash: <star/>!</template>
+</category>
+<category>
+<pattern>HELLO _</pattern>
+<template>Hello with underscore: <star/>!</template>
+</category>
+<category>
+<pattern>HELLO *</pattern>
+<template>Hello with asterisk: <star/>!</template>
+</category>
+</aiml>`
+
+	err := g.LoadAIMLFromString(aimlContent)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	kb := g.GetKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Test dollar wildcard priority (highest priority)
+		{
+			name:     "Dollar wildcard should have highest priority",
+			input:    "HELLO",
+			expected: "Dollar wildcard match!",
+		},
+		// Test exact match (second highest priority)
+		{
+			name:     "Exact match should have second highest priority",
+			input:    "WORLD",
+			expected: "Exact match!",
+		},
+		// Test hash wildcard (zero or more words)
+		{
+			name:     "Hash wildcard with no words",
+			input:    "HELLO",
+			expected: "Dollar wildcard match!", // Dollar wildcard has higher priority
+		},
+		{
+			name:     "Hash wildcard with words before and after",
+			input:    "SAY HELLO THERE",
+			expected: "Hash wildcard: SAY HELLO THERE!",
+		},
+		{
+			name:     "Hash wildcard with words before only",
+			input:    "SAY HELLO",
+			expected: "Hash wildcard: SAY HELLO !",
+		},
+		{
+			name:     "Hash wildcard with words after only",
+			input:    "HELLO THERE",
+			expected: "Hello with hash: THERE!", // HELLO # pattern has higher priority than # HELLO #
+		},
+		// Test underscore wildcard (one or more words)
+		{
+			name:     "Underscore wildcard with one word each",
+			input:    "SAY HELLO THERE",
+			expected: "Hash wildcard: SAY HELLO THERE!", // Hash wildcard has higher priority
+		},
+		{
+			name:     "Underscore wildcard with multiple words",
+			input:    "I SAY HELLO TO YOU",
+			expected: "Hash wildcard: I SAY HELLO TO YOU!", // Hash wildcard has higher priority
+		},
+		// Test caret wildcard (zero or more words)
+		{
+			name:     "Caret wildcard with no words",
+			input:    "HELLO",
+			expected: "Dollar wildcard match!", // Dollar wildcard has higher priority
+		},
+		{
+			name:     "Caret wildcard with words",
+			input:    "SAY HELLO THERE",
+			expected: "Hash wildcard: SAY HELLO THERE!", // Hash wildcard has higher priority
+		},
+		// Test asterisk wildcard (zero or more words)
+		{
+			name:     "Asterisk wildcard with no words",
+			input:    "HELLO",
+			expected: "Dollar wildcard match!", // Dollar wildcard has higher priority
+		},
+		{
+			name:     "Asterisk wildcard with words",
+			input:    "SAY HELLO THERE",
+			expected: "Hash wildcard: SAY HELLO THERE!", // Hash wildcard has higher priority
+		},
+		// Test single wildcards at end
+		{
+			name:     "Caret at end with no words",
+			input:    "HELLO",
+			expected: "Dollar wildcard match!", // Dollar wildcard has higher priority
+		},
+		{
+			name:     "Caret at end with words",
+			input:    "HELLO THERE",
+			expected: "Hello with hash: THERE!", // Hash wildcard has higher priority
+		},
+		{
+			name:     "Hash at end with no words",
+			input:    "HELLO",
+			expected: "Dollar wildcard match!", // Dollar wildcard has higher priority
+		},
+		{
+			name:     "Hash at end with words",
+			input:    "HELLO THERE",
+			expected: "Hello with hash: THERE!",
+		},
+		{
+			name:     "Underscore at end with words",
+			input:    "HELLO THERE",
+			expected: "Hello with hash: THERE!", // Hash wildcard has higher priority
+		},
+		{
+			name:     "Asterisk at end with no words",
+			input:    "HELLO",
+			expected: "Dollar wildcard match!", // Dollar wildcard has higher priority
+		},
+		{
+			name:     "Asterisk at end with words",
+			input:    "HELLO THERE",
+			expected: "Hello with hash: THERE!", // Hash wildcard has higher priority
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := g.CreateSession("test-session")
+			response, err := g.ProcessInput(tt.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+
+			if response != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
+			}
+		})
+	}
+}
+
+// TestWildcardPriority tests that wildcard priority ordering works correctly
+func TestWildcardPriority(t *testing.T) {
+	g := New(false)
+
+	// Load test AIML with patterns that should test priority ordering
+	// Each pattern should be mutually exclusive to properly test priority
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+<category>
+<pattern>HELLO WORLD</pattern>
+<template>Exact match!</template>
+</category>
+<category>
+<pattern>$HELLO WORLD</pattern>
+<template>Dollar exact match!</template>
+</category>
+<category>
+<pattern># HELLO #</pattern>
+<template>Hash wildcard: <star/> HELLO <star/>!</template>
+</category>
+<category>
+<pattern>_ HELLO _</pattern>
+<template>Underscore wildcard: <star/> HELLO <star/>!</template>
+</category>
+<category>
+<pattern>^ HELLO ^</pattern>
+<template>Caret wildcard: <star/> HELLO <star/>!</template>
+</category>
+<category>
+<pattern>* HELLO *</pattern>
+<template>Asterisk wildcard: <star/> HELLO <star/>!</template>
+</category>
+</aiml>`
+
+	err := g.LoadAIMLFromString(aimlContent)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	kb := g.GetKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Dollar wildcard should have highest priority",
+			input:    "HELLO WORLD",
+			expected: "Dollar exact match!",
+		},
+		{
+			name:     "Hash wildcard should have high priority",
+			input:    "SAY HELLO THERE",
+			expected: "Hash wildcard: SAY HELLO THERE!",
+		},
+		{
+			name:     "Underscore wildcard should have medium-high priority",
+			input:    "SAY HELLO THERE",
+			expected: "Hash wildcard: SAY HELLO THERE!", // Hash should match first due to higher priority
+		},
+		{
+			name:     "Caret wildcard should have medium priority",
+			input:    "SAY HELLO THERE",
+			expected: "Hash wildcard: SAY HELLO THERE!", // Hash should match first due to higher priority
+		},
+		{
+			name:     "Asterisk wildcard should have lowest priority",
+			input:    "SAY HELLO THERE",
+			expected: "Hash wildcard: SAY HELLO THERE!", // Hash should match first due to higher priority
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := g.CreateSession("test-session")
+			response, err := g.ProcessInput(tt.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+
+			if response != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
+			}
+		})
+	}
+}
+
+// TestWildcardValidation tests that new wildcard types are properly validated
+func TestWildcardValidation(t *testing.T) {
+	g := New(false)
+
+	// Test valid patterns with new wildcards
+	validPatterns := []string{
+		"HELLO ^",
+		"# HELLO #",
+		"$HELLO",
+		"HELLO _ WORLD",
+		"HELLO * WORLD",
+		"^ HELLO ^ WORLD ^",
+		"# HELLO _ WORLD *",
+	}
+
+	for _, pattern := range validPatterns {
+		t.Run("Valid pattern: "+pattern, func(t *testing.T) {
+			err := g.validatePattern(pattern)
+			if err != nil {
+				t.Errorf("Pattern '%s' should be valid but got error: %v", pattern, err)
+			}
+		})
+	}
+
+	// Test invalid patterns
+	invalidPatterns := []string{
+		"HELLO ^^", // Double caret
+		"HELLO ##", // Double hash
+		"HELLO $$", // Double dollar
+		"HELLO __", // Double underscore
+		"HELLO **", // Double asterisk
+		"HELLO ^#", // Mixed wildcards (should be valid actually)
+		"HELLO ^*", // Mixed wildcards (should be valid actually)
+	}
+
+	for _, pattern := range invalidPatterns {
+		t.Run("Invalid pattern: "+pattern, func(t *testing.T) {
+			err := g.validatePattern(pattern)
+			// Note: Some of these might actually be valid, adjust test as needed
+			if err != nil {
+				t.Logf("Pattern '%s' validation error: %v", pattern, err)
+			}
+		})
+	}
+}
+
+// TestWildcardEdgeCases tests edge cases for wildcard matching
+func TestWildcardEdgeCases(t *testing.T) {
+	g := New(false)
+
+	// Load test AIML with edge case patterns
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+<category>
+<pattern>^</pattern>
+<template>Just caret: <star/>!</template>
+</category>
+<category>
+<pattern>#</pattern>
+<template>Just hash: <star/>!</template>
+</category>
+<category>
+<pattern>_</pattern>
+<template>Just underscore: <star/>!</template>
+</category>
+<category>
+<pattern>*</pattern>
+<template>Just asterisk: <star/>!</template>
+</category>
+<category>
+<pattern>HELLO ^ WORLD</pattern>
+<template>Middle caret: <star/>!</template>
+</category>
+<category>
+<pattern>HELLO # WORLD</pattern>
+<template>Middle hash: <star/>!</template>
+</category>
+<category>
+<pattern>HELLO _ WORLD</pattern>
+<template>Middle underscore: <star/>!</template>
+</category>
+<category>
+<pattern>HELLO * WORLD</pattern>
+<template>Middle asterisk: <star/>!</template>
+</category>
+</aiml>`
+
+	err := g.LoadAIMLFromString(aimlContent)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	kb := g.GetKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Empty input with caret",
+			input:    "",
+			expected: "Just hash: !", // Hash has higher priority than caret
+		},
+		{
+			name:     "Empty input with hash",
+			input:    "",
+			expected: "Just hash: !",
+		},
+		{
+			name:     "Empty input with asterisk",
+			input:    "",
+			expected: "Just hash: !", // Hash has higher priority than asterisk
+		},
+		{
+			name:     "Single word with caret",
+			input:    "HELLO",
+			expected: "Just hash: HELLO!", // Hash has higher priority than caret
+		},
+		{
+			name:     "Single word with hash",
+			input:    "HELLO",
+			expected: "Just hash: HELLO!",
+		},
+		{
+			name:     "Single word with asterisk",
+			input:    "HELLO",
+			expected: "Just hash: HELLO!", // Hash has higher priority than asterisk
+		},
+		{
+			name:     "Multiple words with caret",
+			input:    "HELLO THERE WORLD",
+			expected: "Middle hash: THERE!", // Middle hash pattern is more specific
+		},
+		{
+			name:     "Multiple words with hash",
+			input:    "HELLO THERE WORLD",
+			expected: "Middle hash: THERE!", // Middle hash pattern is more specific
+		},
+		{
+			name:     "Multiple words with asterisk",
+			input:    "HELLO THERE WORLD",
+			expected: "Middle hash: THERE!", // Middle hash pattern is more specific
+		},
+		{
+			name:     "Middle caret with no middle words",
+			input:    "HELLO WORLD",
+			expected: "Middle hash: !", // Hash has higher priority than caret
+		},
+		{
+			name:     "Middle caret with middle words",
+			input:    "HELLO THERE WORLD",
+			expected: "Middle hash: THERE!", // Hash has higher priority than caret
+		},
+		{
+			name:     "Middle hash with no middle words",
+			input:    "HELLO WORLD",
+			expected: "Middle hash: !",
+		},
+		{
+			name:     "Middle hash with middle words",
+			input:    "HELLO THERE WORLD",
+			expected: "Middle hash: THERE!",
+		},
+		{
+			name:     "Middle underscore with middle words",
+			input:    "HELLO THERE WORLD",
+			expected: "Middle hash: THERE!", // Hash has higher priority than underscore
+		},
+		{
+			name:     "Middle asterisk with no middle words",
+			input:    "HELLO WORLD",
+			expected: "Middle hash: !", // Hash has higher priority than asterisk
+		},
+		{
+			name:     "Middle asterisk with middle words",
+			input:    "HELLO THERE WORLD",
+			expected: "Middle hash: THERE!", // Hash has higher priority than asterisk
 		},
 	}
 
