@@ -1,8 +1,11 @@
 package golem
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -1481,83 +1484,463 @@ func TestProcessTimeTags(t *testing.T) {
 func TestFormatDate(t *testing.T) {
 	g := New(false)
 
-	// Test various date formats
+	// Test various date formats with pattern validation
 	testCases := []struct {
-		format   string
-		expected string
+		format       string
+		pattern      string
+		description  string
+		validateFunc func(string) bool
 	}{
-		{"short", ""},       // Will be non-empty
-		{"long", ""},        // Will be non-empty
-		{"iso", ""},         // Will be non-empty
-		{"us", ""},          // Will be non-empty
-		{"european", ""},    // Will be non-empty
-		{"day", ""},         // Will be non-empty
-		{"month", ""},       // Will be non-empty
-		{"year", ""},        // Will be non-empty
-		{"dayofyear", ""},   // Will be non-empty
-		{"weekday", ""},     // Will be non-empty
-		{"week", ""},        // Will be non-empty
-		{"quarter", ""},     // Will be non-empty
-		{"leapyear", ""},    // Will be "yes" or "no"
-		{"daysinmonth", ""}, // Will be non-empty
-		{"daysinyear", ""},  // Will be "365" or "366"
-		{"", ""},            // Default format
+		{
+			format:      "short",
+			pattern:     `^\d{2}/\d{2}/\d{2}$`,
+			description: "Short date format (MM/DD/YY)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{2}/\d{2}/\d{2}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "long",
+			pattern:     `^[A-Za-z]+day, [A-Za-z]+ \d{1,2}, \d{4}$`,
+			description: "Long date format (Monday, January 2, 2006)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[A-Za-z]+day, [A-Za-z]+ \d{1,2}, \d{4}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "iso",
+			pattern:     `^\d{4}-\d{2}-\d{2}$`,
+			description: "ISO date format (YYYY-MM-DD)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{4}-\d{2}-\d{2}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "us",
+			pattern:     `^[A-Za-z]+ \d{1,2}, \d{4}$`,
+			description: "US date format (January 2, 2006)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[A-Za-z]+ \d{1,2}, \d{4}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "european",
+			pattern:     `^\d{1,2} [A-Za-z]+ \d{4}$`,
+			description: "European date format (2 January 2006)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{1,2} [A-Za-z]+ \d{4}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "day",
+			pattern:     `^[A-Za-z]+day$`,
+			description: "Day of week (Monday)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[A-Za-z]+day$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "month",
+			pattern:     `^[A-Za-z]+$`,
+			description: "Month name (January)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[A-Za-z]+$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "year",
+			pattern:     `^\d{4}$`,
+			description: "Year (2006)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{4}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "dayofyear",
+			pattern:     `^\d{1,3}$`,
+			description: "Day of year (1-366)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{1,3}$`, s)
+				if !matched {
+					return false
+				}
+				// Validate range
+				day, err := strconv.Atoi(s)
+				return err == nil && day >= 1 && day <= 366
+			},
+		},
+		{
+			format:      "weekday",
+			pattern:     `^[0-6]$`,
+			description: "Weekday number (0-6)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[0-6]$`, s)
+				if !matched {
+					return false
+				}
+				day, err := strconv.Atoi(s)
+				return err == nil && day >= 0 && day <= 6
+			},
+		},
+		{
+			format:      "week",
+			pattern:     `^\d{1,2}$`,
+			description: "Week number (1-53)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{1,2}$`, s)
+				if !matched {
+					return false
+				}
+				week, err := strconv.Atoi(s)
+				return err == nil && week >= 1 && week <= 53
+			},
+		},
+		{
+			format:      "quarter",
+			pattern:     `^Q[1-4]$`,
+			description: "Quarter (Q1-Q4)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^Q[1-4]$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "leapyear",
+			pattern:     `^(yes|no)$`,
+			description: "Leap year (yes/no)",
+			validateFunc: func(s string) bool {
+				return s == "yes" || s == "no"
+			},
+		},
+		{
+			format:      "daysinmonth",
+			pattern:     `^(28|29|30|31)$`,
+			description: "Days in current month (28-31)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^(28|29|30|31)$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "daysinyear",
+			pattern:     `^(365|366)$`,
+			description: "Days in year (365/366)",
+			validateFunc: func(s string) bool {
+				return s == "365" || s == "366"
+			},
+		},
+		{
+			format:      "",
+			pattern:     `^[A-Za-z]+ \d{1,2}, \d{4}$`,
+			description: "Default format (January 2, 2006)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[A-Za-z]+ \d{1,2}, \d{4}$`, s)
+				return matched
+			},
+		},
 	}
 
 	for _, tc := range testCases {
-		result := g.formatDate(tc.format)
-		if result == "" {
-			t.Errorf("Expected non-empty result for format '%s', got empty string", tc.format)
-		}
+		t.Run(tc.description, func(t *testing.T) {
+			result := g.formatDate(tc.format)
+			if result == "" {
+				t.Errorf("Expected non-empty result for format '%s', got empty string", tc.format)
+				return
+			}
+
+			if !tc.validateFunc(result) {
+				t.Errorf("Expected result '%s' to match pattern for format '%s' (%s)", result, tc.format, tc.description)
+			}
+		})
 	}
 
-	// Test specific formats that should return specific values
+	// Test that leap year detection works correctly
 	leapYear := g.formatDate("leapyear")
 	if leapYear != "yes" && leapYear != "no" {
 		t.Errorf("Expected leapyear to be 'yes' or 'no', got '%s'", leapYear)
 	}
 
+	// Test that days in year is correct
 	daysInYear := g.formatDate("daysinyear")
 	if daysInYear != "365" && daysInYear != "366" {
 		t.Errorf("Expected daysinyear to be '365' or '366', got '%s'", daysInYear)
+	}
+
+	// Test that quarter is valid
+	quarter := g.formatDate("quarter")
+	if !regexp.MustCompile(`^Q[1-4]$`).MatchString(quarter) {
+		t.Errorf("Expected quarter to be Q1-Q4, got '%s'", quarter)
+	}
+
+	// Test that weekday is valid
+	weekday := g.formatDate("weekday")
+	if !regexp.MustCompile(`^[0-6]$`).MatchString(weekday) {
+		t.Errorf("Expected weekday to be 0-6, got '%s'", weekday)
 	}
 }
 
 func TestFormatTime(t *testing.T) {
 	g := New(false)
 
-	// Test various time formats
+	// Test various time formats with pattern validation
 	testCases := []struct {
-		format   string
-		expected string
+		format       string
+		pattern      string
+		description  string
+		validateFunc func(string) bool
 	}{
-		{"12", ""},          // Will be non-empty
-		{"24", ""},          // Will be non-empty
-		{"iso", ""},         // Will be non-empty
-		{"hour", ""},        // Will be non-empty
-		{"minute", ""},      // Will be non-empty
-		{"second", ""},      // Will be non-empty
-		{"millisecond", ""}, // Will be non-empty
-		{"timezone", ""},    // Will be non-empty
-		{"offset", ""},      // Will be non-empty
-		{"unix", ""},        // Will be non-empty
-		{"unixmilli", ""},   // Will be non-empty
-		{"unixnano", ""},    // Will be non-empty
-		{"rfc3339", ""},     // Will be non-empty
-		{"rfc822", ""},      // Will be non-empty
-		{"kitchen", ""},     // Will be non-empty
-		{"stamp", ""},       // Will be non-empty
-		{"stampmilli", ""},  // Will be non-empty
-		{"stampmicro", ""},  // Will be non-empty
-		{"stampnano", ""},   // Will be non-empty
-		{"", ""},            // Default format
+		{
+			format:      "12",
+			pattern:     `^\d{1,2}:\d{2} (AM|PM)$`,
+			description: "12-hour format (3:04 PM)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{1,2}:\d{2} (AM|PM)$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "24",
+			pattern:     `^\d{2}:\d{2}$`,
+			description: "24-hour format (15:04)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{2}:\d{2}$`, s)
+				if !matched {
+					return false
+				}
+				// Validate hour range (00-23)
+				parts := strings.Split(s, ":")
+				hour, err := strconv.Atoi(parts[0])
+				return err == nil && hour >= 0 && hour <= 23
+			},
+		},
+		{
+			format:      "iso",
+			pattern:     `^\d{2}:\d{2}:\d{2}$`,
+			description: "ISO time format (15:04:05)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{2}:\d{2}:\d{2}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "hour",
+			pattern:     `^\d{1,2}$`,
+			description: "Hour only (0-23)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{1,2}$`, s)
+				if !matched {
+					return false
+				}
+				hour, err := strconv.Atoi(s)
+				return err == nil && hour >= 0 && hour <= 23
+			},
+		},
+		{
+			format:      "minute",
+			pattern:     `^\d{1,2}$`,
+			description: "Minute only (0-59)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{1,2}$`, s)
+				if !matched {
+					return false
+				}
+				minute, err := strconv.Atoi(s)
+				return err == nil && minute >= 0 && minute <= 59
+			},
+		},
+		{
+			format:      "second",
+			pattern:     `^\d{1,2}$`,
+			description: "Second only (0-59)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{1,2}$`, s)
+				if !matched {
+					return false
+				}
+				second, err := strconv.Atoi(s)
+				return err == nil && second >= 0 && second <= 59
+			},
+		},
+		{
+			format:      "millisecond",
+			pattern:     `^\d+$`,
+			description: "Millisecond (0-999)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d+$`, s)
+				if !matched {
+					return false
+				}
+				ms, err := strconv.Atoi(s)
+				return err == nil && ms >= 0 && ms <= 999
+			},
+		},
+		{
+			format:      "timezone",
+			pattern:     `^[A-Z]{3,4}$`,
+			description: "Timezone abbreviation (MST, EST, etc.)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[A-Z]{3,4}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "offset",
+			pattern:     `^[+-]\d{2}:\d{2}$`,
+			description: "Timezone offset (+05:00, -08:00)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[+-]\d{2}:\d{2}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "unix",
+			pattern:     `^\d{10}$`,
+			description: "Unix timestamp (10 digits)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{10}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "unixmilli",
+			pattern:     `^\d{13}$`,
+			description: "Unix timestamp in milliseconds (13 digits)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{13}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "unixnano",
+			pattern:     `^\d{19}$`,
+			description: "Unix timestamp in nanoseconds (19 digits)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{19}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "rfc3339",
+			pattern:     `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$`,
+			description: "RFC3339 format (2006-01-02T15:04:05Z or with timezone)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "rfc822",
+			pattern:     `^\d{2} [A-Za-z]{3} \d{2} \d{2}:\d{2} [A-Z]{3,4}$`,
+			description: "RFC822 format (02 Oct 25 21:57 PDT)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{2} [A-Za-z]{3} \d{2} \d{2}:\d{2} [A-Z]{3,4}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "kitchen",
+			pattern:     `^\d{1,2}:\d{2} (AM|PM)$`,
+			description: "Kitchen format (3:04PM)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{1,2}:\d{2}(AM|PM)$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "stamp",
+			pattern:     `^[A-Za-z]{3}\s+\d{1,2} \d{2}:\d{2}:\d{2}$`,
+			description: "Stamp format (Oct _2 21:57:33)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[A-Za-z]{3}\s+\d{1,2} \d{2}:\d{2}:\d{2}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "stampmilli",
+			pattern:     `^[A-Za-z]{3}\s+\d{1,2} \d{2}:\d{2}:\d{2}\.\d{3}$`,
+			description: "StampMilli format (Oct _2 21:57:33.248)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[A-Za-z]{3}\s+\d{1,2} \d{2}:\d{2}:\d{2}\.\d{3}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "stampmicro",
+			pattern:     `^[A-Za-z]{3}\s+\d{1,2} \d{2}:\d{2}:\d{2}\.\d{6}$`,
+			description: "StampMicro format (Oct _2 21:57:33.248592)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[A-Za-z]{3}\s+\d{1,2} \d{2}:\d{2}:\d{2}\.\d{6}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "stampnano",
+			pattern:     `^[A-Za-z]{3}\s+\d{1,2} \d{2}:\d{2}:\d{2}\.\d{9}$`,
+			description: "StampNano format (Oct _2 21:57:33.249253513)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^[A-Za-z]{3}\s+\d{1,2} \d{2}:\d{2}:\d{2}\.\d{9}$`, s)
+				return matched
+			},
+		},
+		{
+			format:      "",
+			pattern:     `^\d{1,2}:\d{2} (AM|PM)$`,
+			description: "Default format (3:04 PM)",
+			validateFunc: func(s string) bool {
+				matched, _ := regexp.MatchString(`^\d{1,2}:\d{2} (AM|PM)$`, s)
+				return matched
+			},
+		},
 	}
 
 	for _, tc := range testCases {
-		result := g.formatTime(tc.format)
-		if result == "" {
-			t.Errorf("Expected non-empty result for format '%s', got empty string", tc.format)
-		}
+		t.Run(tc.description, func(t *testing.T) {
+			result := g.formatTime(tc.format)
+			if result == "" {
+				t.Errorf("Expected non-empty result for format '%s', got empty string", tc.format)
+				return
+			}
+
+			if !tc.validateFunc(result) {
+				t.Errorf("Expected result '%s' to match pattern for format '%s' (%s)", result, tc.format, tc.description)
+			}
+		})
+	}
+
+	// Test that hour is in valid range
+	hour := g.formatTime("hour")
+	hourInt, err := strconv.Atoi(hour)
+	if err != nil || hourInt < 0 || hourInt > 23 {
+		t.Errorf("Expected hour to be 0-23, got '%s'", hour)
+	}
+
+	// Test that minute is in valid range
+	minute := g.formatTime("minute")
+	minuteInt, err := strconv.Atoi(minute)
+	if err != nil || minuteInt < 0 || minuteInt > 59 {
+		t.Errorf("Expected minute to be 0-59, got '%s'", minute)
+	}
+
+	// Test that second is in valid range
+	second := g.formatTime("second")
+	secondInt, err := strconv.Atoi(second)
+	if err != nil || secondInt < 0 || secondInt > 59 {
+		t.Errorf("Expected second to be 0-59, got '%s'", second)
+	}
+
+	// Test that millisecond is in valid range
+	millisecond := g.formatTime("millisecond")
+	msInt, err := strconv.Atoi(millisecond)
+	if err != nil || msInt < 0 || msInt > 999 {
+		t.Errorf("Expected millisecond to be 0-999, got '%s'", millisecond)
 	}
 }
 
@@ -1574,6 +1957,237 @@ func TestProcessDateTimeTags(t *testing.T) {
 	if !strings.Contains(result, "Today is") || !strings.Contains(result, "and it is") {
 		t.Errorf("Expected result to contain template text, got '%s'", result)
 	}
+}
+
+func TestDateTimeTagsWithAllFormats(t *testing.T) {
+	g := New(false)
+
+	// Test all date formats in actual <date> tags
+	dateFormats := []string{
+		"short", "long", "iso", "us", "european", "day", "month", "year",
+		"dayofyear", "weekday", "week", "quarter", "leapyear", "daysinmonth", "daysinyear",
+	}
+
+	for _, format := range dateFormats {
+		t.Run("date_"+format, func(t *testing.T) {
+			template := fmt.Sprintf("Date: <date format=\"%s\"/>", format)
+			result := g.processDateTags(template)
+
+			if strings.Contains(result, "<date") {
+				t.Errorf("Expected <date> tag to be replaced for format '%s', got '%s'", format, result)
+			}
+
+			// Extract the date part (after "Date: ")
+			parts := strings.Split(result, "Date: ")
+			if len(parts) != 2 {
+				t.Errorf("Expected 'Date: ' prefix, got '%s'", result)
+				return
+			}
+
+			dateStr := parts[1]
+			if dateStr == "" {
+				t.Errorf("Expected non-empty date for format '%s', got empty", format)
+			}
+
+			// Validate specific formats
+			switch format {
+			case "short":
+				if !regexp.MustCompile(`^\d{2}/\d{2}/\d{2}$`).MatchString(dateStr) {
+					t.Errorf("Expected short date format (MM/DD/YY), got '%s'", dateStr)
+				}
+			case "iso":
+				if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).MatchString(dateStr) {
+					t.Errorf("Expected ISO date format (YYYY-MM-DD), got '%s'", dateStr)
+				}
+			case "year":
+				if !regexp.MustCompile(`^\d{4}$`).MatchString(dateStr) {
+					t.Errorf("Expected year format (YYYY), got '%s'", dateStr)
+				}
+			case "leapyear":
+				if dateStr != "yes" && dateStr != "no" {
+					t.Errorf("Expected leapyear to be 'yes' or 'no', got '%s'", dateStr)
+				}
+			case "daysinyear":
+				if dateStr != "365" && dateStr != "366" {
+					t.Errorf("Expected daysinyear to be '365' or '366', got '%s'", dateStr)
+				}
+			case "quarter":
+				if !regexp.MustCompile(`^Q[1-4]$`).MatchString(dateStr) {
+					t.Errorf("Expected quarter format (Q1-Q4), got '%s'", dateStr)
+				}
+			case "weekday":
+				if !regexp.MustCompile(`^[0-6]$`).MatchString(dateStr) {
+					t.Errorf("Expected weekday format (0-6), got '%s'", dateStr)
+				}
+			}
+		})
+	}
+
+	// Test all time formats in actual <time> tags
+	timeFormats := []string{
+		"12", "24", "iso", "hour", "minute", "second", "millisecond",
+		"timezone", "offset", "unix", "unixmilli", "unixnano",
+		"rfc3339", "rfc822", "kitchen", "stamp", "stampmilli", "stampmicro", "stampnano",
+	}
+
+	for _, format := range timeFormats {
+		t.Run("time_"+format, func(t *testing.T) {
+			template := fmt.Sprintf("Time: <time format=\"%s\"/>", format)
+			result := g.processTimeTags(template)
+
+			if strings.Contains(result, "<time") {
+				t.Errorf("Expected <time> tag to be replaced for format '%s', got '%s'", format, result)
+			}
+
+			// Extract the time part (after "Time: ")
+			parts := strings.Split(result, "Time: ")
+			if len(parts) != 2 {
+				t.Errorf("Expected 'Time: ' prefix, got '%s'", result)
+				return
+			}
+
+			timeStr := parts[1]
+			if timeStr == "" {
+				t.Errorf("Expected non-empty time for format '%s', got empty", format)
+			}
+
+			// Validate specific formats
+			switch format {
+			case "12":
+				if !regexp.MustCompile(`^\d{1,2}:\d{2} (AM|PM)$`).MatchString(timeStr) {
+					t.Errorf("Expected 12-hour format (H:MM AM/PM), got '%s'", timeStr)
+				}
+			case "24":
+				if !regexp.MustCompile(`^\d{2}:\d{2}$`).MatchString(timeStr) {
+					t.Errorf("Expected 24-hour format (HH:MM), got '%s'", timeStr)
+				}
+			case "iso":
+				if !regexp.MustCompile(`^\d{2}:\d{2}:\d{2}$`).MatchString(timeStr) {
+					t.Errorf("Expected ISO time format (HH:MM:SS), got '%s'", timeStr)
+				}
+			case "hour":
+				if !regexp.MustCompile(`^\d{1,2}$`).MatchString(timeStr) {
+					t.Errorf("Expected hour format (0-23), got '%s'", timeStr)
+				} else {
+					hour, err := strconv.Atoi(timeStr)
+					if err != nil || hour < 0 || hour > 23 {
+						t.Errorf("Expected hour to be 0-23, got '%s'", timeStr)
+					}
+				}
+			case "minute":
+				if !regexp.MustCompile(`^\d{1,2}$`).MatchString(timeStr) {
+					t.Errorf("Expected minute format (0-59), got '%s'", timeStr)
+				} else {
+					minute, err := strconv.Atoi(timeStr)
+					if err != nil || minute < 0 || minute > 59 {
+						t.Errorf("Expected minute to be 0-59, got '%s'", timeStr)
+					}
+				}
+			case "second":
+				if !regexp.MustCompile(`^\d{1,2}$`).MatchString(timeStr) {
+					t.Errorf("Expected second format (0-59), got '%s'", timeStr)
+				} else {
+					second, err := strconv.Atoi(timeStr)
+					if err != nil || second < 0 || second > 59 {
+						t.Errorf("Expected second to be 0-59, got '%s'", timeStr)
+					}
+				}
+			case "millisecond":
+				if !regexp.MustCompile(`^\d+$`).MatchString(timeStr) {
+					t.Errorf("Expected millisecond format (0-999), got '%s'", timeStr)
+				} else {
+					ms, err := strconv.Atoi(timeStr)
+					if err != nil || ms < 0 || ms > 999 {
+						t.Errorf("Expected millisecond to be 0-999, got '%s'", timeStr)
+					}
+				}
+			case "timezone":
+				if !regexp.MustCompile(`^[A-Z]{3,4}$`).MatchString(timeStr) {
+					t.Errorf("Expected timezone format (MST, EST, etc.), got '%s'", timeStr)
+				}
+			case "offset":
+				if !regexp.MustCompile(`^[+-]\d{2}:\d{2}$`).MatchString(timeStr) {
+					t.Errorf("Expected offset format (+05:00, -08:00), got '%s'", timeStr)
+				}
+			case "unix":
+				if !regexp.MustCompile(`^\d{10}$`).MatchString(timeStr) {
+					t.Errorf("Expected unix timestamp (10 digits), got '%s'", timeStr)
+				}
+			case "unixmilli":
+				if !regexp.MustCompile(`^\d{13}$`).MatchString(timeStr) {
+					t.Errorf("Expected unix millisecond timestamp (13 digits), got '%s'", timeStr)
+				}
+			case "unixnano":
+				if !regexp.MustCompile(`^\d{19}$`).MatchString(timeStr) {
+					t.Errorf("Expected unix nanosecond timestamp (19 digits), got '%s'", timeStr)
+				}
+			case "rfc3339":
+				if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$`).MatchString(timeStr) {
+					t.Errorf("Expected RFC3339 format (2006-01-02T15:04:05Z or with timezone), got '%s'", timeStr)
+				}
+			case "kitchen":
+				if !regexp.MustCompile(`^\d{1,2}:\d{2}(AM|PM)$`).MatchString(timeStr) {
+					t.Errorf("Expected kitchen format (3:04PM), got '%s'", timeStr)
+				}
+			}
+		})
+	}
+
+	// Test default formats (no format specified)
+	t.Run("default_date", func(t *testing.T) {
+		template := "Date: <date/>"
+		result := g.processDateTags(template)
+
+		if strings.Contains(result, "<date") {
+			t.Errorf("Expected <date> tag to be replaced, got '%s'", result)
+		}
+
+		parts := strings.Split(result, "Date: ")
+		if len(parts) != 2 {
+			t.Errorf("Expected 'Date: ' prefix, got '%s'", result)
+			return
+		}
+
+		dateStr := parts[1]
+		if !regexp.MustCompile(`^[A-Za-z]+ \d{1,2}, \d{4}$`).MatchString(dateStr) {
+			t.Errorf("Expected default date format (January 2, 2006), got '%s'", dateStr)
+		}
+	})
+
+	t.Run("default_time", func(t *testing.T) {
+		template := "Time: <time/>"
+		result := g.processTimeTags(template)
+
+		if strings.Contains(result, "<time") {
+			t.Errorf("Expected <time> tag to be replaced, got '%s'", result)
+		}
+
+		parts := strings.Split(result, "Time: ")
+		if len(parts) != 2 {
+			t.Errorf("Expected 'Time: ' prefix, got '%s'", result)
+			return
+		}
+
+		timeStr := parts[1]
+		if !regexp.MustCompile(`^\d{1,2}:\d{2} (AM|PM)$`).MatchString(timeStr) {
+			t.Errorf("Expected default time format (3:04 PM), got '%s'", timeStr)
+		}
+	})
+
+	// Test multiple date/time tags in one template
+	t.Run("multiple_tags", func(t *testing.T) {
+		template := "Today is <date format=\"short\"/> at <time format=\"12\"/>, which is <date format=\"iso\"/> <time format=\"24\"/>"
+		result := g.processDateTimeTags(template)
+
+		if strings.Contains(result, "<date") || strings.Contains(result, "<time") {
+			t.Errorf("Expected all date/time tags to be replaced, got '%s'", result)
+		}
+
+		// Should contain the template text
+		if !strings.Contains(result, "Today is") || !strings.Contains(result, "at") || !strings.Contains(result, "which is") {
+			t.Errorf("Expected result to contain template text, got '%s'", result)
+		}
+	})
 }
 
 func TestProcessTemplateWithDateTime(t *testing.T) {
