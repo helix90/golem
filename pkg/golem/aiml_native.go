@@ -6064,3 +6064,770 @@ func (cache *ThatPatternCache) ClearCache() {
 	cache.Hits = make(map[string]int)
 	cache.Misses = 0
 }
+
+// ThatPatternValidationResult represents detailed validation results
+type ThatPatternValidationResult struct {
+	IsValid     bool                   `json:"is_valid"`
+	Errors      []string               `json:"errors"`
+	Warnings    []string               `json:"warnings"`
+	Suggestions []string               `json:"suggestions"`
+	Stats       map[string]interface{} `json:"stats"`
+}
+
+// ValidateThatPatternDetailed provides comprehensive validation with detailed error messages
+func ValidateThatPatternDetailed(pattern string) *ThatPatternValidationResult {
+	result := &ThatPatternValidationResult{
+		IsValid:     true,
+		Errors:      []string{},
+		Warnings:    []string{},
+		Suggestions: []string{},
+		Stats:       make(map[string]interface{}),
+	}
+
+	// Basic checks
+	if pattern == "" {
+		result.Errors = append(result.Errors, "That pattern cannot be empty")
+		result.IsValid = false
+		return result
+	}
+
+	// Calculate statistics
+	result.Stats["length"] = len(pattern)
+	result.Stats["word_count"] = len(strings.Fields(pattern))
+	result.Stats["wildcard_count"] = 0
+	result.Stats["wildcard_types"] = make(map[string]int)
+
+	// Check for balanced wildcards (all types) with detailed reporting
+	starCount := strings.Count(pattern, "*")
+	underscoreCount := strings.Count(pattern, "_")
+	caretCount := strings.Count(pattern, "^")
+	hashCount := strings.Count(pattern, "#")
+	dollarCount := strings.Count(pattern, "$")
+	totalWildcards := starCount + underscoreCount + caretCount + hashCount + dollarCount
+
+	result.Stats["wildcard_count"] = totalWildcards
+	result.Stats["wildcard_types"] = map[string]int{
+		"star":       starCount,
+		"underscore": underscoreCount,
+		"caret":      caretCount,
+		"hash":       hashCount,
+		"dollar":     dollarCount,
+	}
+
+	if totalWildcards > 9 {
+		result.Errors = append(result.Errors, fmt.Sprintf("Too many wildcards: %d (maximum 9 allowed). Consider simplifying the pattern.", totalWildcards))
+		result.IsValid = false
+	}
+
+	// Check for valid characters with specific error reporting
+	invalidChars := findInvalidCharacters(pattern)
+	if len(invalidChars) > 0 {
+		result.Errors = append(result.Errors, fmt.Sprintf("Invalid characters found: %s. Only A-Z, 0-9, spaces, wildcards (*_^#$), and basic punctuation are allowed.", strings.Join(invalidChars, ", ")))
+		result.IsValid = false
+	}
+
+	// Check for balanced tags with specific error reporting
+	tagErrors := validateBalancedTags(pattern)
+	result.Errors = append(result.Errors, tagErrors...)
+	if len(tagErrors) > 0 {
+		result.IsValid = false
+	}
+
+	// Check for common pattern issues
+	patternIssues := validatePatternStructure(pattern)
+	result.Warnings = append(result.Warnings, patternIssues...)
+
+	// Check for performance issues
+	performanceIssues := validatePatternPerformance(pattern)
+	result.Warnings = append(result.Warnings, performanceIssues...)
+
+	// Generate suggestions
+	result.Suggestions = generatePatternSuggestions(pattern, result.Stats)
+
+	return result
+}
+
+// findInvalidCharacters identifies invalid characters in the pattern
+func findInvalidCharacters(pattern string) []string {
+	validChars := regexp.MustCompile(`^[A-Z0-9\s\*_^#$<>/'.!?,\-()]+$`)
+	invalidChars := []string{}
+
+	for i, char := range pattern {
+		if !validChars.MatchString(string(char)) {
+			invalidChars = append(invalidChars, fmt.Sprintf("'%c' at position %d", char, i))
+		}
+	}
+
+	return invalidChars
+}
+
+// validateBalancedTags checks for balanced XML-like tags
+func validateBalancedTags(pattern string) []string {
+	errors := []string{}
+
+	// Check set tags
+	setOpenCount := strings.Count(pattern, "<set>")
+	setCloseCount := strings.Count(pattern, "</set>")
+	if setOpenCount != setCloseCount {
+		errors = append(errors, fmt.Sprintf("Unbalanced set tags: %d opening, %d closing", setOpenCount, setCloseCount))
+	}
+
+	// Check topic tags
+	topicOpenCount := strings.Count(pattern, "<topic>")
+	topicCloseCount := strings.Count(pattern, "</topic>")
+	if topicOpenCount != topicCloseCount {
+		errors = append(errors, fmt.Sprintf("Unbalanced topic tags: %d opening, %d closing", topicOpenCount, topicCloseCount))
+	}
+
+	// Check alternation groups
+	parenOpenCount := strings.Count(pattern, "(")
+	parenCloseCount := strings.Count(pattern, ")")
+	if parenOpenCount != parenCloseCount {
+		errors = append(errors, fmt.Sprintf("Unbalanced alternation groups: %d opening, %d closing", parenOpenCount, parenCloseCount))
+	}
+
+	return errors
+}
+
+// validatePatternStructure checks for common structural issues
+func validatePatternStructure(pattern string) []string {
+	warnings := []string{}
+
+	// Check for consecutive wildcards
+	if strings.Contains(pattern, "**") || strings.Contains(pattern, "__") ||
+		strings.Contains(pattern, "^^") || strings.Contains(pattern, "##") {
+		warnings = append(warnings, "Consecutive wildcards detected. This may cause matching issues.")
+	}
+
+	// Check for wildcards at pattern boundaries
+	if strings.HasPrefix(pattern, "*") || strings.HasPrefix(pattern, "_") ||
+		strings.HasPrefix(pattern, "^") || strings.HasPrefix(pattern, "#") {
+		warnings = append(warnings, "Pattern starts with wildcard. Consider if this is intentional.")
+	}
+
+	if strings.HasSuffix(pattern, "*") || strings.HasSuffix(pattern, "_") ||
+		strings.HasSuffix(pattern, "^") || strings.HasSuffix(pattern, "#") {
+		warnings = append(warnings, "Pattern ends with wildcard. Consider if this is intentional.")
+	}
+
+	// Check for very short patterns
+	if len(strings.TrimSpace(pattern)) < 3 {
+		warnings = append(warnings, "Very short pattern. Consider if this provides enough specificity.")
+	}
+
+	// Check for very long patterns
+	if len(pattern) > 200 {
+		warnings = append(warnings, "Very long pattern. Consider breaking into smaller, more specific patterns.")
+	}
+
+	return warnings
+}
+
+// validatePatternPerformance checks for potential performance issues
+func validatePatternPerformance(pattern string) []string {
+	warnings := []string{}
+
+	// Check for complex wildcard combinations
+	wildcardCount := strings.Count(pattern, "*") + strings.Count(pattern, "_") +
+		strings.Count(pattern, "^") + strings.Count(pattern, "#")
+
+	if wildcardCount > 5 {
+		warnings = append(warnings, "High wildcard count may impact matching performance.")
+	}
+
+	// Check for nested alternation groups
+	parenDepth := 0
+	maxDepth := 0
+	for _, char := range pattern {
+		if char == '(' {
+			parenDepth++
+			if parenDepth > maxDepth {
+				maxDepth = parenDepth
+			}
+		} else if char == ')' {
+			parenDepth--
+		}
+	}
+
+	if maxDepth > 3 {
+		warnings = append(warnings, "Deeply nested alternation groups may impact performance.")
+	}
+
+	// Check for repeated subpatterns
+	words := strings.Fields(pattern)
+	wordCounts := make(map[string]int)
+	for _, word := range words {
+		wordCounts[word]++
+	}
+
+	for word, count := range wordCounts {
+		if count > 3 {
+			warnings = append(warnings, fmt.Sprintf("Word '%s' appears %d times. Consider if this is intentional.", word, count))
+		}
+	}
+
+	return warnings
+}
+
+// generatePatternSuggestions generates helpful suggestions for pattern improvement
+func generatePatternSuggestions(pattern string, stats map[string]interface{}) []string {
+	suggestions := []string{}
+
+	// Suggest based on wildcard count
+	if wildcardCount, ok := stats["wildcard_count"].(int); ok {
+		if wildcardCount == 0 {
+			suggestions = append(suggestions, "Consider adding wildcards (*, _, ^, #) for more flexible matching.")
+		} else if wildcardCount > 5 {
+			suggestions = append(suggestions, "Consider reducing wildcards for more specific matching.")
+		}
+	}
+
+	// Suggest based on length
+	if length, ok := stats["length"].(int); ok {
+		if length < 10 {
+			suggestions = append(suggestions, "Short patterns may match too broadly. Consider adding more context.")
+		} else if length > 100 {
+			suggestions = append(suggestions, "Long patterns may be too specific. Consider using wildcards for flexibility.")
+		}
+	}
+
+	// Suggest based on word count
+	if wordCount, ok := stats["word_count"].(int); ok {
+		if wordCount == 1 {
+			suggestions = append(suggestions, "Single-word patterns are very broad. Consider adding context words.")
+		}
+	}
+
+	// General suggestions
+	if !strings.Contains(pattern, " ") {
+		suggestions = append(suggestions, "Consider adding spaces between words for better readability.")
+	}
+
+	if strings.Contains(pattern, "  ") {
+		suggestions = append(suggestions, "Multiple consecutive spaces detected. Consider normalizing whitespace.")
+	}
+
+	return suggestions
+}
+
+// ThatContextDebugger provides comprehensive debugging tools for that context
+type ThatContextDebugger struct {
+	Session         *ChatSession
+	EnableTracing   bool
+	EnableProfiling bool
+	TraceLog        []ThatTraceEntry
+	PerformanceLog  []ThatPerformanceEntry
+}
+
+// ThatTraceEntry represents a single trace entry for debugging
+type ThatTraceEntry struct {
+	Timestamp int64                  `json:"timestamp"`
+	Operation string                 `json:"operation"`
+	Pattern   string                 `json:"pattern"`
+	Input     string                 `json:"input"`
+	Result    string                 `json:"result"`
+	Matched   bool                   `json:"matched"`
+	Duration  int64                  `json:"duration_ns"`
+	Context   map[string]interface{} `json:"context"`
+	Error     string                 `json:"error,omitempty"`
+}
+
+// ThatPerformanceEntry represents performance metrics for that operations
+type ThatPerformanceEntry struct {
+	Timestamp    int64  `json:"timestamp"`
+	Operation    string `json:"operation"`
+	Duration     int64  `json:"duration_ns"`
+	MemoryUsage  int64  `json:"memory_bytes"`
+	PatternCount int    `json:"pattern_count"`
+	HistorySize  int    `json:"history_size"`
+	CacheHits    int    `json:"cache_hits"`
+	CacheMisses  int    `json:"cache_misses"`
+}
+
+// NewThatContextDebugger creates a new debugger instance
+func NewThatContextDebugger(session *ChatSession) *ThatContextDebugger {
+	return &ThatContextDebugger{
+		Session:         session,
+		EnableTracing:   false,
+		EnableProfiling: false,
+		TraceLog:        make([]ThatTraceEntry, 0),
+		PerformanceLog:  make([]ThatPerformanceEntry, 0),
+	}
+}
+
+// EnableDebugging enables all debugging features
+func (debugger *ThatContextDebugger) EnableDebugging() {
+	debugger.EnableTracing = true
+	debugger.EnableProfiling = true
+}
+
+// DisableDebugging disables all debugging features
+func (debugger *ThatContextDebugger) DisableDebugging() {
+	debugger.EnableTracing = false
+	debugger.EnableProfiling = false
+}
+
+// TraceThatMatching traces a that pattern matching operation
+func (debugger *ThatContextDebugger) TraceThatMatching(pattern, input string, matched bool, result string, duration int64, err error) {
+	if !debugger.EnableTracing {
+		return
+	}
+
+	entry := ThatTraceEntry{
+		Timestamp: time.Now().UnixNano(),
+		Operation: "that_matching",
+		Pattern:   pattern,
+		Input:     input,
+		Result:    result,
+		Matched:   matched,
+		Duration:  duration,
+		Context: map[string]interface{}{
+			"history_size": len(debugger.Session.ThatHistory),
+			"topic":        debugger.Session.Topic,
+		},
+	}
+
+	if err != nil {
+		entry.Error = err.Error()
+	}
+
+	debugger.TraceLog = append(debugger.TraceLog, entry)
+
+	// Keep only last 1000 entries to prevent memory issues
+	if len(debugger.TraceLog) > 1000 {
+		debugger.TraceLog = debugger.TraceLog[1:]
+	}
+}
+
+// TraceThatHistoryOperation traces a that history operation
+func (debugger *ThatContextDebugger) TraceThatHistoryOperation(operation, input string, duration int64, err error) {
+	if !debugger.EnableTracing {
+		return
+	}
+
+	entry := ThatTraceEntry{
+		Timestamp: time.Now().UnixNano(),
+		Operation: operation,
+		Pattern:   "",
+		Input:     input,
+		Result:    "",
+		Matched:   err == nil,
+		Duration:  duration,
+		Context: map[string]interface{}{
+			"history_size": len(debugger.Session.ThatHistory),
+			"topic":        debugger.Session.Topic,
+		},
+	}
+
+	if err != nil {
+		entry.Error = err.Error()
+	}
+
+	debugger.TraceLog = append(debugger.TraceLog, entry)
+
+	// Keep only last 1000 entries
+	if len(debugger.TraceLog) > 1000 {
+		debugger.TraceLog = debugger.TraceLog[1:]
+	}
+}
+
+// RecordPerformance records performance metrics
+func (debugger *ThatContextDebugger) RecordPerformance(operation string, duration, memoryUsage int64, patternCount, historySize, cacheHits, cacheMisses int) {
+	if !debugger.EnableProfiling {
+		return
+	}
+
+	entry := ThatPerformanceEntry{
+		Timestamp:    time.Now().UnixNano(),
+		Operation:    operation,
+		Duration:     duration,
+		MemoryUsage:  memoryUsage,
+		PatternCount: patternCount,
+		HistorySize:  historySize,
+		CacheHits:    cacheHits,
+		CacheMisses:  cacheMisses,
+	}
+
+	debugger.PerformanceLog = append(debugger.PerformanceLog, entry)
+
+	// Keep only last 500 entries
+	if len(debugger.PerformanceLog) > 500 {
+		debugger.PerformanceLog = debugger.PerformanceLog[1:]
+	}
+}
+
+// GetTraceSummary returns a summary of trace operations
+func (debugger *ThatContextDebugger) GetTraceSummary() map[string]interface{} {
+	if len(debugger.TraceLog) == 0 {
+		return map[string]interface{}{
+			"total_operations": 0,
+			"message":          "No trace data available",
+		}
+	}
+
+	operations := make(map[string]int)
+	errors := 0
+	totalDuration := int64(0)
+	matchedCount := 0
+
+	for _, entry := range debugger.TraceLog {
+		operations[entry.Operation]++
+		if entry.Error != "" {
+			errors++
+		}
+		totalDuration += entry.Duration
+		if entry.Matched {
+			matchedCount++
+		}
+	}
+
+	avgDuration := float64(0)
+	if len(debugger.TraceLog) > 0 {
+		avgDuration = float64(totalDuration) / float64(len(debugger.TraceLog))
+	}
+
+	return map[string]interface{}{
+		"total_operations":  len(debugger.TraceLog),
+		"operations":        operations,
+		"errors":            errors,
+		"matched_count":     matchedCount,
+		"match_rate":        float64(matchedCount) / float64(len(debugger.TraceLog)),
+		"avg_duration_ns":   avgDuration,
+		"total_duration_ns": totalDuration,
+	}
+}
+
+// GetPerformanceSummary returns performance analysis
+func (debugger *ThatContextDebugger) GetPerformanceSummary() map[string]interface{} {
+	if len(debugger.PerformanceLog) == 0 {
+		return map[string]interface{}{
+			"total_operations": 0,
+			"message":          "No performance data available",
+		}
+	}
+
+	operations := make(map[string][]int64)
+	totalDuration := int64(0)
+	totalMemory := int64(0)
+
+	for _, entry := range debugger.PerformanceLog {
+		operations[entry.Operation] = append(operations[entry.Operation], entry.Duration)
+		totalDuration += entry.Duration
+		totalMemory += entry.MemoryUsage
+	}
+
+	// Calculate averages per operation
+	operationStats := make(map[string]map[string]interface{})
+	for op, durations := range operations {
+		if len(durations) > 0 {
+			sum := int64(0)
+			min := durations[0]
+			max := durations[0]
+			for _, d := range durations {
+				sum += d
+				if d < min {
+					min = d
+				}
+				if d > max {
+					max = d
+				}
+			}
+
+			operationStats[op] = map[string]interface{}{
+				"count":  len(durations),
+				"avg_ns": float64(sum) / float64(len(durations)),
+				"min_ns": min,
+				"max_ns": max,
+			}
+		}
+	}
+
+	avgDuration := float64(0)
+	avgMemory := float64(0)
+	if len(debugger.PerformanceLog) > 0 {
+		avgDuration = float64(totalDuration) / float64(len(debugger.PerformanceLog))
+		avgMemory = float64(totalMemory) / float64(len(debugger.PerformanceLog))
+	}
+
+	return map[string]interface{}{
+		"total_operations":   len(debugger.PerformanceLog),
+		"operation_stats":    operationStats,
+		"avg_duration_ns":    avgDuration,
+		"avg_memory_bytes":   avgMemory,
+		"total_duration_ns":  totalDuration,
+		"total_memory_bytes": totalMemory,
+	}
+}
+
+// AnalyzeThatPatterns analyzes that pattern usage and effectiveness
+func (debugger *ThatContextDebugger) AnalyzeThatPatterns() map[string]interface{} {
+	analysis := map[string]interface{}{
+		"history_analysis":     debugger.analyzeThatHistory(),
+		"pattern_analysis":     debugger.analyzePatternUsage(),
+		"performance_analysis": debugger.analyzePerformance(),
+		"recommendations":      debugger.generateRecommendations(),
+	}
+
+	return analysis
+}
+
+// analyzeThatHistory analyzes that history patterns
+func (debugger *ThatContextDebugger) analyzeThatHistory() map[string]interface{} {
+	history := debugger.Session.ThatHistory
+	if len(history) == 0 {
+		return map[string]interface{}{
+			"message": "No that history available",
+		}
+	}
+
+	// Analyze history patterns
+	lengths := make([]int, len(history))
+	totalLength := 0
+	uniqueResponses := make(map[string]int)
+
+	for i, response := range history {
+		lengths[i] = len(response)
+		totalLength += len(response)
+		uniqueResponses[response]++
+	}
+
+	// Calculate statistics
+	avgLength := float64(totalLength) / float64(len(history))
+	minLength := lengths[0]
+	maxLength := lengths[0]
+	for _, l := range lengths {
+		if l < minLength {
+			minLength = l
+		}
+		if l > maxLength {
+			maxLength = l
+		}
+	}
+
+	// Find most common responses
+	mostCommon := ""
+	maxCount := 0
+	for response, count := range uniqueResponses {
+		if count > maxCount {
+			maxCount = count
+			mostCommon = response
+		}
+	}
+
+	return map[string]interface{}{
+		"total_responses":      len(history),
+		"unique_responses":     len(uniqueResponses),
+		"avg_length":           avgLength,
+		"min_length":           minLength,
+		"max_length":           maxLength,
+		"most_common_response": mostCommon,
+		"most_common_count":    maxCount,
+		"repetition_rate":      float64(maxCount) / float64(len(history)),
+	}
+}
+
+// analyzePatternUsage analyzes pattern matching effectiveness
+func (debugger *ThatContextDebugger) analyzePatternUsage() map[string]interface{} {
+	if len(debugger.TraceLog) == 0 {
+		return map[string]interface{}{
+			"message": "No pattern matching data available",
+		}
+	}
+
+	patternStats := make(map[string]map[string]int)
+	totalMatches := 0
+	totalAttempts := 0
+
+	for _, entry := range debugger.TraceLog {
+		if entry.Operation == "that_matching" {
+			totalAttempts++
+			if entry.Matched {
+				totalMatches++
+			}
+
+			if patternStats[entry.Pattern] == nil {
+				patternStats[entry.Pattern] = map[string]int{
+					"attempts": 0,
+					"matches":  0,
+				}
+			}
+
+			patternStats[entry.Pattern]["attempts"]++
+			if entry.Matched {
+				patternStats[entry.Pattern]["matches"]++
+			}
+		}
+	}
+
+	// Calculate effectiveness
+	effectiveness := float64(0)
+	if totalAttempts > 0 {
+		effectiveness = float64(totalMatches) / float64(totalAttempts)
+	}
+
+	// Find most/least effective patterns
+	mostEffective := ""
+	leastEffective := ""
+	maxEffectiveness := float64(0)
+	minEffectiveness := float64(1)
+
+	for pattern, stats := range patternStats {
+		if stats["attempts"] > 0 {
+			patternEffectiveness := float64(stats["matches"]) / float64(stats["attempts"])
+			if patternEffectiveness > maxEffectiveness {
+				maxEffectiveness = patternEffectiveness
+				mostEffective = pattern
+			}
+			if patternEffectiveness < minEffectiveness {
+				minEffectiveness = patternEffectiveness
+				leastEffective = pattern
+			}
+		}
+	}
+
+	return map[string]interface{}{
+		"total_patterns":          len(patternStats),
+		"total_attempts":          totalAttempts,
+		"total_matches":           totalMatches,
+		"overall_effectiveness":   effectiveness,
+		"most_effective_pattern":  mostEffective,
+		"least_effective_pattern": leastEffective,
+		"pattern_stats":           patternStats,
+	}
+}
+
+// analyzePerformance analyzes performance characteristics
+func (debugger *ThatContextDebugger) analyzePerformance() map[string]interface{} {
+	if len(debugger.PerformanceLog) == 0 {
+		return map[string]interface{}{
+			"message": "No performance data available",
+		}
+	}
+
+	// Analyze performance trends
+	durations := make([]int64, len(debugger.PerformanceLog))
+	memoryUsages := make([]int64, len(debugger.PerformanceLog))
+
+	for i, entry := range debugger.PerformanceLog {
+		durations[i] = entry.Duration
+		memoryUsages[i] = entry.MemoryUsage
+	}
+
+	// Calculate statistics
+	totalDuration := int64(0)
+	totalMemory := int64(0)
+	minDuration := durations[0]
+	maxDuration := durations[0]
+	minMemory := memoryUsages[0]
+	maxMemory := memoryUsages[0]
+
+	for i, duration := range durations {
+		totalDuration += duration
+		totalMemory += memoryUsages[i]
+
+		if duration < minDuration {
+			minDuration = duration
+		}
+		if duration > maxDuration {
+			maxDuration = duration
+		}
+		if memoryUsages[i] < minMemory {
+			minMemory = memoryUsages[i]
+		}
+		if memoryUsages[i] > maxMemory {
+			maxMemory = memoryUsages[i]
+		}
+	}
+
+	avgDuration := float64(totalDuration) / float64(len(durations))
+	avgMemory := float64(totalMemory) / float64(len(memoryUsages))
+
+	return map[string]interface{}{
+		"avg_duration_ns":  avgDuration,
+		"min_duration_ns":  minDuration,
+		"max_duration_ns":  maxDuration,
+		"avg_memory_bytes": avgMemory,
+		"min_memory_bytes": minMemory,
+		"max_memory_bytes": maxMemory,
+		"total_operations": len(debugger.PerformanceLog),
+	}
+}
+
+// generateRecommendations generates optimization recommendations
+func (debugger *ThatContextDebugger) generateRecommendations() []string {
+	recommendations := []string{}
+
+	// Analyze history
+	historyAnalysis := debugger.analyzeThatHistory()
+	if historyAnalysis["repetition_rate"] != nil {
+		repetitionRate := historyAnalysis["repetition_rate"].(float64)
+		if repetitionRate > 0.5 {
+			recommendations = append(recommendations, "High repetition rate detected. Consider adding more variety to responses.")
+		}
+	}
+
+	// Analyze patterns
+	patternAnalysis := debugger.analyzePatternUsage()
+	if patternAnalysis["overall_effectiveness"] != nil {
+		effectiveness := patternAnalysis["overall_effectiveness"].(float64)
+		if effectiveness < 0.3 {
+			recommendations = append(recommendations, "Low pattern matching effectiveness. Review pattern specificity and wildcard usage.")
+		}
+	}
+
+	// Analyze performance
+	performanceAnalysis := debugger.analyzePerformance()
+	if performanceAnalysis["avg_duration_ns"] != nil {
+		avgDuration := performanceAnalysis["avg_duration_ns"].(float64)
+		if avgDuration > 1000000 { // 1ms
+			recommendations = append(recommendations, "High average processing time detected. Consider optimizing patterns or reducing history size.")
+		}
+	}
+
+	// Check memory usage
+	if len(debugger.Session.ThatHistory) > 50 {
+		recommendations = append(recommendations, "Large that history detected. Consider enabling compression or reducing history depth.")
+	}
+
+	// Check cache effectiveness
+	if len(debugger.PerformanceLog) > 0 {
+		totalHits := 0
+		totalMisses := 0
+		for _, entry := range debugger.PerformanceLog {
+			totalHits += entry.CacheHits
+			totalMisses += entry.CacheMisses
+		}
+
+		if totalHits+totalMisses > 0 {
+			hitRate := float64(totalHits) / float64(totalHits+totalMisses)
+			if hitRate < 0.5 {
+				recommendations = append(recommendations, "Low cache hit rate. Consider increasing cache size or optimizing pattern caching.")
+			}
+		}
+	}
+
+	if len(recommendations) == 0 {
+		recommendations = append(recommendations, "No specific recommendations at this time. System appears to be performing well.")
+	}
+
+	return recommendations
+}
+
+// ClearDebugData clears all debug data
+func (debugger *ThatContextDebugger) ClearDebugData() {
+	debugger.TraceLog = make([]ThatTraceEntry, 0)
+	debugger.PerformanceLog = make([]ThatPerformanceEntry, 0)
+}
+
+// ExportDebugData exports debug data for analysis
+func (debugger *ThatContextDebugger) ExportDebugData() map[string]interface{} {
+	return map[string]interface{}{
+		"trace_log":       debugger.TraceLog,
+		"performance_log": debugger.PerformanceLog,
+		"summary": map[string]interface{}{
+			"trace_summary":       debugger.GetTraceSummary(),
+			"performance_summary": debugger.GetPerformanceSummary(),
+			"analysis":            debugger.AnalyzeThatPatterns(),
+		},
+	}
+}
