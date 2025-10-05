@@ -2627,10 +2627,6 @@ func (g *Golem) replaceSessionVariableTagsWithContext(template string, ctx *Vari
 		if len(match) > 1 {
 			varName := match[1]
 			varValue := g.resolveVariable(varName, ctx)
-			g.LogInfo("Getting variable '%s': '%s'", varName, varValue)
-			if ctx.Session != nil {
-				g.LogInfo("Session variables: %v", ctx.Session.Variables)
-			}
 			if varValue != "" {
 				template = strings.ReplaceAll(template, match[0], varValue)
 			}
@@ -6834,4 +6830,537 @@ func (debugger *ThatContextDebugger) ExportDebugData() map[string]interface{} {
 			"analysis":            debugger.AnalyzeThatPatterns(),
 		},
 	}
+}
+
+// ThatPatternConflict represents a conflict between patterns
+type ThatPatternConflict struct {
+	Type        string   `json:"type"`        // Type of conflict (overlap, ambiguity, priority)
+	Pattern1    string   `json:"pattern1"`    // First conflicting pattern
+	Pattern2    string   `json:"pattern2"`    // Second conflicting pattern
+	Severity    string   `json:"severity"`    // Severity level (low, medium, high, critical)
+	Description string   `json:"description"` // Human-readable description
+	Suggestions []string `json:"suggestions"` // Suggested resolutions
+	Examples    []string `json:"examples"`    // Example inputs that trigger the conflict
+}
+
+// ThatPatternConflictDetector handles pattern conflict detection
+type ThatPatternConflictDetector struct {
+	Patterns  []string              `json:"patterns"`  // List of patterns to analyze
+	Conflicts []ThatPatternConflict `json:"conflicts"` // Detected conflicts
+}
+
+// NewThatPatternConflictDetector creates a new conflict detector
+func NewThatPatternConflictDetector(patterns []string) *ThatPatternConflictDetector {
+	return &ThatPatternConflictDetector{
+		Patterns:  patterns,
+		Conflicts: []ThatPatternConflict{},
+	}
+}
+
+// DetectConflicts analyzes patterns for conflicts
+func (detector *ThatPatternConflictDetector) DetectConflicts() []ThatPatternConflict {
+	detector.Conflicts = []ThatPatternConflict{}
+
+	// Check for various types of conflicts
+	detector.detectOverlapConflicts()
+	detector.detectAmbiguityConflicts()
+	detector.detectPriorityConflicts()
+	detector.detectWildcardConflicts()
+	detector.detectSpecificityConflicts()
+
+	return detector.Conflicts
+}
+
+// detectOverlapConflicts detects patterns that overlap in matching scope
+func (detector *ThatPatternConflictDetector) detectOverlapConflicts() {
+	for i, pattern1 := range detector.Patterns {
+		for j, pattern2 := range detector.Patterns {
+			if i >= j {
+				continue // Skip same pattern and avoid duplicates
+			}
+
+			// Check if patterns overlap
+			if detector.patternsOverlap(pattern1, pattern2) {
+				conflict := ThatPatternConflict{
+					Type:        "overlap",
+					Pattern1:    pattern1,
+					Pattern2:    pattern2,
+					Severity:    detector.calculateOverlapSeverity(pattern1, pattern2),
+					Description: fmt.Sprintf("Patterns '%s' and '%s' have overlapping matching scope", pattern1, pattern2),
+					Suggestions: detector.generateOverlapSuggestions(pattern1, pattern2),
+					Examples:    detector.generateOverlapExamples(pattern1, pattern2),
+				}
+				detector.Conflicts = append(detector.Conflicts, conflict)
+			}
+		}
+	}
+}
+
+// detectAmbiguityConflicts detects patterns that create ambiguous matching
+func (detector *ThatPatternConflictDetector) detectAmbiguityConflicts() {
+	for i, pattern1 := range detector.Patterns {
+		for j, pattern2 := range detector.Patterns {
+			if i >= j {
+				continue
+			}
+
+			// Check for ambiguity
+			if detector.patternsAreAmbiguous(pattern1, pattern2) {
+				conflict := ThatPatternConflict{
+					Type:        "ambiguity",
+					Pattern1:    pattern1,
+					Pattern2:    pattern2,
+					Severity:    "high",
+					Description: fmt.Sprintf("Patterns '%s' and '%s' create ambiguous matching scenarios", pattern1, pattern2),
+					Suggestions: detector.generateAmbiguitySuggestions(pattern1, pattern2),
+					Examples:    detector.generateAmbiguityExamples(pattern1, pattern2),
+				}
+				detector.Conflicts = append(detector.Conflicts, conflict)
+			}
+		}
+	}
+}
+
+// detectPriorityConflicts detects patterns with unclear priority ordering
+func (detector *ThatPatternConflictDetector) detectPriorityConflicts() {
+	for i, pattern1 := range detector.Patterns {
+		for j, pattern2 := range detector.Patterns {
+			if i >= j {
+				continue
+			}
+
+			// Check for priority conflicts
+			if detector.patternsHavePriorityConflict(pattern1, pattern2) {
+				conflict := ThatPatternConflict{
+					Type:        "priority",
+					Pattern1:    pattern1,
+					Pattern2:    pattern2,
+					Severity:    "medium",
+					Description: fmt.Sprintf("Patterns '%s' and '%s' have unclear priority ordering", pattern1, pattern2),
+					Suggestions: detector.generatePrioritySuggestions(pattern1, pattern2),
+					Examples:    detector.generatePriorityExamples(pattern1, pattern2),
+				}
+				detector.Conflicts = append(detector.Conflicts, conflict)
+			}
+		}
+	}
+}
+
+// detectWildcardConflicts detects wildcard-related conflicts
+func (detector *ThatPatternConflictDetector) detectWildcardConflicts() {
+	for i, pattern1 := range detector.Patterns {
+		for j, pattern2 := range detector.Patterns {
+			if i >= j {
+				continue
+			}
+
+			// Check for wildcard conflicts
+			if detector.patternsHaveWildcardConflict(pattern1, pattern2) {
+				conflict := ThatPatternConflict{
+					Type:        "wildcard",
+					Pattern1:    pattern1,
+					Pattern2:    pattern2,
+					Severity:    "medium",
+					Description: fmt.Sprintf("Patterns '%s' and '%s' have conflicting wildcard usage", pattern1, pattern2),
+					Suggestions: detector.generateWildcardSuggestions(pattern1, pattern2),
+					Examples:    detector.generateWildcardExamples(pattern1, pattern2),
+				}
+				detector.Conflicts = append(detector.Conflicts, conflict)
+			}
+		}
+	}
+}
+
+// detectSpecificityConflicts detects specificity-related conflicts
+func (detector *ThatPatternConflictDetector) detectSpecificityConflicts() {
+	for i, pattern1 := range detector.Patterns {
+		for j, pattern2 := range detector.Patterns {
+			if i >= j {
+				continue
+			}
+
+			// Check for specificity conflicts
+			if detector.patternsHaveSpecificityConflict(pattern1, pattern2) {
+				conflict := ThatPatternConflict{
+					Type:        "specificity",
+					Pattern1:    pattern1,
+					Pattern2:    pattern2,
+					Severity:    "low",
+					Description: fmt.Sprintf("Patterns '%s' and '%s' have conflicting specificity levels", pattern1, pattern2),
+					Suggestions: detector.generateSpecificitySuggestions(pattern1, pattern2),
+					Examples:    detector.generateSpecificityExamples(pattern1, pattern2),
+				}
+				detector.Conflicts = append(detector.Conflicts, conflict)
+			}
+		}
+	}
+}
+
+// patternsOverlap checks if two patterns have overlapping matching scope
+func (detector *ThatPatternConflictDetector) patternsOverlap(pattern1, pattern2 string) bool {
+	// Convert patterns to testable format
+	testCases := []string{
+		"HELLO WORLD",
+		"HELLO",
+		"WORLD",
+		"HELLO THERE",
+		"GOOD MORNING",
+		"GOOD AFTERNOON",
+		"GOOD EVENING",
+		"GOOD NIGHT",
+		"WHAT IS YOUR NAME",
+		"WHAT DO YOU DO",
+		"TELL ME ABOUT YOURSELF",
+		"WHO ARE YOU",
+		"WHERE ARE YOU FROM",
+		"WHAT CAN YOU DO",
+		"HELP ME",
+		"THANK YOU",
+		"GOODBYE",
+		"SEE YOU LATER",
+		"HAVE A NICE DAY",
+		"TAKE CARE",
+	}
+
+	matches1 := 0
+	matches2 := 0
+	overlap := 0
+
+	for _, testCase := range testCases {
+		matched1 := detector.testPatternMatch(pattern1, testCase)
+		matched2 := detector.testPatternMatch(pattern2, testCase)
+
+		if matched1 {
+			matches1++
+		}
+		if matched2 {
+			matches2++
+		}
+		if matched1 && matched2 {
+			overlap++
+		}
+	}
+
+	// Calculate overlap percentage
+	if matches1 > 0 && matches2 > 0 {
+		overlapPercentage := float64(overlap) / float64(matches1+matches2-overlap)
+		return overlapPercentage > 0.3 // 30% overlap threshold
+	}
+
+	return false
+}
+
+// patternsAreAmbiguous checks if two patterns create ambiguous matching
+func (detector *ThatPatternConflictDetector) patternsAreAmbiguous(pattern1, pattern2 string) bool {
+	// Check for patterns that could match the same input
+	ambiguousCases := []string{
+		"HELLO",
+		"HELLO WORLD",
+		"GOOD MORNING",
+		"WHAT IS YOUR NAME",
+		"WHO ARE YOU",
+		"TELL ME ABOUT YOURSELF",
+	}
+
+	for _, testCase := range ambiguousCases {
+		matched1 := detector.testPatternMatch(pattern1, testCase)
+		matched2 := detector.testPatternMatch(pattern2, testCase)
+
+		if matched1 && matched2 {
+			// Check if both patterns have similar specificity
+			specificity1 := detector.calculatePatternSpecificity(pattern1)
+			specificity2 := detector.calculatePatternSpecificity(pattern2)
+
+			// If specificity is similar, it's ambiguous
+			if absFloat(specificity1-specificity2) < 0.2 {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// patternsHavePriorityConflict checks if patterns have unclear priority
+func (detector *ThatPatternConflictDetector) patternsHavePriorityConflict(pattern1, pattern2 string) bool {
+	// Check if patterns have similar priority but different specificity
+	specificity1 := detector.calculatePatternSpecificity(pattern1)
+	specificity2 := detector.calculatePatternSpecificity(pattern2)
+
+	// If specificity is very different but both could match, it's a priority conflict
+	if absFloat(specificity1-specificity2) > 0.5 {
+		// Check if both could match the same input
+		testCases := []string{"HELLO", "HELLO WORLD", "GOOD MORNING"}
+		for _, testCase := range testCases {
+			if detector.testPatternMatch(pattern1, testCase) && detector.testPatternMatch(pattern2, testCase) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// patternsHaveWildcardConflict checks for wildcard-related conflicts
+func (detector *ThatPatternConflictDetector) patternsHaveWildcardConflict(pattern1, pattern2 string) bool {
+	// Check for conflicting wildcard usage
+	wildcards1 := detector.countWildcards(pattern1)
+	wildcards2 := detector.countWildcards(pattern2)
+
+	// If one pattern has many wildcards and the other has few, it could be a conflict
+	if abs(wildcards1-wildcards2) > 3 {
+		// Check if they could match the same input
+		testCases := []string{"HELLO", "HELLO WORLD", "GOOD MORNING"}
+		for _, testCase := range testCases {
+			if detector.testPatternMatch(pattern1, testCase) && detector.testPatternMatch(pattern2, testCase) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// patternsHaveSpecificityConflict checks for specificity conflicts
+func (detector *ThatPatternConflictDetector) patternsHaveSpecificityConflict(pattern1, pattern2 string) bool {
+	specificity1 := detector.calculatePatternSpecificity(pattern1)
+	specificity2 := detector.calculatePatternSpecificity(pattern2)
+
+	// If specificity is very different, it might be a conflict
+	return absFloat(specificity1-specificity2) > 0.7
+}
+
+// Helper functions for conflict detection
+func (detector *ThatPatternConflictDetector) testPatternMatch(pattern, input string) bool {
+	// Simplified pattern matching for conflict detection
+	// This is a basic implementation - in practice, you'd use the full pattern matching logic
+
+	// Convert to uppercase for matching
+	pattern = strings.ToUpper(pattern)
+	input = strings.ToUpper(input)
+
+	// Handle exact matches
+	if pattern == input {
+		return true
+	}
+
+	// Handle wildcard patterns
+	if strings.Contains(pattern, "*") {
+		// Convert * to regex .*
+		regexPattern := strings.ReplaceAll(pattern, "*", ".*")
+		matched, _ := regexp.MatchString("^"+regexPattern+"$", input)
+		return matched
+	}
+
+	// Handle underscore patterns (single word)
+	if strings.Contains(pattern, "_") {
+		// Convert _ to regex \w+
+		regexPattern := strings.ReplaceAll(pattern, "_", "\\w+")
+		matched, _ := regexp.MatchString("^"+regexPattern+"$", input)
+		return matched
+	}
+
+	// Handle caret patterns (zero or more words)
+	if strings.Contains(pattern, "^") {
+		// Convert ^ to regex .*
+		regexPattern := strings.ReplaceAll(pattern, "^", ".*")
+		matched, _ := regexp.MatchString("^"+regexPattern+"$", input)
+		return matched
+	}
+
+	// Handle hash patterns (zero or more words)
+	if strings.Contains(pattern, "#") {
+		// Convert # to regex .*
+		regexPattern := strings.ReplaceAll(pattern, "#", ".*")
+		matched, _ := regexp.MatchString("^"+regexPattern+"$", input)
+		return matched
+	}
+
+	return false
+}
+
+func (detector *ThatPatternConflictDetector) calculatePatternSpecificity(pattern string) float64 {
+	// Calculate pattern specificity (0.0 = very general, 1.0 = very specific)
+
+	// Count wildcards
+	wildcardCount := detector.countWildcards(pattern)
+
+	// Count words
+	words := strings.Fields(pattern)
+	wordCount := len(words)
+
+	// Calculate specificity
+	if wordCount == 0 {
+		return 0.0
+	}
+
+	// More words = more specific
+	// Fewer wildcards = more specific
+	specificity := float64(wordCount-wildcardCount) / float64(wordCount)
+
+	// Ensure it's between 0 and 1
+	if specificity < 0 {
+		specificity = 0
+	}
+	if specificity > 1 {
+		specificity = 1
+	}
+
+	return specificity
+}
+
+func (detector *ThatPatternConflictDetector) countWildcards(pattern string) int {
+	count := 0
+	count += strings.Count(pattern, "*")
+	count += strings.Count(pattern, "_")
+	count += strings.Count(pattern, "^")
+	count += strings.Count(pattern, "#")
+	count += strings.Count(pattern, "$")
+	return count
+}
+
+func (detector *ThatPatternConflictDetector) calculateOverlapSeverity(pattern1, pattern2 string) string {
+	overlap := detector.calculateOverlapPercentage(pattern1, pattern2)
+
+	if overlap > 0.8 {
+		return "critical"
+	} else if overlap > 0.6 {
+		return "high"
+	} else if overlap > 0.4 {
+		return "medium"
+	} else {
+		return "low"
+	}
+}
+
+func (detector *ThatPatternConflictDetector) calculateOverlapPercentage(pattern1, pattern2 string) float64 {
+	// Simplified overlap calculation
+	testCases := []string{"HELLO", "HELLO WORLD", "GOOD MORNING", "WHAT IS YOUR NAME"}
+	matches1 := 0
+	matches2 := 0
+	overlap := 0
+
+	for _, testCase := range testCases {
+		matched1 := detector.testPatternMatch(pattern1, testCase)
+		matched2 := detector.testPatternMatch(pattern2, testCase)
+
+		if matched1 {
+			matches1++
+		}
+		if matched2 {
+			matches2++
+		}
+		if matched1 && matched2 {
+			overlap++
+		}
+	}
+
+	if matches1+matches2-overlap == 0 {
+		return 0
+	}
+
+	return float64(overlap) / float64(matches1+matches2-overlap)
+}
+
+// Suggestion generation functions
+func (detector *ThatPatternConflictDetector) generateOverlapSuggestions(pattern1, pattern2 string) []string {
+	return []string{
+		fmt.Sprintf("Consider making pattern '%s' more specific", pattern1),
+		fmt.Sprintf("Consider making pattern '%s' more specific", pattern2),
+		"Add more specific words to differentiate the patterns",
+		"Use different wildcard types to create distinct matching scopes",
+	}
+}
+
+func (detector *ThatPatternConflictDetector) generateAmbiguitySuggestions(pattern1, pattern2 string) []string {
+	return []string{
+		"Reorder patterns to ensure proper priority",
+		"Make one pattern more specific than the other",
+		"Use different wildcard strategies for each pattern",
+		"Consider combining patterns if they serve the same purpose",
+	}
+}
+
+func (detector *ThatPatternConflictDetector) generatePrioritySuggestions(pattern1, pattern2 string) []string {
+	return []string{
+		"Reorder patterns to ensure more specific patterns come first",
+		"Use different wildcard types to create clear priority",
+		"Add more specific words to create clear differentiation",
+		"Consider the intended use case for each pattern",
+	}
+}
+
+func (detector *ThatPatternConflictDetector) generateWildcardSuggestions(pattern1, pattern2 string) []string {
+	return []string{
+		"Use consistent wildcard strategies across patterns",
+		"Consider using different wildcard types for different purposes",
+		"Ensure wildcard usage aligns with pattern intent",
+		"Review wildcard placement for optimal matching",
+	}
+}
+
+func (detector *ThatPatternConflictDetector) generateSpecificitySuggestions(pattern1, pattern2 string) []string {
+	return []string{
+		"Adjust pattern specificity to create clear differentiation",
+		"Use more specific words in one pattern",
+		"Use more general wildcards in the other pattern",
+		"Consider the intended matching scope for each pattern",
+	}
+}
+
+// Example generation functions
+func (detector *ThatPatternConflictDetector) generateOverlapExamples(pattern1, pattern2 string) []string {
+	return []string{
+		"HELLO WORLD",
+		"GOOD MORNING",
+		"WHAT IS YOUR NAME",
+	}
+}
+
+func (detector *ThatPatternConflictDetector) generateAmbiguityExamples(pattern1, pattern2 string) []string {
+	return []string{
+		"HELLO",
+		"HELLO WORLD",
+		"GOOD MORNING",
+	}
+}
+
+func (detector *ThatPatternConflictDetector) generatePriorityExamples(pattern1, pattern2 string) []string {
+	return []string{
+		"HELLO",
+		"HELLO WORLD",
+		"GOOD MORNING",
+	}
+}
+
+func (detector *ThatPatternConflictDetector) generateWildcardExamples(pattern1, pattern2 string) []string {
+	return []string{
+		"HELLO",
+		"HELLO WORLD",
+		"GOOD MORNING",
+	}
+}
+
+func (detector *ThatPatternConflictDetector) generateSpecificityExamples(pattern1, pattern2 string) []string {
+	return []string{
+		"HELLO",
+		"HELLO WORLD",
+		"GOOD MORNING",
+	}
+}
+
+// abs returns absolute value of an integer
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// absFloat returns absolute value of a float64
+func absFloat(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
