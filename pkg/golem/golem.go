@@ -70,9 +70,11 @@ func New(verbose bool) *Golem {
 	logger := log.New(os.Stdout, "[GOLEM] ", log.LstdFlags)
 
 	// Set log level based on verbose flag
-	logLevel := LogLevelInfo
+	// When verbose is enabled, show Info level and above (Info, Warn, Error)
+	// When verbose is disabled, show only Error level
+	logLevel := LogLevelError
 	if verbose {
-		logLevel = LogLevelDebug
+		logLevel = LogLevelInfo
 	}
 
 	// Create OOB manager and register built-in handlers
@@ -188,13 +190,17 @@ NEW PATTERN (for errors):
 	g.LogError("Failed to parse learnf content: %v", err)
 
 Available log levels:
-- LogError: Error messages
-- LogWarn: Warning messages
-- LogInfo: Informational messages
-- LogDebug: Debug messages (replaces most verbose logging)
-- LogTrace: Very detailed trace messages
+- LogError: Error messages (always shown)
+- LogWarn: Warning messages (shown when verbose enabled)
+- LogInfo: Informational messages (shown when verbose enabled)
+- LogDebug: Debug messages (shown when log level set to Debug or Trace)
+- LogTrace: Very detailed trace messages (shown when log level set to Trace)
 
-Set log level:
+Verbose flag behavior:
+- --verbose: Shows Info, Warn, and Error messages
+- No --verbose: Shows only Error messages
+
+Set log level manually:
 	g.SetLogLevel(LogLevelDebug)
 */
 
