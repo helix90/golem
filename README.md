@@ -26,6 +26,9 @@ Golem is a comprehensive Go library and CLI tool for building conversational AI 
 - **Random Responses**: `<random>` and `<li>` for varied responses
 - **Date/Time**: `<date>` and `<time>` formatting
 - **Maps and Sets**: Key-value mapping and set operations
+- **Text Processing**: `<uppercase>`, `<lowercase>`, `<sentence>`, `<word>` tags
+- **Enhanced That Support**: Advanced `<that>` pattern matching with debugging tools
+- **Pattern Conflict Detection**: Comprehensive analysis for pattern conflicts and optimization
 
 ### CLI Tool
 - **Interactive Mode**: Persistent state across commands
@@ -214,6 +217,65 @@ go run list_demo.go
 - **Learning System**: Dynamic knowledge base modification
 - **OOB Handling**: Extensible command processing
 
+## 🔍 That Pattern Conflict Detection
+
+Golem includes a comprehensive **That pattern conflict detection system** to help identify and resolve issues with AIML that patterns:
+
+### Conflict Detection Types
+- **Overlap Conflicts**: Detect patterns with overlapping matching scope
+- **Ambiguity Conflicts**: Identify patterns that create ambiguous matching scenarios
+- **Priority Conflicts**: Find patterns with unclear priority ordering
+- **Wildcard Conflicts**: Detect conflicting wildcard usage patterns
+- **Specificity Conflicts**: Identify patterns with conflicting specificity levels
+
+### Usage Example
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/helix90/golem/pkg/golem"
+)
+
+func main() {
+    // Define patterns to analyze
+    patterns := []string{
+        "HELLO",
+        "HELLO WORLD",
+        "* HELLO",
+        "GOOD MORNING",
+        "GOOD *",
+    }
+    
+    // Create conflict detector
+    detector := golem.NewThatPatternConflictDetector(patterns)
+    conflicts := detector.DetectConflicts()
+    
+    // Analyze detected conflicts
+    for _, conflict := range conflicts {
+        fmt.Printf("Conflict Type: %s\n", conflict.Type)
+        fmt.Printf("Severity: %s\n", conflict.Severity)
+        fmt.Printf("Description: %s\n", conflict.Description)
+        fmt.Printf("Suggestions: %v\n", conflict.Suggestions)
+        fmt.Println("---")
+    }
+}
+```
+
+### Advanced Features
+- **Pattern Specificity Analysis**: Calculate pattern specificity (0.0-1.0 scale)
+- **Wildcard Usage Analysis**: Count and analyze wildcard patterns
+- **Overlap Percentage Calculation**: Quantify pattern overlap with severity levels
+- **Intelligent Suggestions**: Tailored recommendations for conflict resolution
+- **Example Generation**: Real-world examples that trigger conflicts
+
+### Demo System
+```bash
+# Run conflict detection demo
+cd pkg/golem
+go run conflict_demo.go
+```
+
 ## 🧪 Testing
 
 Run the comprehensive test suite:
@@ -226,6 +288,7 @@ go test ./...
 go test ./pkg/golem -run TestThatTag
 go test ./pkg/golem -run TestLearning
 go test ./pkg/golem -run TestSRAIX
+go test ./pkg/golem -run TestThatPatternConflictDetector
 
 # Run with verbose output
 go test ./pkg/golem -v
@@ -245,16 +308,17 @@ Golem implements **73% of the AIML2 specification**, including:
 - Context awareness (`<that>`, `<topic>`)
 - External integration (`<sraix>`)
 - Out-of-band message handling
+- Text processing tags (`<uppercase>`, `<lowercase>`, `<sentence>`, `<word>`)
+- Enhanced that pattern matching with debugging tools
+- Pattern conflict detection and analysis
 
 ### 🔄 Partially Implemented
-- Text processing tags (basic support)
 - Advanced pattern matching
 - Enhanced context management
 
 ### ❌ Not Yet Implemented
 - System command execution (`<system>`)
 - JavaScript execution (`<javascript>`)
-- Advanced text processing (`<uppercase>`, `<lowercase>`, etc.)
 - Learning management (`<unlearn>`, `<unlearnf>`)
 
 See [AIML2_COMPARISON.md](AIML2_COMPARISON.md) for detailed compliance information.
