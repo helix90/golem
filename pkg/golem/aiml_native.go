@@ -253,10 +253,8 @@ func (g *Golem) LoadAIML(filename string) (*AIMLKnowledgeBase, error) {
 		kb.Patterns[pattern] = category
 	}
 
-	if g.verbose {
-		g.logger.Printf("Loaded %d AIML categories", len(aiml.Categories))
-		g.logger.Printf("Loaded %d properties", len(kb.Properties))
-	}
+	g.LogInfo("Loaded %d AIML categories", len(aiml.Categories))
+	g.LogInfo("Loaded %d properties", len(kb.Properties))
 
 	return kb, nil
 }
@@ -352,9 +350,7 @@ func (g *Golem) LoadAIMLFromDirectory(dirPath string) (*AIMLKnowledgeBase, error
 	maps, err := g.LoadMapsFromDirectory(dirPath)
 	if err != nil {
 		// Log the error but don't fail the entire operation
-		if g.verbose {
-			g.logger.Printf("Warning: failed to load maps from directory: %v", err)
-		}
+		g.LogInfo("Warning: failed to load maps from directory: %v", err)
 	} else {
 		// Merge maps into the knowledge base
 		for mapName, mapData := range maps {
@@ -366,9 +362,7 @@ func (g *Golem) LoadAIMLFromDirectory(dirPath string) (*AIMLKnowledgeBase, error
 	sets, err := g.LoadSetsFromDirectory(dirPath)
 	if err != nil {
 		// Log the error but don't fail the entire operation
-		if g.verbose {
-			g.logger.Printf("Warning: failed to load sets from directory: %v", err)
-		}
+		g.LogInfo("Warning: failed to load sets from directory: %v", err)
 	} else {
 		// Merge sets into the knowledge base
 		for setName, setMembers := range sets {
@@ -376,25 +370,21 @@ func (g *Golem) LoadAIMLFromDirectory(dirPath string) (*AIMLKnowledgeBase, error
 		}
 	}
 
-	if g.verbose {
-		g.logger.Printf("Merged %d AIML files into knowledge base", len(aimlFiles))
-		g.logger.Printf("Total categories: %d", len(mergedKB.Categories))
-		g.logger.Printf("Total patterns: %d", len(mergedKB.Patterns))
-		g.logger.Printf("Total sets: %d", len(mergedKB.Sets))
-		g.logger.Printf("Total topics: %d", len(mergedKB.Topics))
-		g.logger.Printf("Total variables: %d", len(mergedKB.Variables))
-		g.logger.Printf("Total properties: %d", len(mergedKB.Properties))
-		g.logger.Printf("Total maps: %d", len(mergedKB.Maps))
-	}
+	g.LogInfo("Merged %d AIML files into knowledge base", len(aimlFiles))
+	g.LogInfo("Total categories: %d", len(mergedKB.Categories))
+	g.LogInfo("Total patterns: %d", len(mergedKB.Patterns))
+	g.LogInfo("Total sets: %d", len(mergedKB.Sets))
+	g.LogInfo("Total topics: %d", len(mergedKB.Topics))
+	g.LogInfo("Total variables: %d", len(mergedKB.Variables))
+	g.LogInfo("Total properties: %d", len(mergedKB.Properties))
+	g.LogInfo("Total maps: %d", len(mergedKB.Maps))
 
 	return mergedKB, nil
 }
 
 // LoadMapFromFile loads a .map file containing JSON array of key-value pairs
 func (g *Golem) LoadMapFromFile(filename string) (map[string]string, error) {
-	if g.verbose {
-		g.logger.Printf("Loading map file: %s", filename)
-	}
+	g.LogInfo("Loading map file: %s", filename)
 
 	// Read the file content
 	content, err := os.ReadFile(filename)
@@ -416,27 +406,21 @@ func (g *Golem) LoadMapFromFile(filename string) (map[string]string, error) {
 		value, hasValue := entry["value"]
 
 		if !hasKey || !hasValue {
-			if g.verbose {
-				g.logger.Printf("Warning: skipping entry missing key or value: %v", entry)
-			}
+			g.LogInfo("Warning: skipping entry missing key or value: %v", entry)
 			continue
 		}
 
 		result[key] = value
 	}
 
-	if g.verbose {
-		g.logger.Printf("Loaded %d map entries from %s", len(result), filename)
-	}
+	g.LogInfo("Loaded %d map entries from %s", len(result), filename)
 
 	return result, nil
 }
 
 // LoadMapsFromDirectory loads all .map files from a directory
 func (g *Golem) LoadMapsFromDirectory(dirPath string) (map[string]map[string]string, error) {
-	if g.verbose {
-		g.logger.Printf("Loading map files from directory: %s", dirPath)
-	}
+	g.LogInfo("Loading map files from directory: %s", dirPath)
 
 	// Create a map to store all maps
 	allMaps := make(map[string]map[string]string)
@@ -461,29 +445,21 @@ func (g *Golem) LoadMapsFromDirectory(dirPath string) (map[string]map[string]str
 	}
 
 	if len(mapFiles) == 0 {
-		if g.verbose {
-			g.logger.Printf("No map files found in directory: %s", dirPath)
-		}
+		g.LogInfo("No map files found in directory: %s", dirPath)
 		return allMaps, nil
 	}
 
-	if g.verbose {
-		g.logger.Printf("Found %d map files in directory", len(mapFiles))
-	}
+	g.LogInfo("Found %d map files in directory", len(mapFiles))
 
 	// Load each map file
 	for _, mapFile := range mapFiles {
-		if g.verbose {
-			g.logger.Printf("Loading map file: %s", mapFile)
-		}
+		g.LogInfo("Loading map file: %s", mapFile)
 
 		// Load the individual map file
 		mapData, err := g.LoadMapFromFile(mapFile)
 		if err != nil {
 			// Log the error but continue with other files
-			if g.verbose {
-				g.logger.Printf("Warning: failed to load %s: %v", mapFile, err)
-			}
+			g.LogInfo("Warning: failed to load %s: %v", mapFile, err)
 			continue
 		}
 
@@ -492,18 +468,14 @@ func (g *Golem) LoadMapsFromDirectory(dirPath string) (map[string]map[string]str
 		allMaps[mapName] = mapData
 	}
 
-	if g.verbose {
-		g.logger.Printf("Loaded %d map files", len(allMaps))
-	}
+	g.LogInfo("Loaded %d map files", len(allMaps))
 
 	return allMaps, nil
 }
 
 // LoadSetFromFile loads a .set file containing JSON array of set members
 func (g *Golem) LoadSetFromFile(filename string) ([]string, error) {
-	if g.verbose {
-		g.logger.Printf("Loading set file: %s", filename)
-	}
+	g.LogInfo("Loading set file: %s", filename)
 
 	// Read the file content
 	content, err := os.ReadFile(filename)
@@ -518,18 +490,14 @@ func (g *Golem) LoadSetFromFile(filename string) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse JSON in set file %s: %v", filename, err)
 	}
 
-	if g.verbose {
-		g.logger.Printf("Loaded %d set members from %s", len(setMembers), filename)
-	}
+	g.LogInfo("Loaded %d set members from %s", len(setMembers), filename)
 
 	return setMembers, nil
 }
 
 // LoadSetsFromDirectory loads all .set files from a directory
 func (g *Golem) LoadSetsFromDirectory(dirPath string) (map[string][]string, error) {
-	if g.verbose {
-		g.logger.Printf("Loading set files from directory: %s", dirPath)
-	}
+	g.LogInfo("Loading set files from directory: %s", dirPath)
 
 	// Create a map to store all sets
 	allSets := make(map[string][]string)
@@ -554,29 +522,21 @@ func (g *Golem) LoadSetsFromDirectory(dirPath string) (map[string][]string, erro
 	}
 
 	if len(setFiles) == 0 {
-		if g.verbose {
-			g.logger.Printf("No set files found in directory: %s", dirPath)
-		}
+		g.LogInfo("No set files found in directory: %s", dirPath)
 		return allSets, nil
 	}
 
-	if g.verbose {
-		g.logger.Printf("Found %d set files in directory", len(setFiles))
-	}
+	g.LogInfo("Found %d set files in directory", len(setFiles))
 
 	// Load each set file
 	for _, setFile := range setFiles {
-		if g.verbose {
-			g.logger.Printf("Loading set file: %s", setFile)
-		}
+		g.LogInfo("Loading set file: %s", setFile)
 
 		// Load the individual set file
 		setMembers, err := g.LoadSetFromFile(setFile)
 		if err != nil {
 			// Log the error but continue with other files
-			if g.verbose {
-				g.logger.Printf("Warning: failed to load %s: %v", setFile, err)
-			}
+			g.LogInfo("Warning: failed to load %s: %v", setFile, err)
 			continue
 		}
 
@@ -585,9 +545,7 @@ func (g *Golem) LoadSetsFromDirectory(dirPath string) (map[string][]string, erro
 		allSets[setName] = setMembers
 	}
 
-	if g.verbose {
-		g.logger.Printf("Loaded %d set files", len(allSets))
-	}
+	g.LogInfo("Loaded %d set files", len(allSets))
 
 	return allSets, nil
 }
@@ -1422,10 +1380,8 @@ func (g *Golem) ProcessTemplateWithContext(template string, wildcards map[string
 func (g *Golem) processTemplateWithContext(template string, wildcards map[string]string, ctx *VariableContext) string {
 	response := template
 
-	if g.verbose {
-		g.logger.Printf("Template text: '%s'", response)
-		g.logger.Printf("Wildcards: %v", wildcards)
-	}
+	g.LogInfo("Template text: '%s'", response)
+	g.LogInfo("Wildcards: %v", wildcards)
 
 	// Replace wildcards
 	// First, replace indexed star tags
@@ -1484,13 +1440,9 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	// Process SR tags (shorthand for <srai><star/></srai>) AFTER wildcard replacement
 	// Note: SR tags should be converted to SRAI format before wildcard replacement
 	// but we need to process them after to work with the actual wildcard values
-	if g.verbose {
-		g.logger.Printf("Before SR processing: '%s'", response)
-	}
+	g.LogInfo("Before SR processing: '%s'", response)
 	response = g.processSRTagsWithContext(response, wildcards, ctx)
-	if g.verbose {
-		g.logger.Printf("After SR processing: '%s'", response)
-	}
+	g.LogInfo("After SR processing: '%s'", response)
 
 	// Replace property tags
 	response = g.replacePropertyTags(response)
@@ -1533,44 +1485,26 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processMapTagsWithContext(response, ctx)
 
 	// Process list tags
-	if g.verbose {
-		g.logger.Printf("Before list processing: '%s'", response)
-	}
+	g.LogInfo("Before list processing: '%s'", response)
 	response = g.processListTagsWithContext(response, ctx)
-	if g.verbose {
-		g.logger.Printf("After list processing: '%s'", response)
-	}
+	g.LogInfo("After list processing: '%s'", response)
 
-	if g.verbose {
-		g.logger.Printf("About to process array tags...")
-	}
+	g.LogInfo("About to process array tags...")
 
 	// Process array tags
-	if g.verbose {
-		g.logger.Printf("Before array processing: '%s'", response)
-	}
+	g.LogInfo("Before array processing: '%s'", response)
 	response = g.processArrayTagsWithContext(response, ctx)
-	if g.verbose {
-		g.logger.Printf("After array processing: '%s'", response)
-	}
+	g.LogInfo("After array processing: '%s'", response)
 
 	// Process person tags (pronoun substitution)
-	if g.verbose {
-		g.logger.Printf("Before person processing: '%s'", response)
-	}
+	g.LogInfo("Before person processing: '%s'", response)
 	response = g.processPersonTagsWithContext(response, ctx)
-	if g.verbose {
-		g.logger.Printf("After person processing: '%s'", response)
-	}
+	g.LogInfo("After person processing: '%s'", response)
 
 	// Process gender tags (gender pronoun substitution)
-	if g.verbose {
-		g.logger.Printf("Before gender processing: '%s'", response)
-	}
+	g.LogInfo("Before gender processing: '%s'", response)
 	response = g.processGenderTagsWithContext(response, ctx)
-	if g.verbose {
-		g.logger.Printf("After gender processing: '%s'", response)
-	}
+	g.LogInfo("After gender processing: '%s'", response)
 
 	// Process sentence tags (sentence-level processing)
 	g.LogDebug("Before sentence processing: '%s'", response)
@@ -1582,27 +1516,27 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processWordTagsWithContext(response, ctx)
 	g.LogDebug("After word processing: '%s'", response)
 
+	// Process normalize tags (text normalization)
+	g.LogDebug("Before normalize processing: '%s'", response)
+	response = g.processNormalizeTagsWithContext(response, ctx)
+	g.LogDebug("After normalize processing: '%s'", response)
+
+	// Process denormalize tags (text denormalization)
+	g.LogDebug("Before denormalize processing: '%s'", response)
+	response = g.processDenormalizeTagsWithContext(response, ctx)
+	g.LogDebug("After denormalize processing: '%s'", response)
+
 	// Process request tags (user input history)
-	if g.verbose {
-		g.logger.Printf("Before request processing: '%s'", response)
-	}
+	g.LogInfo("Before request processing: '%s'", response)
 	response = g.processRequestTags(response, ctx)
-	if g.verbose {
-		g.logger.Printf("After request processing: '%s'", response)
-	}
+	g.LogInfo("After request processing: '%s'", response)
 
 	// Process response tags (bot response history)
-	if g.verbose {
-		g.logger.Printf("Before response processing: '%s'", response)
-	}
+	g.LogInfo("Before response processing: '%s'", response)
 	response = g.processResponseTags(response, ctx)
-	if g.verbose {
-		g.logger.Printf("After response processing: '%s'", response)
-	}
+	g.LogInfo("After response processing: '%s'", response)
 
-	if g.verbose {
-		g.logger.Printf("Final response: '%s'", response)
-	}
+	g.LogInfo("Final response: '%s'", response)
 
 	return strings.TrimSpace(response)
 }
@@ -1613,9 +1547,7 @@ func (g *Golem) processPersonTagsWithContext(template string, ctx *VariableConte
 	personTagRegex := regexp.MustCompile(`(?s)<person>(.*?)</person>`)
 	matches := personTagRegex.FindAllStringSubmatch(template, -1)
 
-	if g.verbose {
-		g.logger.Printf("Person tag processing: found %d matches in template: '%s'", len(matches), template)
-	}
+	g.LogInfo("Person tag processing: found %d matches in template: '%s'", len(matches), template)
 
 	for _, match := range matches {
 		if len(match) > 1 {
@@ -1623,16 +1555,12 @@ func (g *Golem) processPersonTagsWithContext(template string, ctx *VariableConte
 			// Normalize whitespace before processing
 			content = strings.Join(strings.Fields(content), " ")
 			substitutedContent := g.SubstitutePronouns(content)
-			if g.verbose {
-				g.logger.Printf("Person tag: '%s' -> '%s'", match[1], substitutedContent)
-			}
+			g.LogInfo("Person tag: '%s' -> '%s'", match[1], substitutedContent)
 			template = strings.ReplaceAll(template, match[0], substitutedContent)
 		}
 	}
 
-	if g.verbose {
-		g.logger.Printf("Person tag processing result: '%s'", template)
-	}
+	g.LogInfo("Person tag processing result: '%s'", template)
 
 	return template
 }
@@ -1643,9 +1571,7 @@ func (g *Golem) processGenderTagsWithContext(template string, ctx *VariableConte
 	genderTagRegex := regexp.MustCompile(`(?s)<gender>(.*?)</gender>`)
 	matches := genderTagRegex.FindAllStringSubmatch(template, -1)
 
-	if g.verbose {
-		g.logger.Printf("Gender tag processing: found %d matches in template: '%s'", len(matches), template)
-	}
+	g.LogInfo("Gender tag processing: found %d matches in template: '%s'", len(matches), template)
 
 	for _, match := range matches {
 		if len(match) > 1 {
@@ -1653,16 +1579,12 @@ func (g *Golem) processGenderTagsWithContext(template string, ctx *VariableConte
 			// Normalize whitespace before processing
 			content = strings.Join(strings.Fields(content), " ")
 			substitutedContent := g.SubstituteGenderPronouns(content)
-			if g.verbose {
-				g.logger.Printf("Gender tag: '%s' -> '%s'", match[1], substitutedContent)
-			}
+			g.LogInfo("Gender tag: '%s' -> '%s'", match[1], substitutedContent)
 			template = strings.ReplaceAll(template, match[0], substitutedContent)
 		}
 	}
 
-	if g.verbose {
-		g.logger.Printf("Gender tag processing result: '%s'", template)
-	}
+	g.LogInfo("Gender tag processing result: '%s'", template)
 
 	return template
 }
@@ -1760,9 +1682,7 @@ func (g *Golem) SubstitutePronouns(text string) string {
 	// Handle verb agreement after pronoun substitution
 	result = g.fixVerbAgreement(result)
 
-	if g.verbose {
-		g.logger.Printf("Person substitution: '%s' -> '%s'", text, result)
-	}
+	g.LogInfo("Person substitution: '%s' -> '%s'", text, result)
 
 	return result
 }
@@ -1846,9 +1766,7 @@ func (g *Golem) SubstituteGenderPronouns(text string) string {
 	// Fix verb agreement after gender substitution
 	finalResult = g.fixGenderVerbAgreement(finalResult)
 
-	if g.verbose {
-		g.logger.Printf("Gender substitution: '%s' -> '%s'", text, finalResult)
-	}
+	g.LogInfo("Gender substitution: '%s' -> '%s'", text, finalResult)
 
 	return finalResult
 }
@@ -1889,26 +1807,20 @@ func (g *Golem) processSRAITagsWithContext(template string, ctx *VariableContext
 		if len(match) > 1 {
 			sraiContent := strings.TrimSpace(match[1])
 
-			if g.verbose {
-				g.logger.Printf("Processing SRAI: '%s'", sraiContent)
-			}
+			g.LogInfo("Processing SRAI: '%s'", sraiContent)
 
 			// Process the SRAI content as a new pattern
 			if g.aimlKB != nil {
 				// Try to match the SRAI content as a pattern
 				category, wildcards, err := g.aimlKB.MatchPattern(sraiContent)
-				if g.verbose {
-					g.logger.Printf("SRAI pattern match: content='%s', err=%v, category=%v, wildcards=%v", sraiContent, err, category != nil, wildcards)
-				}
+				g.LogInfo("SRAI pattern match: content='%s', err=%v, category=%v, wildcards=%v", sraiContent, err, category != nil, wildcards)
 				if err == nil && category != nil {
 					// Process the matched template with context
 					response := g.processTemplateWithContext(category.Template, wildcards, ctx)
 					template = strings.ReplaceAll(template, match[0], response)
 				} else {
 					// No match found, leave the SRAI tag unchanged
-					if g.verbose {
-						g.logger.Printf("SRAI no match for: '%s'", sraiContent)
-					}
+					g.LogInfo("SRAI no match for: '%s'", sraiContent)
 					// Don't replace the SRAI tag - leave it as is
 				}
 			}
@@ -1980,6 +1892,154 @@ func (g *Golem) processWordTagsWithContext(template string, ctx *VariableContext
 	return template
 }
 
+// processNormalizeTagsWithContext processes <normalize> tags for text normalization
+// <normalize> tag normalizes text using the same logic as pattern matching
+func (g *Golem) processNormalizeTagsWithContext(template string, ctx *VariableContext) string {
+	// Process normalize tags from innermost to outermost
+	// This handles nested tags correctly
+	for {
+		// Find the first <normalize> tag that doesn't contain another <normalize> tag
+		normalizeTagRegex := regexp.MustCompile(`(?s)<normalize>(.*?)</normalize>`)
+		match := normalizeTagRegex.FindStringSubmatch(template)
+
+		if match == nil {
+			// No more normalize tags found
+			break
+		}
+
+		content := strings.TrimSpace(match[1])
+
+		// Check if this content contains another <normalize> tag
+		if strings.Contains(content, "<normalize>") {
+			// This is an outer tag, skip it for now
+			// We need to process inner tags first
+			// Find the innermost normalize tag
+			innerMatch := normalizeTagRegex.FindStringSubmatch(content)
+			if innerMatch != nil {
+				// Process the inner tag first
+				innerContent := strings.TrimSpace(innerMatch[1])
+				if innerContent != "" {
+					processedInnerContent := g.normalizeTextForOutput(innerContent)
+					content = strings.Replace(content, innerMatch[0], processedInnerContent, 1)
+				}
+			}
+		}
+
+		if content == "" {
+			// Empty normalize tag - replace with empty string
+			template = strings.Replace(template, match[0], "", 1)
+			continue
+		}
+
+		// Normalize the content using the same logic as pattern matching
+		processedContent := g.normalizeTextForOutput(content)
+
+		g.LogDebug("Normalize tag: '%s' -> '%s'", match[1], processedContent)
+		template = strings.Replace(template, match[0], processedContent, 1)
+	}
+
+	g.LogDebug("Normalize tag processing result: '%s'", template)
+
+	return template
+}
+
+// processDenormalizeTagsWithContext processes <denormalize> tags for text denormalization
+// <denormalize> tag reverses the normalization process to restore more natural text
+func (g *Golem) processDenormalizeTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <denormalize> tags (including multiline content)
+	denormalizeTagRegex := regexp.MustCompile(`(?s)<denormalize>(.*?)</denormalize>`)
+	matches := denormalizeTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Denormalize tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			if content == "" {
+				// Empty denormalize tag - replace with empty string
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Denormalize the content to restore more natural text
+			processedContent := g.denormalizeText(content)
+
+			g.LogDebug("Denormalize tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Denormalize tag processing result: '%s'", template)
+
+	return template
+}
+
+// normalizeTextForOutput normalizes text for output (similar to pattern matching but for display)
+func (g *Golem) normalizeTextForOutput(input string) string {
+	text := strings.TrimSpace(input)
+
+	// Convert to uppercase
+	text = strings.ToUpper(text)
+
+	// Normalize whitespace
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+
+	// Replace special characters with spaces first
+	text = strings.ReplaceAll(text, "@", " ")
+	text = strings.ReplaceAll(text, "-", " ")
+	text = strings.ReplaceAll(text, "_", " ")
+	text = strings.ReplaceAll(text, ".", " ")
+	text = strings.ReplaceAll(text, ":", " ")
+
+	// Remove other punctuation for normalization
+	text = strings.ReplaceAll(text, ",", "")
+	text = strings.ReplaceAll(text, "!", "")
+	text = strings.ReplaceAll(text, "?", "")
+	text = strings.ReplaceAll(text, ";", "")
+	text = strings.ReplaceAll(text, "#", "")
+	text = strings.ReplaceAll(text, "$", "")
+	text = strings.ReplaceAll(text, "%", "")
+	text = strings.ReplaceAll(text, "^", "")
+	text = strings.ReplaceAll(text, "&", "")
+	text = strings.ReplaceAll(text, "*", "")
+	text = strings.ReplaceAll(text, "(", "")
+	text = strings.ReplaceAll(text, ")", "")
+
+	// Expand contractions for better normalization
+	text = expandContractions(text)
+
+	// Remove apostrophes after contraction expansion
+	text = strings.ReplaceAll(text, "'", "")
+
+	// Clean up whitespace
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+	text = strings.TrimSpace(text)
+
+	return text
+}
+
+// denormalizeText reverses normalization to restore more natural text
+func (g *Golem) denormalizeText(input string) string {
+	text := strings.TrimSpace(input)
+
+	// Convert to lowercase for more natural text
+	text = strings.ToLower(text)
+
+	// Normalize whitespace
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+
+	// Capitalize first letter of each sentence
+	text = g.capitalizeSentences(text)
+
+	// Add basic punctuation where appropriate
+	// This is a simplified approach - more sophisticated denormalization could be added
+	if !strings.HasSuffix(text, ".") && !strings.HasSuffix(text, "!") && !strings.HasSuffix(text, "?") && text != "" {
+		text += "."
+	}
+
+	return text
+}
+
 // processSRTagsWithContext processes <sr> tags with variable context
 // <sr> is shorthand for <srai><star/></srai>
 // This function should be called AFTER wildcard replacement has occurred
@@ -1994,9 +2054,7 @@ func (g *Golem) processSRTagsWithContext(template string, wildcards map[string]s
 	matches := srRegex.FindAllString(template, -1)
 
 	for _, match := range matches {
-		if g.verbose {
-			g.logger.Printf("Processing SR tag: '%s'", match)
-		}
+		g.LogInfo("Processing SR tag: '%s'", match)
 
 		// Get the first wildcard (star1) from the wildcards map
 		// This should contain the actual wildcard value that was matched
@@ -2008,9 +2066,7 @@ func (g *Golem) processSRTagsWithContext(template string, wildcards map[string]s
 		}
 
 		// DEBUG: Log the wildcard content and knowledge base status
-		if g.verbose {
-			g.logger.Printf("SR tag processing: starContent='%s', hasKB=%v", starContent, ctx.KnowledgeBase != nil)
-		}
+		g.LogInfo("SR tag processing: starContent='%s', hasKB=%v", starContent, ctx.KnowledgeBase != nil)
 
 		// Only convert to SRAI if we have star content AND a knowledge base to check for matches
 		if starContent != "" && ctx.KnowledgeBase != nil {
@@ -2022,29 +2078,21 @@ func (g *Golem) processSRTagsWithContext(template string, wildcards map[string]s
 				sraiTag := fmt.Sprintf("<srai>%s</srai>", starContent)
 				template = strings.ReplaceAll(template, match, sraiTag)
 
-				if g.verbose {
-					g.logger.Printf("Converted SR tag to SRAI (match found): '%s' -> '%s'", match, sraiTag)
-				}
+				g.LogInfo("Converted SR tag to SRAI (match found): '%s' -> '%s'", match, sraiTag)
 			} else {
 				// No matching pattern found, leave <sr/> unchanged
-				if g.verbose {
-					g.logger.Printf("No matching pattern for '%s', leaving SR tag unchanged", starContent)
-				}
+				g.LogInfo("No matching pattern for '%s', leaving SR tag unchanged", starContent)
 				// Don't replace the SR tag - leave it as is
 			}
 		} else if starContent != "" && ctx.KnowledgeBase == nil {
 			// We have star content but no knowledge base to check for matches
 			// This is the case in unit tests that don't set up a knowledge base
 			// Leave the SR tag unchanged to match test expectations
-			if g.verbose {
-				g.logger.Printf("No knowledge base available, leaving SR tag unchanged")
-			}
+			g.LogInfo("No knowledge base available, leaving SR tag unchanged")
 			// Don't replace the SR tag - leave it as is
 		} else {
 			// No star content available, leave <sr/> unchanged
-			if g.verbose {
-				g.logger.Printf("No star content available, leaving SR tag unchanged")
-			}
+			g.LogInfo("No star content available, leaving SR tag unchanged")
 			// Don't replace the SR tag - leave it as is
 		}
 	}
@@ -2067,9 +2115,7 @@ func (g *Golem) processSRAIXTagsWithContext(template string, ctx *VariableContex
 			serviceName := strings.TrimSpace(match[1])
 			sraixContent := strings.TrimSpace(match[2])
 
-			if g.verbose {
-				g.logger.Printf("Processing SRAIX: service='%s', content='%s'", serviceName, sraixContent)
-			}
+			g.LogInfo("Processing SRAIX: service='%s', content='%s'", serviceName, sraixContent)
 
 			// Process the SRAIX content (replace wildcards, variables, etc.)
 			processedContent := g.processTemplateWithContext(sraixContent, make(map[string]string), ctx)
@@ -2077,9 +2123,7 @@ func (g *Golem) processSRAIXTagsWithContext(template string, ctx *VariableContex
 			// Make external request
 			response, err := g.sraixMgr.ProcessSRAIX(serviceName, processedContent, make(map[string]string))
 			if err != nil {
-				if g.verbose {
-					g.logger.Printf("SRAIX request failed: %v", err)
-				}
+				g.LogInfo("SRAIX request failed: %v", err)
 				// Leave the SRAIX tag unchanged on error
 				continue
 			}
@@ -2106,16 +2150,12 @@ func (g *Golem) processLearnTagsWithContext(template string, ctx *VariableContex
 		if len(match) > 1 {
 			learnContent := strings.TrimSpace(match[1])
 
-			if g.verbose {
-				g.logger.Printf("Processing learn: '%s'", learnContent)
-			}
+			g.LogInfo("Processing learn: '%s'", learnContent)
 
 			// Parse the AIML content within the learn tag
 			categories, err := g.parseLearnContent(learnContent)
 			if err != nil {
-				if g.verbose {
-					g.logger.Printf("Failed to parse learn content: %v", err)
-				}
+				g.LogInfo("Failed to parse learn content: %v", err)
 				// Remove the learn tag on error
 				template = strings.ReplaceAll(template, match[0], "")
 				continue
@@ -2125,9 +2165,7 @@ func (g *Golem) processLearnTagsWithContext(template string, ctx *VariableContex
 			for _, category := range categories {
 				err := g.addSessionCategory(category, ctx)
 				if err != nil {
-					if g.verbose {
-						g.logger.Printf("Failed to add session category: %v", err)
-					}
+					g.LogInfo("Failed to add session category: %v", err)
 				}
 			}
 
@@ -2144,9 +2182,7 @@ func (g *Golem) processLearnTagsWithContext(template string, ctx *VariableContex
 		if len(match) > 1 {
 			learnfContent := strings.TrimSpace(match[1])
 
-			if g.verbose {
-				g.logger.Printf("Processing learnf: '%s'", learnfContent)
-			}
+			g.LogInfo("Processing learnf: '%s'", learnfContent)
 
 			// Parse the AIML content within the learnf tag
 			categories, err := g.parseLearnContent(learnfContent)
@@ -2161,9 +2197,7 @@ func (g *Golem) processLearnTagsWithContext(template string, ctx *VariableContex
 			for _, category := range categories {
 				err := g.addPersistentCategory(category)
 				if err != nil {
-					if g.verbose {
-						g.logger.Printf("Failed to add persistent category: %v", err)
-					}
+					g.LogInfo("Failed to add persistent category: %v", err)
 				}
 			}
 
@@ -2185,9 +2219,7 @@ func (g *Golem) processThinkTagsWithContext(template string, ctx *VariableContex
 		if len(match) > 1 {
 			thinkContent := strings.TrimSpace(match[1])
 
-			if g.verbose {
-				g.logger.Printf("Processing think: '%s'", thinkContent)
-			}
+			g.LogInfo("Processing think: '%s'", thinkContent)
 
 			// Process the think content (internal operations)
 			g.processThinkContentWithContext(thinkContent, ctx)
@@ -2214,9 +2246,7 @@ func (g *Golem) processThinkContentWithContext(content string, ctx *VariableCont
 			varName := match[1]
 			varValue := strings.TrimSpace(match[2])
 
-			if g.verbose {
-				g.logger.Printf("Setting variable: %s = %s", varName, varValue)
-			}
+			g.LogInfo("Setting variable: %s = %s", varName, varValue)
 
 			// Determine scope based on context
 			scope := ScopeGlobal // Default to global scope
@@ -2258,10 +2288,8 @@ func (g *Golem) processConditionTagsWithContext(template string, ctx *VariableCo
 		expectedValue := match[2]
 		conditionContent := strings.TrimSpace(match[3])
 
-		if g.verbose {
-			g.logger.Printf("Processing condition: var='%s', expected='%s', content='%s'",
-				varName, expectedValue, conditionContent)
-		}
+		g.LogInfo("Processing condition: var='%s', expected='%s', content='%s'",
+			varName, expectedValue, conditionContent)
 
 		// Get the actual variable value using context
 		actualValue := g.resolveVariable(varName, ctx)
@@ -2269,9 +2297,7 @@ func (g *Golem) processConditionTagsWithContext(template string, ctx *VariableCo
 		// Process the condition content
 		response := g.processConditionContentWithContext(conditionContent, varName, actualValue, expectedValue, ctx)
 
-		if g.verbose {
-			g.logger.Printf("Condition response: '%s'", response)
-		}
+		g.LogInfo("Condition response: '%s'", response)
 
 		// Replace the condition tag with the response
 		template = strings.ReplaceAll(template, match[0], response)
@@ -2365,9 +2391,7 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 			varName := match[1]
 			varValue := strings.TrimSpace(match[2])
 
-			if g.verbose {
-				g.logger.Printf("Setting variable '%s' to '%s'", varName, varValue)
-			}
+			g.LogInfo("Setting variable '%s' to '%s'", varName, varValue)
 
 			// Process the variable value through the template pipeline to handle wildcards
 			// Use a special processing that doesn't output the result
@@ -2387,19 +2411,15 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 // processTemplateContentForVariable processes template content for variable assignment without outputting
 // This function now uses the same processing pipeline as processTemplateWithContext to ensure consistency
 func (g *Golem) processTemplateContentForVariable(template string, wildcards map[string]string, ctx *VariableContext) string {
-	if g.verbose {
-		g.logger.Printf("Processing variable content: '%s'", template)
-		g.logger.Printf("Wildcards: %v", wildcards)
-	}
+	g.LogInfo("Processing variable content: '%s'", template)
+	g.LogInfo("Wildcards: %v", wildcards)
 
 	// Use the main template processing function to ensure consistent processing order
 	// This ensures that variable content is processed with the same tag processing pipeline
 	// as regular templates, maintaining consistency across the codebase
 	result := g.processTemplateWithContext(template, wildcards, ctx)
 
-	if g.verbose {
-		g.logger.Printf("Variable content result: '%s'", result)
-	}
+	g.LogInfo("Variable content result: '%s'", result)
 
 	return result
 }
@@ -2442,17 +2462,13 @@ func (g *Golem) processBotTagsWithContext(template string, ctx *VariableContext)
 			propertyName := match[1]
 			propertyValue := ctx.KnowledgeBase.GetProperty(propertyName)
 
-			if g.verbose {
-				g.logger.Printf("Bot tag: property='%s', value='%s'", propertyName, propertyValue)
-			}
+			g.LogInfo("Bot tag: property='%s', value='%s'", propertyName, propertyValue)
 
 			if propertyValue != "" {
 				template = strings.ReplaceAll(template, match[0], propertyValue)
 			} else {
 				// If property not found, leave the bot tag unchanged
-				if g.verbose {
-					g.logger.Printf("Bot property '%s' not found", propertyName)
-				}
+				g.LogInfo("Bot property '%s' not found", propertyName)
 			}
 		}
 	}
@@ -2473,17 +2489,13 @@ func (g *Golem) processSRAITags(template string, session *ChatSession) string {
 	for _, match := range matches {
 		if len(match) > 1 {
 			sraiInput := strings.TrimSpace(match[1])
-			if g.verbose {
-				g.logger.Printf("Processing SRAI: '%s'", sraiInput)
-			}
+			g.LogInfo("Processing SRAI: '%s'", sraiInput)
 
 			// Match the SRAI input as a new pattern
 			category, wildcards, err := g.aimlKB.MatchPattern(sraiInput)
 			if err != nil {
 				// If no match found, use the original SRAI text
-				if g.verbose {
-					g.logger.Printf("SRAI no match for: '%s'", sraiInput)
-				}
+				g.LogInfo("SRAI no match for: '%s'", sraiInput)
 				continue
 			}
 
@@ -2512,9 +2524,7 @@ func (g *Golem) processThinkTags(template string, session *ChatSession) string {
 	for _, match := range matches {
 		if len(match) > 1 {
 			thinkContent := strings.TrimSpace(match[1])
-			if g.verbose {
-				g.logger.Printf("Processing think tag: '%s'", thinkContent)
-			}
+			g.LogInfo("Processing think tag: '%s'", thinkContent)
 
 			// Process the think content (but don't include it in output)
 			// This allows for internal operations like setting variables
@@ -2542,9 +2552,7 @@ func (g *Golem) processThinkContent(content string, session *ChatSession) {
 			varName := match[1]
 			varValue := match[2]
 
-			if g.verbose {
-				g.logger.Printf("Think: Setting variable %s = %s", varName, varValue)
-			}
+			g.LogInfo("Think: Setting variable %s = %s", varName, varValue)
 
 			// Set the variable in the appropriate context
 			if session != nil {
@@ -2584,10 +2592,8 @@ func (g *Golem) processConditionTags(template string, session *ChatSession) stri
 		expectedValue := match[2]
 		conditionContent := strings.TrimSpace(match[3])
 
-		if g.verbose {
-			g.logger.Printf("Processing condition: var='%s', expected='%s', content='%s'",
-				varName, expectedValue, conditionContent)
-		}
+		g.LogInfo("Processing condition: var='%s', expected='%s', content='%s'",
+			varName, expectedValue, conditionContent)
 
 		// Get the actual variable value
 		actualValue := g.getVariableValue(varName, session)
@@ -2595,9 +2601,7 @@ func (g *Golem) processConditionTags(template string, session *ChatSession) stri
 		// Process the condition content
 		response := g.processConditionContent(conditionContent, varName, actualValue, expectedValue, session)
 
-		if g.verbose {
-			g.logger.Printf("Condition response: '%s'", response)
-		}
+		g.LogInfo("Condition response: '%s'", response)
 
 		// Replace the condition tag with the response
 		template = strings.ReplaceAll(template, match[0], response)
@@ -2788,9 +2792,7 @@ func (g *Golem) setVariable(varName, varValue string, scope VariableScope, ctx *
 		}
 	case ScopeProperties:
 		// Properties are read-only, cannot be set
-		if g.verbose {
-			g.logger.Printf("Warning: Cannot set property '%s' - properties are read-only", varName)
-		}
+		g.LogInfo("Warning: Cannot set property '%s' - properties are read-only", varName)
 	}
 }
 
@@ -2819,9 +2821,7 @@ func (g *Golem) processDateTags(template string) string {
 			format = match[2]
 		}
 
-		if g.verbose {
-			g.logger.Printf("Processing date tag with format: '%s'", format)
-		}
+		g.LogInfo("Processing date tag with format: '%s'", format)
 
 		// Get current date and format it
 		dateStr := g.formatDate(format)
@@ -2847,9 +2847,7 @@ func (g *Golem) processTimeTags(template string) string {
 			format = match[2]
 		}
 
-		if g.verbose {
-			g.logger.Printf("Processing time tag with format: '%s'", format)
-		}
+		g.LogInfo("Processing time tag with format: '%s'", format)
 
 		// Get current time and format it
 		timeStr := g.formatTime(format)
@@ -2880,16 +2878,12 @@ func (g *Golem) processRequestTags(template string, ctx *VariableContext) string
 			}
 		}
 
-		if g.verbose {
-			g.logger.Printf("Processing request tag with index: %d", index)
-		}
+		g.LogInfo("Processing request tag with index: %d", index)
 
 		// Get the request by index
 		requestValue := ctx.Session.GetRequestByIndex(index)
 		if requestValue == "" {
-			if g.verbose {
-				g.logger.Printf("No request found at index %d", index)
-			}
+			g.LogInfo("No request found at index %d", index)
 			// Replace with empty string if no request found
 			template = strings.ReplaceAll(template, match[0], "")
 		} else {
@@ -2920,16 +2914,12 @@ func (g *Golem) processResponseTags(template string, ctx *VariableContext) strin
 			}
 		}
 
-		if g.verbose {
-			g.logger.Printf("Processing response tag with index: %d", index)
-		}
+		g.LogInfo("Processing response tag with index: %d", index)
 
 		// Get the response by index
 		responseValue := ctx.Session.GetResponseByIndex(index)
 		if responseValue == "" {
-			if g.verbose {
-				g.logger.Printf("No response found at index %d", index)
-			}
+			g.LogInfo("No response found at index %d", index)
 			// Replace with empty string if no response found
 			template = strings.ReplaceAll(template, match[0], "")
 		} else {
@@ -3176,9 +3166,7 @@ func (g *Golem) processRandomTags(template string) string {
 	for _, match := range matches {
 		if len(match) > 1 {
 			randomContent := strings.TrimSpace(match[1])
-			if g.verbose {
-				g.logger.Printf("Processing random tag: '%s'", randomContent)
-			}
+			g.LogInfo("Processing random tag: '%s'", randomContent)
 
 			// Find all <li> elements within the random tag
 			liRegex := regexp.MustCompile(`(?s)<li>(.*?)</li>`)
@@ -3202,9 +3190,7 @@ func (g *Golem) processRandomTags(template string) string {
 			// Process date/time tags in the selected content
 			selectedContent = g.processDateTimeTags(selectedContent)
 
-			if g.verbose {
-				g.logger.Printf("Selected random option %d: '%s'", selectedIndex+1, selectedContent)
-			}
+			g.LogInfo("Selected random option %d: '%s'", selectedIndex+1, selectedContent)
 
 			// Replace the entire <random> tag with the selected content
 			template = strings.ReplaceAll(template, match[0], selectedContent)
@@ -3262,14 +3248,12 @@ func (g *Golem) loadDefaultProperties(kb *AIMLKnowledgeBase) error {
 			for key, value := range fileProps {
 				kb.Properties[key] = value
 			}
-			if g.verbose {
-				g.logger.Printf("Loaded properties from file: %s", propertiesFile)
-			}
-		} else if g.verbose {
-			g.logger.Printf("Could not parse properties file: %v", err)
+			g.LogInfo("Loaded properties from file: %s", propertiesFile)
+		} else {
+			g.LogInfo("Could not parse properties file: %v", err)
 		}
-	} else if g.verbose {
-		g.logger.Printf("Could not load properties file: %v", err)
+	} else {
+		g.LogInfo("Could not load properties file: %v", err)
 	}
 
 	return nil
@@ -3523,9 +3507,7 @@ func (g *Golem) processMapTagsWithContext(template string, ctx *VariableContext)
 			mapName := match[1]
 			key := strings.TrimSpace(match[2])
 
-			if g.verbose {
-				g.logger.Printf("Processing map tag: name='%s', key='%s'", mapName, key)
-			}
+			g.LogInfo("Processing map tag: name='%s', key='%s'", mapName, key)
 
 			// Look up the map
 			if mapData, exists := ctx.KnowledgeBase.Maps[mapName]; exists {
@@ -3533,21 +3515,15 @@ func (g *Golem) processMapTagsWithContext(template string, ctx *VariableContext)
 				if value, keyExists := mapData[key]; keyExists {
 					// Replace the map tag with the mapped value
 					template = strings.ReplaceAll(template, match[0], value)
-					if g.verbose {
-						g.logger.Printf("Mapped '%s' -> '%s'", key, value)
-					}
+					g.LogInfo("Mapped '%s' -> '%s'", key, value)
 				} else {
 					// Key not found in map, leave the original key
-					if g.verbose {
-						g.logger.Printf("Key '%s' not found in map '%s'", key, mapName)
-					}
+					g.LogInfo("Key '%s' not found in map '%s'", key, mapName)
 					template = strings.ReplaceAll(template, match[0], key)
 				}
 			} else {
 				// Map not found, leave the original key
-				if g.verbose {
-					g.logger.Printf("Map '%s' not found", mapName)
-				}
+				g.LogInfo("Map '%s' not found", mapName)
 				template = strings.ReplaceAll(template, match[0], key)
 			}
 		}
@@ -3558,13 +3534,9 @@ func (g *Golem) processMapTagsWithContext(template string, ctx *VariableContext)
 
 // processListTagsWithContext processes <list> tags with variable context
 func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext) string {
-	if g.verbose {
-		g.logger.Printf("List processing: ctx.KnowledgeBase=%v, ctx.KnowledgeBase.Lists=%v", ctx.KnowledgeBase != nil, ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Lists != nil)
-	}
+	g.LogInfo("List processing: ctx.KnowledgeBase=%v, ctx.KnowledgeBase.Lists=%v", ctx.KnowledgeBase != nil, ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Lists != nil)
 	if ctx.KnowledgeBase == nil || ctx.KnowledgeBase.Lists == nil {
-		if g.verbose {
-			g.logger.Printf("List processing: returning early due to nil knowledge base or lists")
-		}
+		g.LogInfo("List processing: returning early due to nil knowledge base or lists")
 		return template
 	}
 
@@ -3572,9 +3544,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 	listRegex := regexp.MustCompile(`<list\s+name=["']([^"']+)["'](?:\s+index=["']([^"']+)["'])?(?:\s+operation=["']([^"']+)["'])?>(.*?)</list>`)
 	matches := listRegex.FindAllStringSubmatch(template, -1)
 
-	if g.verbose {
-		g.logger.Printf("List processing: found %d matches in template: '%s'", len(matches), template)
-	}
+	g.LogInfo("List processing: found %d matches in template: '%s'", len(matches), template)
 
 	for _, match := range matches {
 		if len(match) >= 4 {
@@ -3583,9 +3553,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 			operation := match[3]
 			content := strings.TrimSpace(match[4])
 
-			if g.verbose {
-				g.logger.Printf("Processing list tag: name='%s', index='%s', operation='%s', content='%s'", listName, indexStr, operation, content)
-			}
+			g.LogInfo("Processing list tag: name='%s', index='%s', operation='%s', content='%s'", listName, indexStr, operation, content)
 
 			// Get or create the list
 			if ctx.KnowledgeBase.Lists[listName] == nil {
@@ -3599,9 +3567,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 				list = append(list, content)
 				ctx.KnowledgeBase.Lists[listName] = list
 				template = strings.ReplaceAll(template, match[0], "")
-				if g.verbose {
-					g.logger.Printf("Added '%s' to list '%s'", content, listName)
-				}
+				g.LogInfo("Added '%s' to list '%s'", content, listName)
 
 			case "insert":
 				// Insert item at specific index
@@ -3611,26 +3577,20 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 						list = append(list[:index], append([]string{content}, list[index:]...)...)
 						ctx.KnowledgeBase.Lists[listName] = list
 						template = strings.ReplaceAll(template, match[0], "")
-						if g.verbose {
-							g.logger.Printf("Inserted '%s' at index %d in list '%s'", content, index, listName)
-						}
+						g.LogInfo("Inserted '%s' at index %d in list '%s'", content, index, listName)
 					} else {
 						// Invalid index, append to end
 						list = append(list, content)
 						ctx.KnowledgeBase.Lists[listName] = list
 						template = strings.ReplaceAll(template, match[0], "")
-						if g.verbose {
-							g.logger.Printf("Invalid index %s, appended '%s' to list '%s'", indexStr, content, listName)
-						}
+						g.LogInfo("Invalid index %s, appended '%s' to list '%s'", indexStr, content, listName)
 					}
 				} else {
 					// No index specified, append to end
 					list = append(list, content)
 					ctx.KnowledgeBase.Lists[listName] = list
 					template = strings.ReplaceAll(template, match[0], "")
-					if g.verbose {
-						g.logger.Printf("No index specified, appended '%s' to list '%s'", content, listName)
-					}
+					g.LogInfo("No index specified, appended '%s' to list '%s'", content, listName)
 				}
 
 			case "remove", "delete":
@@ -3641,9 +3601,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 						list = append(list[:index], list[index+1:]...)
 						ctx.KnowledgeBase.Lists[listName] = list
 						template = strings.ReplaceAll(template, match[0], "")
-						if g.verbose {
-							g.logger.Printf("Removed item at index %d from list '%s'", index, listName)
-						}
+						g.LogInfo("Removed item at index %d from list '%s'", index, listName)
 					} else {
 						// Invalid index, try to remove by value
 						for i, item := range list {
@@ -3651,9 +3609,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 								list = append(list[:i], list[i+1:]...)
 								ctx.KnowledgeBase.Lists[listName] = list
 								template = strings.ReplaceAll(template, match[0], "")
-								if g.verbose {
-									g.logger.Printf("Removed '%s' from list '%s'", content, listName)
-								}
+								g.LogInfo("Removed '%s' from list '%s'", content, listName)
 								break
 							}
 						}
@@ -3665,9 +3621,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 							list = append(list[:i], list[i+1:]...)
 							ctx.KnowledgeBase.Lists[listName] = list
 							template = strings.ReplaceAll(template, match[0], "")
-							if g.verbose {
-								g.logger.Printf("Removed '%s' from list '%s'", content, listName)
-							}
+							g.LogInfo("Removed '%s' from list '%s'", content, listName)
 							break
 						}
 					}
@@ -3677,17 +3631,13 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 				// Clear the list
 				ctx.KnowledgeBase.Lists[listName] = make([]string, 0)
 				template = strings.ReplaceAll(template, match[0], "")
-				if g.verbose {
-					g.logger.Printf("Cleared list '%s'", listName)
-				}
+				g.LogInfo("Cleared list '%s'", listName)
 
 			case "size", "length":
 				// Return the size of the list
 				size := strconv.Itoa(len(list))
 				template = strings.ReplaceAll(template, match[0], size)
-				if g.verbose {
-					g.logger.Printf("List '%s' size: %s", listName, size)
-				}
+				g.LogInfo("List '%s' size: %s", listName, size)
 
 			case "get", "":
 				// Get item at index or return the list
@@ -3695,23 +3645,17 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 					if index, err := strconv.Atoi(indexStr); err == nil && index >= 0 && index < len(list) {
 						// Get item at specific index
 						template = strings.ReplaceAll(template, match[0], list[index])
-						if g.verbose {
-							g.logger.Printf("Got item at index %d from list '%s': '%s'", index, listName, list[index])
-						}
+						g.LogInfo("Got item at index %d from list '%s': '%s'", index, listName, list[index])
 					} else {
 						// Invalid index, return empty
 						template = strings.ReplaceAll(template, match[0], "")
-						if g.verbose {
-							g.logger.Printf("Invalid index %s for list '%s'", indexStr, listName)
-						}
+						g.LogInfo("Invalid index %s for list '%s'", indexStr, listName)
 					}
 				} else {
 					// Return all items joined by space
 					items := strings.Join(list, " ")
 					template = strings.ReplaceAll(template, match[0], items)
-					if g.verbose {
-						g.logger.Printf("Got all items from list '%s': '%s'", listName, items)
-					}
+					g.LogInfo("Got all items from list '%s': '%s'", listName, items)
 				}
 
 			default:
@@ -3750,9 +3694,7 @@ func (g *Golem) processArrayTagsWithContext(template string, ctx *VariableContex
 			operation := match[3]
 			content := strings.TrimSpace(match[4])
 
-			if g.verbose {
-				g.logger.Printf("Processing array tag: name='%s', index='%s', operation='%s', content='%s'", arrayName, indexStr, operation, content)
-			}
+			g.LogInfo("Processing array tag: name='%s', index='%s', operation='%s', content='%s'", arrayName, indexStr, operation, content)
 
 			// Get or create the array
 			if ctx.KnowledgeBase.Arrays[arrayName] == nil {
@@ -3772,24 +3714,18 @@ func (g *Golem) processArrayTagsWithContext(template string, ctx *VariableContex
 						array[index] = content
 						ctx.KnowledgeBase.Arrays[arrayName] = array
 						template = strings.ReplaceAll(template, match[0], "")
-						if g.verbose {
-							g.logger.Printf("Set array '%s'[%d] = '%s'", arrayName, index, content)
-						}
+						g.LogInfo("Set array '%s'[%d] = '%s'", arrayName, index, content)
 					} else {
 						// Invalid index
 						template = strings.ReplaceAll(template, match[0], "")
-						if g.verbose {
-							g.logger.Printf("Invalid index %s for array '%s'", indexStr, arrayName)
-						}
+						g.LogInfo("Invalid index %s for array '%s'", indexStr, arrayName)
 					}
 				} else {
 					// No index specified, append to end
 					array = append(array, content)
 					ctx.KnowledgeBase.Arrays[arrayName] = array
 					template = strings.ReplaceAll(template, match[0], "")
-					if g.verbose {
-						g.logger.Printf("Appended '%s' to array '%s'", content, arrayName)
-					}
+					g.LogInfo("Appended '%s' to array '%s'", content, arrayName)
 				}
 
 			case "get", "":
@@ -3797,39 +3733,29 @@ func (g *Golem) processArrayTagsWithContext(template string, ctx *VariableContex
 				if indexStr != "" {
 					if index, err := strconv.Atoi(indexStr); err == nil && index >= 0 && index < len(array) {
 						template = strings.ReplaceAll(template, match[0], array[index])
-						if g.verbose {
-							g.logger.Printf("Got array '%s'[%d] = '%s'", arrayName, index, array[index])
-						}
+						g.LogInfo("Got array '%s'[%d] = '%s'", arrayName, index, array[index])
 					} else {
 						template = strings.ReplaceAll(template, match[0], "")
-						if g.verbose {
-							g.logger.Printf("Invalid index %s for array '%s'", indexStr, arrayName)
-						}
+						g.LogInfo("Invalid index %s for array '%s'", indexStr, arrayName)
 					}
 				} else {
 					// Return all items joined by space
 					items := strings.Join(array, " ")
 					template = strings.ReplaceAll(template, match[0], items)
-					if g.verbose {
-						g.logger.Printf("Got all items from array '%s': '%s'", arrayName, items)
-					}
+					g.LogInfo("Got all items from array '%s': '%s'", arrayName, items)
 				}
 
 			case "size", "length":
 				// Return the size of the array
 				size := strconv.Itoa(len(array))
 				template = strings.ReplaceAll(template, match[0], size)
-				if g.verbose {
-					g.logger.Printf("Array '%s' size: %s", arrayName, size)
-				}
+				g.LogInfo("Array '%s' size: %s", arrayName, size)
 
 			case "clear":
 				// Clear the array
 				ctx.KnowledgeBase.Arrays[arrayName] = make([]string, 0)
 				template = strings.ReplaceAll(template, match[0], "")
-				if g.verbose {
-					g.logger.Printf("Cleared array '%s'", arrayName)
-				}
+				g.LogInfo("Cleared array '%s'", arrayName)
 
 			default:
 				// Unknown operation, treat as get
@@ -3872,7 +3798,7 @@ func expandContractions(text string) string {
 		// Negative contractions
 		"DON'T": "DO NOT", "Don't": "Do not", "don't": "do not",
 		"WON'T": "WILL NOT", "Won't": "Will not", "won't": "will not",
-		"CAN'T": "CANNOT", "Can't": "Cannot", "can't": "cannot",
+		"CAN'T": "CAN NOT", "Can't": "Can not", "can't": "can not",
 		"ISN'T": "IS NOT", "Isn't": "Is not", "isn't": "is not",
 		"AREN'T": "ARE NOT", "Aren't": "Are not", "aren't": "are not",
 		"WASN'T": "WAS NOT", "Wasn't": "Was not", "wasn't": "was not",
@@ -3901,8 +3827,8 @@ func expandContractions(text string) string {
 		"WE'VE": "WE HAVE", "We've": "We have", "we've": "we have",
 		"THEY'VE": "THEY HAVE", "They've": "They have", "they've": "they have",
 
-		// Past tense contractions
-		"I'D": "I HAD", "I'd": "I had", "i'd": "i had",
+		// Past tense contractions (I'D can be either HAD or WOULD, context dependent)
+		"I'D": "I WOULD", "I'd": "I would", "i'd": "i would",
 		"YOU'D": "YOU HAD", "You'd": "You had", "you'd": "you had",
 		"HE'D": "HE HAD", "He'd": "He had", "he'd": "he had",
 		"SHE'D": "SHE HAD", "She'd": "She had", "she'd": "she had",
@@ -3926,6 +3852,13 @@ func expandContractions(text string) string {
 		"Y'ALL": "YOU ALL", "Y'all": "You all", "y'all": "you all",
 		"MA'AM": "MADAM", "Ma'am": "Madam", "ma'am": "madam",
 		"O'CLOCK": "OF THE CLOCK", "o'clock": "of the clock",
+
+		// Complex contractions (must be processed before simple ones)
+		"I'D'VE": "I WOULD HAVE", "I'd've": "I would have", "i'd've": "i would have",
+		"WOULDN'T'VE": "WOULD NOT HAVE", "Wouldn't've": "Would not have", "wouldn't've": "would not have",
+		"SHOULDN'T'VE": "SHOULD NOT HAVE", "Shouldn't've": "Should not have", "shouldn't've": "should not have",
+		"COULDN'T'VE": "COULD NOT HAVE", "Couldn't've": "Could not have", "couldn't've": "could not have",
+		"MUSTN'T'VE": "MUST NOT HAVE", "Mustn't've": "Must not have", "mustn't've": "must not have",
 	}
 
 	// Apply contractions in order of length (longest first) to avoid partial replacements
@@ -3948,6 +3881,15 @@ func expandContractions(text string) string {
 	for _, contraction := range keys {
 		text = strings.ReplaceAll(text, contraction, contractions[contraction])
 	}
+
+	// Post-process to handle context-dependent contractions
+	// "I WOULD KNOWN" should be "I HAD KNOWN" (I'd + past participle)
+	text = strings.ReplaceAll(text, "I WOULD KNOWN", "I HAD KNOWN")
+	text = strings.ReplaceAll(text, "I WOULD DONE", "I HAD DONE")
+	text = strings.ReplaceAll(text, "I WOULD GONE", "I HAD GONE")
+	text = strings.ReplaceAll(text, "I WOULD SEEN", "I HAD SEEN")
+	text = strings.ReplaceAll(text, "I WOULD BEEN", "I HAD BEEN")
+	text = strings.ReplaceAll(text, "I WOULD HAD", "I HAD HAD")
 
 	return text
 }
@@ -4752,15 +4694,11 @@ func (g *Golem) addSessionCategory(category Category, ctx *VariableContext) erro
 
 	// Check if category already exists
 	if existingCategory, exists := g.aimlKB.Patterns[normalizedPattern]; exists {
-		if g.verbose {
-			g.logger.Printf("Updating existing session category: %s", normalizedPattern)
-		}
+		g.LogInfo("Updating existing session category: %s", normalizedPattern)
 		// Update existing category
 		*existingCategory = category
 	} else {
-		if g.verbose {
-			g.logger.Printf("Adding new session category: %s", normalizedPattern)
-		}
+		g.LogInfo("Adding new session category: %s", normalizedPattern)
 		// Add new category
 		g.aimlKB.Categories = append(g.aimlKB.Categories, category)
 		g.aimlKB.Patterns[normalizedPattern] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
@@ -4785,15 +4723,11 @@ func (g *Golem) addPersistentCategory(category Category) error {
 
 	// Check if category already exists
 	if existingCategory, exists := g.aimlKB.Patterns[normalizedPattern]; exists {
-		if g.verbose {
-			g.logger.Printf("Updating existing persistent category: %s", normalizedPattern)
-		}
+		g.LogInfo("Updating existing persistent category: %s", normalizedPattern)
 		// Update existing category
 		*existingCategory = category
 	} else {
-		if g.verbose {
-			g.logger.Printf("Adding new persistent category: %s", normalizedPattern)
-		}
+		g.LogInfo("Adding new persistent category: %s", normalizedPattern)
 		// Add new category
 		g.aimlKB.Categories = append(g.aimlKB.Categories, category)
 		g.aimlKB.Patterns[normalizedPattern] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
@@ -4801,9 +4735,7 @@ func (g *Golem) addPersistentCategory(category Category) error {
 
 	// TODO: In a real implementation, you would save this to persistent storage
 	// For now, we just add it to the in-memory knowledge base
-	if g.verbose {
-		g.logger.Printf("Note: Persistent learning not yet implemented - category added to memory only")
-	}
+	g.LogInfo("Note: Persistent learning not yet implemented - category added to memory only")
 
 	return nil
 }

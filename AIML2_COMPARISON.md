@@ -92,8 +92,8 @@
 - **`<formal>`** - Title case conversion
 - **`<sentence>`** - Sentence case conversion
 - **`<explode>`** - Character separation
-- **`<normalize>`** - Text normalization
-- **`<denormalize>`** - Text denormalization
+- **`<normalize>`** - Text normalization ✅ **IMPLEMENTED**
+- **`<denormalize>`** - Text denormalization ✅ **IMPLEMENTED**
 
 #### Context and History
 - **`<that>`** - Enhanced context matching (we have basic support)
@@ -191,10 +191,10 @@
 - **Pattern Matching**: 85% (17/20)
 - **Variable Management**: 70% (7/10)
 - **Advanced Features**: 50% (10/20) ⬆️
-- **Text Processing**: 40% (4/10) ⬆️
+- **Text Processing**: 60% (6/10) ⬆️
 - **Learning System**: 60% (3/5)
 
-**Overall Compliance**: **73%** ⬆️
+**Overall Compliance**: **75%** ⬆️
 
 ### 🎯 **RECOMMENDED NEXT STEPS**
 
