@@ -2627,6 +2627,10 @@ func (g *Golem) replaceSessionVariableTagsWithContext(template string, ctx *Vari
 		if len(match) > 1 {
 			varName := match[1]
 			varValue := g.resolveVariable(varName, ctx)
+			g.LogInfo("Getting variable '%s': '%s'", varName, varValue)
+			if ctx.Session != nil {
+				g.LogInfo("Session variables: %v", ctx.Session.Variables)
+			}
 			if varValue != "" {
 				template = strings.ReplaceAll(template, match[0], varValue)
 			}
