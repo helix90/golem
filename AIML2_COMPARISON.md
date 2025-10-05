@@ -82,8 +82,8 @@
 
 #### Core AIML2 Elements
 - **`<id>`** - User ID access
-- **`<size>`** - Knowledge base size
-- **`<version>`** - AIML version information
+- **`<size>`** - Knowledge base size ✅ **IMPLEMENTED**
+- **`<version>`** - AIML version information ✅ **IMPLEMENTED**
 
 #### Text Processing Tags
 - **`<person2>`** - Extended pronoun substitution ✅ **IMPLEMENTED**
@@ -145,7 +145,7 @@
 ### 📋 **PRIORITY IMPLEMENTATION LIST**
 
 #### High Priority (Core AIML2 Features)
-1. **`<id>`, `<size>`, `<version>`** - Basic system information
+1. **`<id>`** - User ID access
 2. **Text processing tags** - `<uppercase>`, `<lowercase>`, `<formal>`, `<sentence>`
 
 #### Medium Priority (Enhanced Functionality)
@@ -185,7 +185,7 @@
 
 ### 📊 **COMPLIANCE SCORE**
 
-- **Core AIML2 Features**: 85% (17/20) ⬆️
+- **Core AIML2 Features**: 90% (18/20) ⬆️
 - **Template Processing**: 93% (14/15) ⬆️
 - **Pattern Matching**: 85% (17/20)
 - **Variable Management**: 70% (7/10)
@@ -193,12 +193,12 @@
 - **Text Processing**: 70% (7/10) ⬆️
 - **Learning System**: 60% (3/5)
 
-**Overall Compliance**: **76%** ⬆️
+**Overall Compliance**: **78%** ⬆️
 
 ### 🎯 **RECOMMENDED NEXT STEPS**
 
 1. **Complete Text Processing** - Add remaining text formatting tags (uppercase, lowercase, formal, sentence)
-2. **Add System Information** - Implement `<id>`, `<size>`, `<version>` tags
+2. **Add User ID Support** - Implement `<id>` tag for user identification
 3. **Improve Context Management** - Better `<that>` and `<topic>` support
 4. **Add Learning Management** - Implement `<unlearn>` and validation
 5. **Enhance Security** - Add content validation and access control
@@ -212,6 +212,7 @@
 - **Request/Response history is now implemented** with full AIML2 compliance including index support
 - **Person and Gender pronoun substitution are implemented** for natural conversation flow
 - **SR tags are implemented** as shorthand for SRAI operations
+- **Size and Version tags are implemented** for system information access
 - The learning system is well-implemented but needs management features
 - Text processing still needs enhancement (uppercase, lowercase, formal, sentence case)
 - Security and validation need significant enhancement

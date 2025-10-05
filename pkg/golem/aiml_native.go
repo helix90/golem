@@ -1531,6 +1531,16 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processDenormalizeTagsWithContext(response, ctx)
 	g.LogDebug("After denormalize processing: '%s'", response)
 
+	// Process size tags (knowledge base size)
+	g.LogDebug("Before size processing: '%s'", response)
+	response = g.processSizeTagsWithContext(response, ctx)
+	g.LogDebug("After size processing: '%s'", response)
+
+	// Process version tags (AIML version)
+	g.LogDebug("Before version processing: '%s'", response)
+	response = g.processVersionTagsWithContext(response, ctx)
+	g.LogDebug("After version processing: '%s'", response)
+
 	// Process request tags (user input history)
 	g.LogInfo("Before request processing: '%s'", response)
 	response = g.processRequestTags(response, ctx)
@@ -2586,6 +2596,57 @@ func (g *Golem) processBotTagsWithContext(template string, ctx *VariableContext)
 				g.LogInfo("Bot property '%s' not found", propertyName)
 			}
 		}
+	}
+
+	return template
+}
+
+// processSizeTagsWithContext processes <size/> tags to return the number of categories
+func (g *Golem) processSizeTagsWithContext(template string, ctx *VariableContext) string {
+	if ctx.KnowledgeBase == nil {
+		return template
+	}
+
+	// Find all <size/> tags
+	sizeTagRegex := regexp.MustCompile(`<size/>`)
+	matches := sizeTagRegex.FindAllString(template, -1)
+
+	if len(matches) > 0 {
+		// Get the number of categories
+		size := len(ctx.KnowledgeBase.Categories)
+		sizeStr := strconv.Itoa(size)
+
+		g.LogDebug("Size tag: found %d categories", size)
+
+		// Replace all <size/> tags with the count
+		template = strings.ReplaceAll(template, "<size/>", sizeStr)
+	}
+
+	return template
+}
+
+// processVersionTagsWithContext processes <version/> tags to return the AIML version
+func (g *Golem) processVersionTagsWithContext(template string, ctx *VariableContext) string {
+	if ctx.KnowledgeBase == nil {
+		return template
+	}
+
+	// Find all <version/> tags
+	versionTagRegex := regexp.MustCompile(`<version/>`)
+	matches := versionTagRegex.FindAllString(template, -1)
+
+	if len(matches) > 0 {
+		// Get the AIML version from the knowledge base
+		version := ctx.KnowledgeBase.GetProperty("version")
+		if version == "" {
+			// Default to "2.0" if no version is specified
+			version = "2.0"
+		}
+
+		g.LogDebug("Version tag: found version '%s'", version)
+
+		// Replace all <version/> tags with the version
+		template = strings.ReplaceAll(template, "<version/>", version)
 	}
 
 	return template
