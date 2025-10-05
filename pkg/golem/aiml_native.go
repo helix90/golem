@@ -215,9 +215,7 @@ func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledge
 }
 
 func (g *Golem) LoadAIML(filename string) (*AIMLKnowledgeBase, error) {
-	if g.verbose {
-		g.logger.Printf("Loading AIML file: %s", filename)
-	}
+	g.LogInfo("Loading AIML file: %s", filename)
 
 	// Read the file
 	content, err := g.LoadFile(filename)
@@ -265,9 +263,7 @@ func (g *Golem) LoadAIML(filename string) (*AIMLKnowledgeBase, error) {
 
 // LoadAIMLFromDirectory loads all AIML files from a directory and merges them into a single knowledge base
 func (g *Golem) LoadAIMLFromDirectory(dirPath string) (*AIMLKnowledgeBase, error) {
-	if g.verbose {
-		g.logger.Printf("Loading AIML files from directory: %s", dirPath)
-	}
+	g.LogInfo("Loading AIML files from directory: %s", dirPath)
 
 	// Create a new knowledge base to merge all files into
 	mergedKB := NewAIMLKnowledgeBase()
@@ -301,23 +297,17 @@ func (g *Golem) LoadAIMLFromDirectory(dirPath string) (*AIMLKnowledgeBase, error
 		return nil, fmt.Errorf("no AIML files found in directory: %s", dirPath)
 	}
 
-	if g.verbose {
-		g.logger.Printf("Found %d AIML files in directory", len(aimlFiles))
-	}
+	g.LogInfo("Found %d AIML files in directory", len(aimlFiles))
 
 	// Load each AIML file and merge into the knowledge base
 	for _, aimlFile := range aimlFiles {
-		if g.verbose {
-			g.logger.Printf("Loading AIML file: %s", aimlFile)
-		}
+		g.LogInfo("Loading AIML file: %s", aimlFile)
 
 		// Load the individual AIML file
 		kb, err := g.LoadAIML(aimlFile)
 		if err != nil {
 			// Log the error but continue with other files
-			if g.verbose {
-				g.logger.Printf("Warning: failed to load %s: %v", aimlFile, err)
-			}
+			g.LogInfo("Warning: failed to load %s: %v", aimlFile, err)
 			continue
 		}
 
