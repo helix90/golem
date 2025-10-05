@@ -848,7 +848,7 @@ func TestSRTagIntegration(t *testing.T) {
 
 // TestSRTagRecursive tests recursive SR tag processing
 func TestSRTagRecursive(t *testing.T) {
-	g := New(true) // Enable verbose logging
+	g := New(false) // Disable verbose logging for tests
 	kb := NewAIMLKnowledgeBase()
 
 	// Add test categories with recursive SR
@@ -2863,7 +2863,7 @@ func TestConditionDefaultCase(t *testing.T) {
 
 // TestVariableScopeResolution tests the new variable scope resolution system
 func TestVariableScopeResolution(t *testing.T) {
-	g := New(true)
+	g := New(false)
 	kb := NewAIMLKnowledgeBase()
 	g.SetKnowledgeBase(kb)
 
@@ -3149,7 +3149,7 @@ func TestLoadCommandWithDirectory(t *testing.T) {
 
 // TestVariableSetting tests the new variable setting system with scopes
 func TestVariableSetting(t *testing.T) {
-	g := New(true)
+	g := New(false)
 	kb := NewAIMLKnowledgeBase()
 	session := &ChatSession{
 		ID:        "test_session",
@@ -5025,6 +5025,108 @@ func TestWordTagProcessing(t *testing.T) {
 			result := g.processWordTagsWithContext(tt.template, ctx)
 			if result != tt.expected {
 				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestUpperLowerCaseTagProcessing tests the uppercase and lowercase tag processing functionality
+func TestUpperLowerCaseTagProcessing(t *testing.T) {
+	g := New(false)
+
+	type tc struct {
+		name     string
+		template string
+		expected string
+	}
+
+	upperTests := []tc{
+		{"Basic uppercase", "Hello <uppercase>world</uppercase>", "Hello WORLD"},
+		{"Multiple uppercase tags", "<uppercase>hello</uppercase> <uppercase>world</uppercase>", "HELLO WORLD"},
+		{"Empty uppercase", "Hello <uppercase></uppercase> world", "Hello  world"},
+		{"Whitespace uppercase", "<uppercase>   hello   world  </uppercase>", "HELLO WORLD"},
+		{"Unicode uppercase", "<uppercase>héllo wørld</uppercase>", "HÉLLO WØRLD"},
+		{"Punctuation uppercase", "<uppercase>hello, world!</uppercase>", "HELLO, WORLD!"},
+		{"Multiline uppercase", "<uppercase>hello\nworld</uppercase>", "HELLO WORLD"},
+	}
+
+	lowerTests := []tc{
+		{"Basic lowercase", "Hello <lowercase>WORLD</lowercase>", "Hello world"},
+		{"Multiple lowercase tags", "<lowercase>HELLO</lowercase> <lowercase>WORLD</lowercase>", "hello world"},
+		{"Empty lowercase", "Hello <lowercase></lowercase> world", "Hello  world"},
+		{"Whitespace lowercase", "<lowercase>   HELLO   WORLD  </lowercase>", "hello world"},
+		{"Unicode lowercase", "<lowercase>HÉLLO WØRLD</lowercase>", "héllo wørld"},
+		{"Punctuation lowercase", "<lowercase>HELLO, WORLD!</lowercase>", "hello, world!"},
+		{"Multiline lowercase", "<lowercase>HELLO\nWORLD</lowercase>", "hello world"},
+	}
+
+	for _, tt := range upperTests {
+		t.Run("Upper/"+tt.name, func(t *testing.T) {
+			ctx := &VariableContext{LocalVars: make(map[string]string)}
+			result := g.processUppercaseTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+
+	for _, tt := range lowerTests {
+		t.Run("Lower/"+tt.name, func(t *testing.T) {
+			ctx := &VariableContext{LocalVars: make(map[string]string)}
+			result := g.processLowercaseTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestTextProcessingUpperLowerIntegration tests integration of uppercase/lowercase in full AIML processing
+func TestTextProcessingUpperLowerIntegration(t *testing.T) {
+	g := New(false)
+
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+<category>
+<pattern>YELL *</pattern>
+<template><uppercase><star/></uppercase></template>
+</category>
+<category>
+<pattern>WHISPER *</pattern>
+<template><lowercase><star/></lowercase></template>
+</category>
+<category>
+<pattern>MIXED CASE *</pattern>
+<template>U:<uppercase><star/></uppercase> L:<lowercase><star/></lowercase></template>
+</category>
+</aiml>`
+
+	if err := g.LoadAIMLFromString(aimlContent); err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	kb := g.GetKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"Uppercase wildcard", "yell hello world", "HELLO WORLD"},
+		{"Lowercase wildcard", "whisper HELLO WORLD", "hello world"},
+		{"Mixed both", "mixed case HeLLo WoRLd", "U:HELLO WORLD L:hello world"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := g.CreateSession("upper-lower-test")
+			response, err := g.ProcessInput(tt.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+			if response != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
 			}
 		})
 	}

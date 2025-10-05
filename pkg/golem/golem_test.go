@@ -17,7 +17,7 @@ func TestNew(t *testing.T) {
 
 	g = New(true)
 	if !g.verbose {
-		t.Error("Expected verbose to be true")
+		t.Errorf("Expected verbose to be true, got %v", g.verbose)
 	}
 }
 

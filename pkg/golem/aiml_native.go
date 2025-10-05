@@ -3,6 +3,7 @@ package golem
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -863,8 +864,10 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginal(normalize
 				continue // Skip patterns with different specific indices
 			}
 
-			// Use wildcard matching for that context
-			thatMatched, _ = matchPatternWithWildcardsAndSets(normalizedThat, category.That, kb)
+			// Use enhanced wildcard matching for that context
+			var thatWildcards map[string]string
+			thatMatched, thatWildcards = matchThatPatternWithWildcards(normalizedThat, category.That)
+			_ = thatWildcards // Suppress unused variable warning for now
 			if !thatMatched {
 				continue // Skip patterns that don't match the that context
 			}
@@ -881,13 +884,18 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginal(normalize
 
 			// Boost priority for patterns with that context
 			if category.That != "" {
-				priority.Priority += 300 // High boost for that context
+				// Calculate that pattern priority
+				thatPriority := calculateThatPatternPriority(category.That)
+				priority.Priority += thatPriority
+
 				// Additional boost for exact that matches
 				if normalizedThat != "" && category.That == normalizedThat {
 					priority.Priority += 100 // Extra boost for exact that match
 				}
 				// Additional boost for that patterns with wildcards (more specific)
-				if strings.Contains(category.That, "*") {
+				if strings.Contains(category.That, "*") || strings.Contains(category.That, "_") ||
+					strings.Contains(category.That, "^") || strings.Contains(category.That, "#") ||
+					strings.Contains(category.That, "$") {
 					priority.Priority += 50 // Boost for wildcard that patterns
 				}
 				// Additional boost for patterns with specific indices (more specific than index 0)
@@ -933,11 +941,10 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginal(normalize
 
 		// Capture wildcard values from that context if it has wildcards
 		thatWildcards := make(map[string]string)
-		if bestMatch.Category.That != "" && strings.Contains(bestMatch.Category.That, "*") {
-			_, thatWildcards = matchPatternWithWildcardsAndSets(normalizedThat, bestMatch.Category.That, kb)
-			if thatWildcards == nil {
-				_, thatWildcards = matchPatternWithWildcards(normalizedThat, bestMatch.Category.That)
-			}
+		if bestMatch.Category.That != "" && (strings.Contains(bestMatch.Category.That, "*") ||
+			strings.Contains(bestMatch.Category.That, "_") || strings.Contains(bestMatch.Category.That, "^") ||
+			strings.Contains(bestMatch.Category.That, "#") || strings.Contains(bestMatch.Category.That, "$")) {
+			_, thatWildcards = matchThatPatternWithWildcards(normalizedThat, bestMatch.Category.That)
 		}
 
 		// Capture wildcard values from topic context if it has wildcards
@@ -1378,10 +1385,30 @@ func (g *Golem) ProcessTemplateWithContext(template string, wildcards map[string
 
 // processTemplateWithContext processes a template with variable context
 func (g *Golem) processTemplateWithContext(template string, wildcards map[string]string, ctx *VariableContext) string {
+	startTime := time.Now()
+
+	// Check cache first if enabled
+	if g.templateConfig.EnableCaching {
+		cacheKey := g.generateTemplateCacheKey(template, wildcards, ctx)
+		if cached, found := g.getFromTemplateCache(cacheKey); found {
+			g.templateMetrics.CacheHits++
+			g.updateCacheHitRate()
+			g.LogDebug("Template cache hit for key: %s", cacheKey)
+			return cached
+		}
+		g.templateMetrics.CacheMisses++
+		g.updateCacheHitRate()
+	}
+
 	response := template
 
 	g.LogInfo("Template text: '%s'", response)
 	g.LogInfo("Wildcards: %v", wildcards)
+
+	// Store wildcards in context for that wildcard processing
+	for key, value := range wildcards {
+		ctx.LocalVars[key] = value
+	}
 
 	// Replace wildcards
 	// First, replace indexed star tags
@@ -1521,6 +1548,12 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processWordTagsWithContext(response, ctx)
 	g.LogDebug("After word processing: '%s'", response)
 
+	// Process uppercase/lowercase tags (case transforms)
+	g.LogDebug("Before uppercase/lowercase processing: '%s'", response)
+	response = g.processUppercaseTagsWithContext(response, ctx)
+	response = g.processLowercaseTagsWithContext(response, ctx)
+	g.LogDebug("After uppercase/lowercase processing: '%s'", response)
+
 	// Process normalize tags (text normalization)
 	g.LogDebug("Before normalize processing: '%s'", response)
 	response = g.processNormalizeTagsWithContext(response, ctx)
@@ -1546,6 +1579,11 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processIdTagsWithContext(response, ctx)
 	g.LogDebug("After id processing: '%s'", response)
 
+	// Process that wildcard tags (that context wildcards)
+	g.LogDebug("Before that wildcard processing: '%s'", response)
+	response = g.processThatWildcardTagsWithContext(response, ctx)
+	g.LogDebug("After that wildcard processing: '%s'", response)
+
 	// Process request tags (user input history)
 	g.LogInfo("Before request processing: '%s'", response)
 	response = g.processRequestTags(response, ctx)
@@ -1558,7 +1596,33 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 
 	g.LogInfo("Final response: '%s'", response)
 
-	return strings.TrimSpace(response)
+	finalResponse := strings.TrimSpace(response)
+
+	// Update metrics
+	processingTime := float64(time.Since(startTime).Nanoseconds()) / 1000000.0 // Convert to milliseconds
+	g.templateMetrics.TotalProcessed++
+	g.templateMetrics.LastProcessed = time.Now().Format(time.RFC3339)
+
+	// Update average processing time
+	if g.templateMetrics.TotalProcessed == 1 {
+		g.templateMetrics.AverageProcessTime = processingTime
+	} else {
+		g.templateMetrics.AverageProcessTime = (g.templateMetrics.AverageProcessTime*float64(g.templateMetrics.TotalProcessed-1) + processingTime) / float64(g.templateMetrics.TotalProcessed)
+	}
+
+	// Cache the result if caching is enabled
+	if g.templateConfig.EnableCaching {
+		cacheKey := g.generateTemplateCacheKey(template, wildcards, ctx)
+		g.storeInTemplateCache(cacheKey, finalResponse)
+	}
+
+	// Update memory peak
+	currentMemory := len(finalResponse) * 2 // Rough estimate
+	if currentMemory > g.templateMetrics.MemoryPeak {
+		g.templateMetrics.MemoryPeak = currentMemory
+	}
+
+	return finalResponse
 }
 
 // processPersonTagsWithContext processes <person> tags for pronoun substitution
@@ -2032,6 +2096,68 @@ func (g *Golem) processWordTagsWithContext(template string, ctx *VariableContext
 	}
 
 	g.LogDebug("Word tag processing result: '%s'", template)
+
+	return template
+}
+
+// processUppercaseTagsWithContext processes <uppercase> tags for uppercasing text
+func (g *Golem) processUppercaseTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <uppercase> tags (including multiline content)
+	uppercaseTagRegex := regexp.MustCompile(`(?s)<uppercase>(.*?)</uppercase>`)
+	matches := uppercaseTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Uppercase tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Normalize whitespace before uppercasing
+			content = regexp.MustCompile(`\s+`).ReplaceAllString(content, " ")
+			processedContent := strings.ToUpper(content)
+
+			g.LogDebug("Uppercase tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Uppercase tag processing result: '%s'", template)
+
+	return template
+}
+
+// processLowercaseTagsWithContext processes <lowercase> tags for lowercasing text
+func (g *Golem) processLowercaseTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <lowercase> tags (including multiline content)
+	lowercaseTagRegex := regexp.MustCompile(`(?s)<lowercase>(.*?)</lowercase>`)
+	matches := lowercaseTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Lowercase tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Normalize whitespace before lowercasing
+			content = regexp.MustCompile(`\s+`).ReplaceAllString(content, " ")
+			processedContent := strings.ToLower(content)
+
+			g.LogDebug("Lowercase tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Lowercase tag processing result: '%s'", template)
 
 	return template
 }
@@ -2675,6 +2801,32 @@ func (g *Golem) processIdTagsWithContext(template string, ctx *VariableContext) 
 
 		// Replace all <id/> tags with the session ID
 		template = strings.ReplaceAll(template, "<id/>", sessionID)
+	}
+
+	return template
+}
+
+// processThatWildcardTagsWithContext processes that wildcard tags in templates
+func (g *Golem) processThatWildcardTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all that wildcard tags (e.g., <that_star1/>, <that_underscore1/>, etc.)
+	thatWildcardRegex := regexp.MustCompile(`<that_(star|underscore|caret|hash|dollar)(\d+)/>`)
+	matches := thatWildcardRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		if len(match) > 2 {
+			wildcardType := match[1]
+			wildcardIndex := match[2]
+			wildcardKey := fmt.Sprintf("that_%s%s", wildcardType, wildcardIndex)
+
+			// Get the wildcard value from the context
+			if wildcardValue, exists := ctx.LocalVars[wildcardKey]; exists {
+				g.LogDebug("That wildcard tag: found %s = '%s'", wildcardKey, wildcardValue)
+				template = strings.ReplaceAll(template, match[0], wildcardValue)
+			} else {
+				g.LogDebug("That wildcard tag: %s not found in context", wildcardKey)
+				// Leave the tag unchanged if no value is found
+			}
+		}
 	}
 
 	return template
@@ -3584,10 +3736,22 @@ func (session *ChatSession) GetSessionTopic() string {
 	return session.Topic
 }
 
-// AddToThatHistory adds a bot response to the that history
+// AddToThatHistory adds a bot response to the that history with enhanced management
 func (session *ChatSession) AddToThatHistory(response string) {
-	// Keep only the last 10 responses to prevent memory bloat
-	if len(session.ThatHistory) >= 10 {
+	// Use enhanced context management if available
+	if session.ContextConfig != nil && session.ContextConfig.EnableCompression {
+		session.AddToThatHistoryEnhanced(response, []string{}, make(map[string]interface{}))
+		return
+	}
+
+	// Fallback to basic management
+	maxDepth := 10
+	if session.ContextConfig != nil {
+		maxDepth = session.ContextConfig.MaxThatDepth
+	}
+
+	// Keep only the last N responses to prevent memory bloat
+	if len(session.ThatHistory) >= maxDepth {
 		session.ThatHistory = session.ThatHistory[1:]
 	}
 	session.ThatHistory = append(session.ThatHistory, response)
@@ -3668,6 +3832,617 @@ func (session *ChatSession) GetThatByIndex(index int) string {
 	// Index 2 = second most recent (second to last item in array)
 	actualIndex := len(session.ThatHistory) - index
 	return session.ThatHistory[actualIndex]
+}
+
+// GetThatHistoryStats returns statistics about the that history
+func (session *ChatSession) GetThatHistoryStats() map[string]interface{} {
+	stats := map[string]interface{}{
+		"total_items":    len(session.ThatHistory),
+		"max_depth":      10,
+		"memory_usage":   session.calculateThatHistoryMemoryUsage(),
+		"oldest_item":    "",
+		"newest_item":    "",
+		"average_length": 0.0,
+	}
+
+	if session.ContextConfig != nil {
+		stats["max_depth"] = session.ContextConfig.MaxThatDepth
+	}
+
+	if len(session.ThatHistory) > 0 {
+		stats["oldest_item"] = session.ThatHistory[0]
+		stats["newest_item"] = session.ThatHistory[len(session.ThatHistory)-1]
+
+		// Calculate average length
+		totalLength := 0
+		for _, item := range session.ThatHistory {
+			totalLength += len(item)
+		}
+		stats["average_length"] = float64(totalLength) / float64(len(session.ThatHistory))
+	}
+
+	return stats
+}
+
+// calculateThatHistoryMemoryUsage estimates memory usage of that history
+func (session *ChatSession) calculateThatHistoryMemoryUsage() int {
+	totalBytes := 0
+	for _, item := range session.ThatHistory {
+		totalBytes += len(item) + 24 // 24 bytes overhead per string
+	}
+	return totalBytes
+}
+
+// CompressThatHistory compresses the that history using smart compression
+func (session *ChatSession) CompressThatHistory() {
+	if session.ContextConfig == nil || !session.ContextConfig.EnableCompression {
+		return
+	}
+
+	// If we're under the compression threshold, no need to compress
+	if len(session.ThatHistory) < session.ContextConfig.CompressionThreshold {
+		return
+	}
+
+	// Keep the most recent items and compress older ones
+	keepCount := session.ContextConfig.MaxThatDepth / 2
+	if keepCount < 5 {
+		keepCount = 5
+	}
+
+	// Keep the most recent items
+	if len(session.ThatHistory) > keepCount {
+		// Remove older items (keep the last keepCount items)
+		itemsToRemove := len(session.ThatHistory) - keepCount
+		session.ThatHistory = session.ThatHistory[itemsToRemove:]
+	}
+}
+
+// ValidateThatHistory validates the that history for consistency
+func (session *ChatSession) ValidateThatHistory() []string {
+	var errors []string
+
+	// Check for empty items
+	for i, item := range session.ThatHistory {
+		if strings.TrimSpace(item) == "" {
+			errors = append(errors, fmt.Sprintf("Empty that history item at index %d", i))
+		}
+	}
+
+	// Check for duplicate consecutive items
+	for i := 1; i < len(session.ThatHistory); i++ {
+		if session.ThatHistory[i] == session.ThatHistory[i-1] {
+			errors = append(errors, fmt.Sprintf("Duplicate consecutive that history items at indices %d and %d", i-1, i))
+		}
+	}
+
+	// Check memory usage
+	memoryUsage := session.calculateThatHistoryMemoryUsage()
+	if memoryUsage > 100*1024 { // 100KB
+		errors = append(errors, fmt.Sprintf("That history memory usage too high: %d bytes", memoryUsage))
+	}
+
+	return errors
+}
+
+// ClearThatHistory clears the that history
+func (session *ChatSession) ClearThatHistory() {
+	session.ThatHistory = make([]string, 0)
+}
+
+// GetThatHistoryDebugInfo returns detailed debug information about that history
+func (session *ChatSession) GetThatHistoryDebugInfo() map[string]interface{} {
+	debugInfo := map[string]interface{}{
+		"history":           session.ThatHistory,
+		"length":            len(session.ThatHistory),
+		"memory_usage":      session.calculateThatHistoryMemoryUsage(),
+		"validation_errors": session.ValidateThatHistory(),
+		"config":            session.ContextConfig,
+	}
+
+	// Add pattern matching debug info
+	if len(session.ThatHistory) > 0 {
+		debugInfo["last_that"] = session.GetLastThat()
+		debugInfo["normalized_last_that"] = NormalizeThatPattern(session.GetLastThat())
+	}
+
+	return debugInfo
+}
+
+// InitializeContextConfig initializes the context configuration with default values
+func (session *ChatSession) InitializeContextConfig() {
+	if session.ContextConfig == nil {
+		session.ContextConfig = &ContextConfig{
+			MaxThatDepth:         20,
+			MaxRequestDepth:      20,
+			MaxResponseDepth:     20,
+			MaxTotalContext:      100,
+			CompressionThreshold: 50,
+			WeightDecay:          0.9,
+			EnableCompression:    true,
+			EnableAnalytics:      true,
+			EnablePruning:        true,
+		}
+	}
+
+	// Initialize maps if they don't exist
+	if session.ContextWeights == nil {
+		session.ContextWeights = make(map[string]float64)
+	}
+	if session.ContextUsage == nil {
+		session.ContextUsage = make(map[string]int)
+	}
+	if session.ContextTags == nil {
+		session.ContextTags = make(map[string][]string)
+	}
+	if session.ContextMetadata == nil {
+		session.ContextMetadata = make(map[string]interface{})
+	}
+}
+
+// AddToThatHistoryEnhanced adds a bot response to the that history with enhanced context management
+func (session *ChatSession) AddToThatHistoryEnhanced(response string, tags []string, metadata map[string]interface{}) {
+	session.InitializeContextConfig()
+
+	// Apply depth limit
+	if len(session.ThatHistory) >= session.ContextConfig.MaxThatDepth {
+		session.ThatHistory = session.ThatHistory[1:]
+	}
+
+	session.ThatHistory = append(session.ThatHistory, response)
+
+	// Update context analytics if enabled
+	if session.ContextConfig.EnableAnalytics {
+		session.updateContextAnalytics("that", response, tags, metadata)
+	}
+
+	// Apply smart pruning if enabled
+	if session.ContextConfig.EnablePruning {
+		session.pruneContextIfNeeded()
+	}
+}
+
+// AddToRequestHistoryEnhanced adds a user request to the request history with enhanced context management
+func (session *ChatSession) AddToRequestHistoryEnhanced(request string, tags []string, metadata map[string]interface{}) {
+	session.InitializeContextConfig()
+
+	// Apply depth limit
+	if len(session.RequestHistory) >= session.ContextConfig.MaxRequestDepth {
+		session.RequestHistory = session.RequestHistory[1:]
+	}
+
+	session.RequestHistory = append(session.RequestHistory, request)
+
+	// Update context analytics if enabled
+	if session.ContextConfig.EnableAnalytics {
+		session.updateContextAnalytics("request", request, tags, metadata)
+	}
+
+	// Apply smart pruning if enabled
+	if session.ContextConfig.EnablePruning {
+		session.pruneContextIfNeeded()
+	}
+}
+
+// AddToResponseHistoryEnhanced adds a bot response to the response history with enhanced context management
+func (session *ChatSession) AddToResponseHistoryEnhanced(response string, tags []string, metadata map[string]interface{}) {
+	session.InitializeContextConfig()
+
+	// Apply depth limit
+	if len(session.ResponseHistory) >= session.ContextConfig.MaxResponseDepth {
+		session.ResponseHistory = session.ResponseHistory[1:]
+	}
+
+	session.ResponseHistory = append(session.ResponseHistory, response)
+
+	// Update context analytics if enabled
+	if session.ContextConfig.EnableAnalytics {
+		session.updateContextAnalytics("response", response, tags, metadata)
+	}
+
+	// Apply smart pruning if enabled
+	if session.ContextConfig.EnablePruning {
+		session.pruneContextIfNeeded()
+	}
+}
+
+// updateContextAnalytics updates context analytics data
+func (session *ChatSession) updateContextAnalytics(contextType, content string, tags []string, metadata map[string]interface{}) {
+	// Update usage count
+	session.ContextUsage[content]++
+
+	// Update tags
+	if len(tags) > 0 {
+		session.ContextTags[content] = tags
+		for _, tag := range tags {
+			if session.ContextMetadata["tag_distribution"] == nil {
+				session.ContextMetadata["tag_distribution"] = make(map[string]int)
+			}
+			if tagDist, ok := session.ContextMetadata["tag_distribution"].(map[string]int); ok {
+				tagDist[tag]++
+			}
+		}
+	}
+
+	// Update metadata
+	if metadata != nil {
+		session.ContextMetadata[content] = metadata
+	}
+
+	// Update weights based on usage
+	session.updateContextWeights()
+}
+
+// updateContextWeights updates context weights based on usage and age
+func (session *ChatSession) updateContextWeights() {
+
+	// Update weights for that history
+	for i, content := range session.ThatHistory {
+		age := len(session.ThatHistory) - i - 1
+		usageCount := session.ContextUsage[content]
+		weight := float64(usageCount) * math.Pow(session.ContextConfig.WeightDecay, float64(age))
+		session.ContextWeights[fmt.Sprintf("that_%d", i)] = weight
+	}
+
+	// Update weights for request history
+	for i, content := range session.RequestHistory {
+		age := len(session.RequestHistory) - i - 1
+		usageCount := session.ContextUsage[content]
+		weight := float64(usageCount) * math.Pow(session.ContextConfig.WeightDecay, float64(age))
+		session.ContextWeights[fmt.Sprintf("request_%d", i)] = weight
+	}
+
+	// Update weights for response history
+	for i, content := range session.ResponseHistory {
+		age := len(session.ResponseHistory) - i - 1
+		usageCount := session.ContextUsage[content]
+		weight := float64(usageCount) * math.Pow(session.ContextConfig.WeightDecay, float64(age))
+		session.ContextWeights[fmt.Sprintf("response_%d", i)] = weight
+	}
+}
+
+// pruneContextIfNeeded applies smart pruning when context limits are exceeded
+func (session *ChatSession) pruneContextIfNeeded() {
+	totalContext := len(session.ThatHistory) + len(session.RequestHistory) + len(session.ResponseHistory)
+
+	if totalContext > session.ContextConfig.MaxTotalContext {
+		// Calculate items to remove
+		itemsToRemove := totalContext - session.ContextConfig.MaxTotalContext
+
+		// Find least weighted items to remove
+		itemsToPrune := session.findLeastWeightedItems(itemsToRemove)
+
+		// Remove items
+		for _, item := range itemsToPrune {
+			session.removeContextItem(item)
+		}
+
+		// Update pruning count
+		if session.ContextMetadata["pruning_count"] == nil {
+			session.ContextMetadata["pruning_count"] = 0
+		}
+		session.ContextMetadata["pruning_count"] = session.ContextMetadata["pruning_count"].(int) + 1
+		session.ContextMetadata["last_pruned"] = time.Now().Format(time.RFC3339)
+	}
+}
+
+// findLeastWeightedItems finds the least weighted context items for pruning
+func (session *ChatSession) findLeastWeightedItems(count int) []string {
+	type weightedItem struct {
+		key    string
+		weight float64
+	}
+
+	var items []weightedItem
+
+	// Collect all context items with their weights
+	for i, content := range session.ThatHistory {
+		key := fmt.Sprintf("that_%d", i)
+		weight := session.ContextWeights[key]
+		items = append(items, weightedItem{key: content, weight: weight})
+	}
+
+	for i, content := range session.RequestHistory {
+		key := fmt.Sprintf("request_%d", i)
+		weight := session.ContextWeights[key]
+		items = append(items, weightedItem{key: content, weight: weight})
+	}
+
+	for i, content := range session.ResponseHistory {
+		key := fmt.Sprintf("response_%d", i)
+		weight := session.ContextWeights[key]
+		items = append(items, weightedItem{key: content, weight: weight})
+	}
+
+	// Sort by weight (ascending)
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].weight < items[j].weight
+	})
+
+	// Return the least weighted items
+	var result []string
+	for i := 0; i < count && i < len(items); i++ {
+		result = append(result, items[i].key)
+	}
+
+	return result
+}
+
+// removeContextItem removes a context item from all histories
+func (session *ChatSession) removeContextItem(content string) {
+	// Remove from that history
+	for i, item := range session.ThatHistory {
+		if item == content {
+			session.ThatHistory = append(session.ThatHistory[:i], session.ThatHistory[i+1:]...)
+			break
+		}
+	}
+
+	// Remove from request history
+	for i, item := range session.RequestHistory {
+		if item == content {
+			session.RequestHistory = append(session.RequestHistory[:i], session.RequestHistory[i+1:]...)
+			break
+		}
+	}
+
+	// Remove from response history
+	for i, item := range session.ResponseHistory {
+		if item == content {
+			session.ResponseHistory = append(session.ResponseHistory[:i], session.ResponseHistory[i+1:]...)
+			break
+		}
+	}
+
+	// Clean up associated data
+	delete(session.ContextUsage, content)
+	delete(session.ContextTags, content)
+	delete(session.ContextMetadata, content)
+}
+
+// GetContextAnalytics returns current context analytics
+func (session *ChatSession) GetContextAnalytics() *ContextAnalytics {
+	session.InitializeContextConfig()
+
+	analytics := &ContextAnalytics{
+		TotalItems:      len(session.ThatHistory) + len(session.RequestHistory) + len(session.ResponseHistory),
+		ThatItems:       len(session.ThatHistory),
+		RequestItems:    len(session.RequestHistory),
+		ResponseItems:   len(session.ResponseHistory),
+		TagDistribution: make(map[string]int),
+	}
+
+	// Calculate average weight
+	totalWeight := 0.0
+	weightCount := 0
+	for _, weight := range session.ContextWeights {
+		totalWeight += weight
+		weightCount++
+	}
+	if weightCount > 0 {
+		analytics.AverageWeight = totalWeight / float64(weightCount)
+	}
+
+	// Find most and least used items
+	var mostUsed, leastUsed []string
+	maxUsage := 0
+	minUsage := int(^uint(0) >> 1) // Max int
+
+	for content, usage := range session.ContextUsage {
+		if usage > maxUsage {
+			maxUsage = usage
+			mostUsed = []string{content}
+		} else if usage == maxUsage {
+			mostUsed = append(mostUsed, content)
+		}
+
+		if usage < minUsage {
+			minUsage = usage
+			leastUsed = []string{content}
+		} else if usage == minUsage {
+			leastUsed = append(leastUsed, content)
+		}
+	}
+
+	analytics.MostUsedItems = mostUsed
+	analytics.LeastUsedItems = leastUsed
+
+	// Calculate memory usage (rough estimate)
+	analytics.MemoryUsage = len(session.ThatHistory)*50 + len(session.RequestHistory)*50 + len(session.ResponseHistory)*50
+
+	// Get tag distribution
+	if tagDist, ok := session.ContextMetadata["tag_distribution"].(map[string]int); ok {
+		analytics.TagDistribution = tagDist
+	}
+
+	// Get pruning info
+	if pruningCount, ok := session.ContextMetadata["pruning_count"].(int); ok {
+		analytics.PruningCount = pruningCount
+	}
+	if lastPruned, ok := session.ContextMetadata["last_pruned"].(string); ok {
+		analytics.LastPruned = lastPruned
+	}
+
+	return analytics
+}
+
+// SearchContext searches through context history
+func (session *ChatSession) SearchContext(query string, contextTypes []string) []ContextItem {
+	session.InitializeContextConfig()
+
+	var results []ContextItem
+
+	query = strings.ToLower(query)
+
+	// Search that history
+	if len(contextTypes) == 0 || containsString(contextTypes, "that") {
+		for i, content := range session.ThatHistory {
+			if strings.Contains(strings.ToLower(content), query) {
+				weight := session.ContextWeights[fmt.Sprintf("that_%d", i)]
+				usageCount := session.ContextUsage[content]
+				tags := session.ContextTags[content]
+				metadata := session.ContextMetadata[content]
+
+				var metadataMap map[string]interface{}
+				if metadata != nil {
+					if m, ok := metadata.(map[string]interface{}); ok {
+						metadataMap = m
+					}
+				}
+
+				item := ContextItem{
+					Content:    content,
+					Type:       "that",
+					Index:      i,
+					Weight:     weight,
+					Tags:       tags,
+					Metadata:   metadataMap,
+					UsageCount: usageCount,
+				}
+				results = append(results, item)
+			}
+		}
+	}
+
+	// Search request history
+	if len(contextTypes) == 0 || containsString(contextTypes, "request") {
+		for i, content := range session.RequestHistory {
+			if strings.Contains(strings.ToLower(content), query) {
+				weight := session.ContextWeights[fmt.Sprintf("request_%d", i)]
+				usageCount := session.ContextUsage[content]
+				tags := session.ContextTags[content]
+				metadata := session.ContextMetadata[content]
+
+				var metadataMap map[string]interface{}
+				if metadata != nil {
+					if m, ok := metadata.(map[string]interface{}); ok {
+						metadataMap = m
+					}
+				}
+
+				item := ContextItem{
+					Content:    content,
+					Type:       "request",
+					Index:      i,
+					Weight:     weight,
+					Tags:       tags,
+					Metadata:   metadataMap,
+					UsageCount: usageCount,
+				}
+				results = append(results, item)
+			}
+		}
+	}
+
+	// Search response history
+	if len(contextTypes) == 0 || containsString(contextTypes, "response") {
+		for i, content := range session.ResponseHistory {
+			if strings.Contains(strings.ToLower(content), query) {
+				weight := session.ContextWeights[fmt.Sprintf("response_%d", i)]
+				usageCount := session.ContextUsage[content]
+				tags := session.ContextTags[content]
+				metadata := session.ContextMetadata[content]
+
+				var metadataMap map[string]interface{}
+				if metadata != nil {
+					if m, ok := metadata.(map[string]interface{}); ok {
+						metadataMap = m
+					}
+				}
+
+				item := ContextItem{
+					Content:    content,
+					Type:       "response",
+					Index:      i,
+					Weight:     weight,
+					Tags:       tags,
+					Metadata:   metadataMap,
+					UsageCount: usageCount,
+				}
+				results = append(results, item)
+			}
+		}
+	}
+
+	// Sort by weight (descending)
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Weight > results[j].Weight
+	})
+
+	return results
+}
+
+// containsString checks if a slice contains a string
+func containsString(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// CompressContext compresses old context items to save memory
+func (session *ChatSession) CompressContext() {
+	if !session.ContextConfig.EnableCompression {
+		return
+	}
+
+	session.InitializeContextConfig()
+
+	// Only compress if we have more items than the threshold
+	totalContext := len(session.ThatHistory) + len(session.RequestHistory) + len(session.ResponseHistory)
+	if totalContext < session.ContextConfig.CompressionThreshold {
+		return
+	}
+
+	// Compress old items by truncating them
+	itemsToCompress := totalContext - session.ContextConfig.CompressionThreshold
+
+	// Compress that history
+	if len(session.ThatHistory) > 0 {
+		compressCount := min(itemsToCompress, len(session.ThatHistory))
+		for i := 0; i < compressCount; i++ {
+			if len(session.ThatHistory[i]) > 50 {
+				session.ThatHistory[i] = session.ThatHistory[i][:47] + "..."
+			}
+		}
+	}
+
+	// Compress request history
+	if len(session.RequestHistory) > 0 {
+		compressCount := min(itemsToCompress, len(session.RequestHistory))
+		for i := 0; i < compressCount; i++ {
+			if len(session.RequestHistory[i]) > 50 {
+				session.RequestHistory[i] = session.RequestHistory[i][:47] + "..."
+			}
+		}
+	}
+
+	// Compress response history
+	if len(session.ResponseHistory) > 0 {
+		compressCount := min(itemsToCompress, len(session.ResponseHistory))
+		for i := 0; i < compressCount; i++ {
+			if len(session.ResponseHistory[i]) > 50 {
+				session.ResponseHistory[i] = session.ResponseHistory[i][:47] + "..."
+			}
+		}
+	}
+
+	// Update compression ratio
+	originalSize := totalContext * 50 // Rough estimate
+	compressedSize := len(session.ThatHistory)*50 + len(session.RequestHistory)*50 + len(session.ResponseHistory)*50
+	if originalSize > 0 {
+		session.ContextMetadata["compression_ratio"] = float64(compressedSize) / float64(originalSize)
+	}
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // processTopicSettingTagsWithContext processes <set name="topic"> tags
@@ -4830,20 +5605,26 @@ func NormalizeThatPattern(pattern string) string {
 	return text
 }
 
-// validateThatPattern validates a that pattern for proper syntax
+// validateThatPattern validates a that pattern for proper syntax with enhanced AIML2 wildcard support
 func validateThatPattern(pattern string) error {
 	if pattern == "" {
 		return fmt.Errorf("that pattern cannot be empty")
 	}
 
-	// Check for balanced wildcards
+	// Check for balanced wildcards (all types)
 	starCount := strings.Count(pattern, "*")
-	if starCount > 9 {
-		return fmt.Errorf("that pattern contains too many wildcards (max 9), got %d", starCount)
+	underscoreCount := strings.Count(pattern, "_")
+	caretCount := strings.Count(pattern, "^")
+	hashCount := strings.Count(pattern, "#")
+	dollarCount := strings.Count(pattern, "$")
+	totalWildcards := starCount + underscoreCount + caretCount + hashCount + dollarCount
+
+	if totalWildcards > 9 {
+		return fmt.Errorf("that pattern contains too many wildcards (max 9), got %d", totalWildcards)
 	}
 
-	// Check for valid characters (basic validation) - allow apostrophes and punctuation for contractions
-	validChars := regexp.MustCompile(`^[A-Z0-9\s\*_<>/'.!?,-]+$`)
+	// Check for valid characters (enhanced validation) - allow all AIML2 wildcards and punctuation
+	validChars := regexp.MustCompile(`^[A-Z0-9\s\*_^#$<>/'.!?,-]+$`)
 	if !validChars.MatchString(pattern) {
 		return fmt.Errorf("that pattern contains invalid characters")
 	}
@@ -4862,7 +5643,276 @@ func validateThatPattern(pattern string) error {
 		return fmt.Errorf("unbalanced topic tags in that pattern")
 	}
 
+	// Check for balanced alternation groups
+	parenOpenCount := strings.Count(pattern, "(")
+	parenCloseCount := strings.Count(pattern, ")")
+	if parenOpenCount != parenCloseCount {
+		return fmt.Errorf("unbalanced parentheses in that pattern")
+	}
+
+	// Check for valid wildcard combinations
+	if err := validateThatWildcardCombinations(pattern); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// validateThatWildcardCombinations validates that wildcard combinations are valid
+func validateThatWildcardCombinations(pattern string) error {
+	// Check for invalid wildcard sequences
+	invalidSequences := []string{
+		"**", // Double star
+		"__", // Double underscore
+		"^^", // Double caret
+		"##", // Double hash
+		"$$", // Double dollar
+		"*_", // Star followed by underscore
+		"_*", // Underscore followed by star
+		"*^", // Star followed by caret
+		"^*", // Caret followed by star
+		"*#", // Star followed by hash
+		"#*", // Hash followed by star
+		"*$", // Star followed by dollar
+		"$*", // Dollar followed by star
+		"_^", // Underscore followed by caret
+		"^_", // Caret followed by underscore
+		"_#", // Underscore followed by hash
+		"#_", // Hash followed by underscore
+		"_$", // Underscore followed by dollar
+		"$_", // Dollar followed by underscore
+		"^#", // Caret followed by hash
+		"#^", // Hash followed by caret
+		"^$", // Caret followed by dollar
+		"$^", // Dollar followed by caret
+		"#$", // Hash followed by dollar
+		"$#", // Dollar followed by hash
+	}
+
+	for _, sequence := range invalidSequences {
+		if strings.Contains(pattern, sequence) {
+			return fmt.Errorf("invalid wildcard sequence '%s' in that pattern", sequence)
+		}
+	}
+
+	// Check for wildcard at start without proper context
+	if strings.HasPrefix(pattern, "*") || strings.HasPrefix(pattern, "_") ||
+		strings.HasPrefix(pattern, "^") || strings.HasPrefix(pattern, "#") ||
+		strings.HasPrefix(pattern, "$") {
+		return fmt.Errorf("that pattern cannot start with wildcard")
+	}
+
+	// Note: Patterns can end with wildcards in AIML2, so we don't check for that
+
+	return nil
+}
+
+// matchThatPatternWithWildcards matches that context against a that pattern with enhanced wildcard support
+func matchThatPatternWithWildcards(thatContext, thatPattern string) (bool, map[string]string) {
+	wildcards := make(map[string]string)
+
+	// Convert that pattern to regex with enhanced wildcard support
+	regexPattern := thatPatternToRegexWordBased(thatPattern)
+	// Make regex case insensitive
+	regexPattern = "(?i)" + regexPattern
+	re, err := regexp.Compile(regexPattern)
+	if err != nil {
+		return false, nil
+	}
+
+	matches := re.FindStringSubmatch(thatContext)
+	if matches == nil {
+		return false, nil
+	}
+
+	// Extract wildcard values with proper naming
+	wildcardIndex := 1
+	for _, match := range matches[1:] {
+		// Determine wildcard type based on position in pattern
+		wildcardType := determineThatWildcardType(thatPattern, wildcardIndex-1)
+		wildcardKey := fmt.Sprintf("that_%s%d", wildcardType, wildcardIndex)
+		wildcards[wildcardKey] = match
+		wildcardIndex++
+	}
+
+	return true, wildcards
+}
+
+// thatPatternToRegex converts a that pattern to regex with enhanced wildcard support
+func thatPatternToRegex(pattern string) string {
+	// Handle set matching first (before escaping)
+	setPattern := regexp.MustCompile(`<set>([^<]+)</set>`)
+	pattern = setPattern.ReplaceAllString(pattern, "([^\\s]*)")
+
+	// Handle topic matching (before escaping)
+	topicPattern := regexp.MustCompile(`<topic>([^<]+)</topic>`)
+	pattern = topicPattern.ReplaceAllString(pattern, "([^\\s]*)")
+
+	// Build regex pattern by processing each character
+	var result strings.Builder
+	for i, char := range pattern {
+		switch char {
+		case '*':
+			// Zero+ wildcard: matches zero or more words
+			result.WriteString("(.*?)")
+		case '_':
+			// Single wildcard: matches exactly one word
+			result.WriteString("([^\\s]+)")
+		case '^':
+			// Caret wildcard: matches zero or more words (AIML2)
+			result.WriteString("(.*?)")
+		case '#':
+			// Hash wildcard: matches zero or more words with high priority (AIML2)
+			result.WriteString("(.*?)")
+		case '$':
+			// Dollar wildcard: highest priority exact match (AIML2)
+			// For regex purposes, treat as exact match (no wildcard capture)
+			continue
+		case ' ':
+			// Check if this space is followed by a wildcard or preceded by a wildcard
+			if (i+1 < len(pattern) && (pattern[i+1] == '*' || pattern[i+1] == '_' || pattern[i+1] == '^' || pattern[i+1] == '#')) ||
+				(i > 0 && (pattern[i-1] == '*' || pattern[i-1] == '_' || pattern[i-1] == '^' || pattern[i-1] == '#')) {
+				// This space is adjacent to a wildcard, make it optional
+				result.WriteString(" ?")
+			} else {
+				// Regular space
+				result.WriteRune(' ')
+			}
+		case '(', ')', '[', ']', '{', '}', '?', '+', '.':
+			// Escape special regex characters (but not | as it's needed for alternation)
+			result.WriteRune('\\')
+			result.WriteRune(char)
+		case '|':
+			// Don't escape pipe character as it's needed for alternation in sets
+			result.WriteRune('|')
+		default:
+			// Escape other special characters
+			if char < 32 || char > 126 {
+				result.WriteString(fmt.Sprintf("\\x%02x", char))
+			} else {
+				result.WriteRune(char)
+			}
+		}
+	}
+
+	return result.String()
+}
+
+// thatPatternToRegexWordBased converts a that pattern to regex using word-based processing
+func thatPatternToRegexWordBased(pattern string) string {
+	// Handle set matching first (before escaping)
+	setPattern := regexp.MustCompile(`<set>([^<]+)</set>`)
+	pattern = setPattern.ReplaceAllString(pattern, "([^\\s]*)")
+
+	// Handle topic matching (before escaping)
+	topicPattern := regexp.MustCompile(`<topic>([^<]+)</topic>`)
+	pattern = topicPattern.ReplaceAllString(pattern, "([^\\s]*)")
+
+	// For multiple wildcards, we need a more sophisticated approach
+	// Split the pattern into words and process each word
+	words := strings.Fields(pattern)
+	var result strings.Builder
+
+	for i, word := range words {
+		if i > 0 {
+			result.WriteString("\\s*") // Match zero or more spaces between words
+		}
+
+		// Check if this word is a wildcard
+		if word == "*" || word == "^" || word == "#" {
+			// Zero+ wildcard: matches zero or more words
+			// For multiple wildcards, we need to be more specific
+			if i < len(words)-1 {
+				// Not the last word, match until the next non-wildcard word
+				nextWord := words[i+1]
+				if nextWord != "*" && nextWord != "_" && nextWord != "^" && nextWord != "#" && nextWord != "$" {
+					// Next word is not a wildcard, match until we see it
+					result.WriteString("(.*?)")
+				} else {
+					// Next word is also a wildcard, match one word
+					result.WriteString("([^\\s]+)")
+				}
+			} else {
+				// Last word, match everything
+				result.WriteString("(.*?)")
+			}
+		} else if word == "_" {
+			// Single wildcard: matches exactly one word
+			result.WriteString("([^\\s]+)")
+		} else if word == "$" {
+			// Dollar wildcard: highest priority exact match (AIML2)
+			// For regex purposes, treat as a wildcard that matches one word
+			result.WriteString("([^\\s]+)")
+		} else {
+			// Regular word - escape special characters
+			escaped := regexp.QuoteMeta(word)
+			result.WriteString(escaped)
+		}
+	}
+
+	// Add word boundary at the end to ensure exact matching
+	result.WriteString("$")
+
+	return result.String()
+}
+
+// determineThatWildcardType determines the wildcard type based on position in pattern
+func determineThatWildcardType(pattern string, position int) string {
+	wildcardCount := 0
+	for _, char := range pattern {
+		if char == '*' || char == '_' || char == '^' || char == '#' || char == '$' {
+			if wildcardCount == position {
+				switch char {
+				case '*':
+					return "star"
+				case '_':
+					return "underscore"
+				case '^':
+					return "caret"
+				case '#':
+					return "hash"
+				case '$':
+					return "dollar"
+				}
+			}
+			wildcardCount++
+		}
+	}
+	return "star" // Default fallback
+}
+
+// calculateThatPatternPriority calculates priority for that pattern matching
+func calculateThatPatternPriority(thatPattern string) int {
+	priority := 1000 // Base priority
+
+	// Count different wildcard types
+	starCount := strings.Count(thatPattern, "*")
+	underscoreCount := strings.Count(thatPattern, "_")
+	caretCount := strings.Count(thatPattern, "^")
+	hashCount := strings.Count(thatPattern, "#")
+	dollarCount := strings.Count(thatPattern, "$")
+	totalWildcards := starCount + underscoreCount + hashCount + dollarCount
+
+	// Higher priority for fewer wildcards
+	priority += (9 - totalWildcards) * 100
+
+	// Higher priority for specific wildcard types (dollar > hash > caret > star > underscore)
+	priority += dollarCount * 50
+	priority += hashCount * 40
+	priority += caretCount * 30
+	priority += starCount * 20
+	priority += underscoreCount * 10
+
+	// Higher priority for exact matches (no wildcards)
+	if totalWildcards == 0 {
+		priority += 500
+	}
+
+	// Higher priority for patterns with more specific content
+	wordCount := len(strings.Fields(thatPattern))
+	priority += wordCount * 5
+
+	return priority
 }
 
 // parseLearnContent parses AIML content within learn/learnf tags
@@ -4942,4 +5992,75 @@ func (g *Golem) addPersistentCategory(category Category) error {
 	g.LogInfo("Note: Persistent learning not yet implemented - category added to memory only")
 
 	return nil
+}
+
+// ThatPatternCache represents a cache for compiled that patterns
+type ThatPatternCache struct {
+	Patterns map[string]*regexp.Regexp `json:"patterns"`
+	Hits     map[string]int            `json:"hits"`
+	Misses   int                       `json:"misses"`
+	MaxSize  int                       `json:"max_size"`
+}
+
+// NewThatPatternCache creates a new that pattern cache
+func NewThatPatternCache(maxSize int) *ThatPatternCache {
+	return &ThatPatternCache{
+		Patterns: make(map[string]*regexp.Regexp),
+		Hits:     make(map[string]int),
+		Misses:   0,
+		MaxSize:  maxSize,
+	}
+}
+
+// GetCompiledPattern returns a compiled regex pattern for a that pattern
+func (cache *ThatPatternCache) GetCompiledPattern(pattern string) (*regexp.Regexp, bool) {
+	if compiled, exists := cache.Patterns[pattern]; exists {
+		cache.Hits[pattern]++
+		return compiled, true
+	}
+	cache.Misses++
+	return nil, false
+}
+
+// SetCompiledPattern stores a compiled regex pattern
+func (cache *ThatPatternCache) SetCompiledPattern(pattern string, compiled *regexp.Regexp) {
+	// Evict oldest patterns if cache is full
+	if len(cache.Patterns) >= cache.MaxSize {
+		// Simple eviction: remove a random pattern
+		for key := range cache.Patterns {
+			delete(cache.Patterns, key)
+			delete(cache.Hits, key)
+			break
+		}
+	}
+	cache.Patterns[pattern] = compiled
+}
+
+// GetCacheStats returns cache statistics
+func (cache *ThatPatternCache) GetCacheStats() map[string]interface{} {
+	totalRequests := cache.Misses
+	for _, hits := range cache.Hits {
+		totalRequests += hits
+	}
+
+	hitRate := 0.0
+	if totalRequests > 0 {
+		hitRate = float64(len(cache.Hits)) / float64(totalRequests)
+	}
+
+	return map[string]interface{}{
+		"patterns":       len(cache.Patterns),
+		"max_size":       cache.MaxSize,
+		"hits":           cache.Hits,
+		"misses":         cache.Misses,
+		"hit_rate":       hitRate,
+		"total_requests": totalRequests,
+	}
+}
+
+// ClearCache clears the pattern cache
+func (cache *ThatPatternCache) ClearCache() {
+	cache.Patterns = make(map[string]*regexp.Regexp)
+	cache.Hits = make(map[string]int)
+	cache.Misses = 0
 }

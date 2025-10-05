@@ -16,7 +16,7 @@ func normalizeWhitespace(s string) string {
 
 // TestLearnTagProcessing tests basic learn tag processing
 func TestLearnTagProcessing(t *testing.T) {
-	g := New(true) // Enable verbose mode
+	g := New(false) // Disable verbose logging for tests
 	kb := NewAIMLKnowledgeBase()
 
 	// Add initial categories

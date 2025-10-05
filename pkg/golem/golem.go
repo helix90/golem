@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -22,6 +24,85 @@ const (
 	LogLevelTrace
 )
 
+// ContextConfig represents configuration for context management
+type ContextConfig struct {
+	MaxThatDepth         int     // Maximum depth for that history (default: 20)
+	MaxRequestDepth      int     // Maximum depth for request history (default: 20)
+	MaxResponseDepth     int     // Maximum depth for response history (default: 20)
+	MaxTotalContext      int     // Maximum total context items (default: 100)
+	CompressionThreshold int     // Threshold for context compression (default: 50)
+	WeightDecay          float64 // Weight decay factor for older context (default: 0.9)
+	EnableCompression    bool    // Enable context compression (default: true)
+	EnableAnalytics      bool    // Enable context analytics (default: true)
+	EnablePruning        bool    // Enable smart context pruning (default: true)
+}
+
+// ContextItem represents a single context item with metadata
+type ContextItem struct {
+	Content    string                 `json:"content"`
+	Type       string                 `json:"type"` // "that", "request", "response"
+	Index      int                    `json:"index"`
+	Weight     float64                `json:"weight"`
+	Tags       []string               `json:"tags"`
+	Metadata   map[string]interface{} `json:"metadata"`
+	CreatedAt  string                 `json:"created_at"`
+	LastUsed   string                 `json:"last_used"`
+	UsageCount int                    `json:"usage_count"`
+}
+
+// ContextAnalytics represents analytics data for context usage
+type ContextAnalytics struct {
+	TotalItems       int            `json:"total_items"`
+	ThatItems        int            `json:"that_items"`
+	RequestItems     int            `json:"request_items"`
+	ResponseItems    int            `json:"response_items"`
+	AverageWeight    float64        `json:"average_weight"`
+	MostUsedItems    []string       `json:"most_used_items"`
+	LeastUsedItems   []string       `json:"least_used_items"`
+	TagDistribution  map[string]int `json:"tag_distribution"`
+	MemoryUsage      int            `json:"memory_usage_bytes"`
+	CompressionRatio float64        `json:"compression_ratio"`
+	LastPruned       string         `json:"last_pruned"`
+	PruningCount     int            `json:"pruning_count"`
+}
+
+// TemplateProcessingMetrics represents metrics for template processing
+type TemplateProcessingMetrics struct {
+	TotalProcessed     int                `json:"total_processed"`
+	AverageProcessTime float64            `json:"average_process_time_ms"`
+	CacheHits          int                `json:"cache_hits"`
+	CacheMisses        int                `json:"cache_misses"`
+	CacheHitRate       float64            `json:"cache_hit_rate"`
+	TagProcessingTimes map[string]float64 `json:"tag_processing_times"`
+	ErrorCount         int                `json:"error_count"`
+	LastProcessed      string             `json:"last_processed"`
+	MemoryPeak         int                `json:"memory_peak_bytes"`
+	ParallelOps        int                `json:"parallel_operations"`
+}
+
+// TemplateCache represents a cache for processed templates
+type TemplateCache struct {
+	Cache      map[string]string `json:"cache"`
+	Timestamps map[string]string `json:"timestamps"`
+	Hits       map[string]int    `json:"hits"`
+	MaxSize    int               `json:"max_size"`
+	TTL        int64             `json:"ttl_seconds"`
+}
+
+// TemplateProcessingConfig represents configuration for template processing
+type TemplateProcessingConfig struct {
+	EnableCaching     bool  `json:"enable_caching"`
+	CacheSize         int   `json:"cache_size"`
+	CacheTTL          int64 `json:"cache_ttl_seconds"`
+	EnableParallel    bool  `json:"enable_parallel"`
+	MaxParallelOps    int   `json:"max_parallel_operations"`
+	EnableMetrics     bool  `json:"enable_metrics"`
+	EnableValidation  bool  `json:"enable_validation"`
+	EnableDebugging   bool  `json:"enable_debugging"`
+	MemoryLimit       int   `json:"memory_limit_bytes"`
+	ProcessingTimeout int64 `json:"processing_timeout_ms"`
+}
+
 // ChatSession represents a single chat session
 type ChatSession struct {
 	ID              string
@@ -33,6 +114,13 @@ type ChatSession struct {
 	ThatHistory     []string // History of bot responses for that matching
 	RequestHistory  []string // History of user requests for <request> tag
 	ResponseHistory []string // History of bot responses for <response> tag
+
+	// Enhanced context management
+	ContextConfig   *ContextConfig         // Context configuration
+	ContextWeights  map[string]float64     // Weights for different context levels
+	ContextUsage    map[string]int         // Usage count for each context item
+	ContextTags     map[string][]string    // Tags for context categorization
+	ContextMetadata map[string]interface{} // Additional context metadata
 }
 
 // Golem represents the main library instance
@@ -63,6 +151,10 @@ type Golem struct {
 	// Text processing components
 	sentenceSplitter     *SentenceSplitter
 	wordBoundaryDetector *WordBoundaryDetector
+	// Template processing components
+	templateCache   *TemplateCache
+	templateConfig  *TemplateProcessingConfig
+	templateMetrics *TemplateProcessingMetrics
 }
 
 // New creates a new Golem instance
@@ -94,6 +186,41 @@ func New(verbose bool) *Golem {
 	sentenceSplitter := NewSentenceSplitter()
 	wordBoundaryDetector := NewWordBoundaryDetector()
 
+	// Create template processing components
+	templateCache := &TemplateCache{
+		Cache:      make(map[string]string),
+		Timestamps: make(map[string]string),
+		Hits:       make(map[string]int),
+		MaxSize:    1000,
+		TTL:        3600, // 1 hour
+	}
+
+	templateConfig := &TemplateProcessingConfig{
+		EnableCaching:     true,
+		CacheSize:         1000,
+		CacheTTL:          3600,
+		EnableParallel:    true,
+		MaxParallelOps:    4,
+		EnableMetrics:     true,
+		EnableValidation:  true,
+		EnableDebugging:   verbose,
+		MemoryLimit:       50 * 1024 * 1024, // 50MB
+		ProcessingTimeout: 5000,             // 5 seconds
+	}
+
+	templateMetrics := &TemplateProcessingMetrics{
+		TotalProcessed:     0,
+		AverageProcessTime: 0.0,
+		CacheHits:          0,
+		CacheMisses:        0,
+		CacheHitRate:       0.0,
+		TagProcessingTimes: make(map[string]float64),
+		ErrorCount:         0,
+		LastProcessed:      "",
+		MemoryPeak:         0,
+		ParallelOps:        0,
+	}
+
 	return &Golem{
 		verbose:              verbose,
 		logLevel:             logLevel,
@@ -104,6 +231,9 @@ func New(verbose bool) *Golem {
 		sraixMgr:             sraixMgr,
 		sentenceSplitter:     sentenceSplitter,
 		wordBoundaryDetector: wordBoundaryDetector,
+		templateCache:        templateCache,
+		templateConfig:       templateConfig,
+		templateMetrics:      templateMetrics,
 	}
 }
 
@@ -869,7 +999,11 @@ func (g *Golem) createSession(sessionID string) *ChatSession {
 		LastActivity:    now,
 		RequestHistory:  []string{},
 		ResponseHistory: []string{},
+		ThatHistory:     []string{},
 	}
+
+	// Initialize enhanced context management
+	session.InitializeContextConfig()
 
 	g.sessions[sessionID] = session
 	g.currentID = sessionID
@@ -1159,4 +1293,162 @@ func (g *Golem) sraixTestCommand(args []string) error {
 
 	fmt.Printf("Response: %s\n", response)
 	return nil
+}
+
+// GetTemplateProcessingMetrics returns current template processing metrics
+func (g *Golem) GetTemplateProcessingMetrics() *TemplateProcessingMetrics {
+	return g.templateMetrics
+}
+
+// GetTemplateProcessingConfig returns current template processing configuration
+func (g *Golem) GetTemplateProcessingConfig() *TemplateProcessingConfig {
+	return g.templateConfig
+}
+
+// UpdateTemplateProcessingConfig updates template processing configuration
+func (g *Golem) UpdateTemplateProcessingConfig(config *TemplateProcessingConfig) {
+	g.templateConfig = config
+	// Update cache settings
+	if g.templateCache != nil {
+		g.templateCache.MaxSize = config.CacheSize
+		g.templateCache.TTL = config.CacheTTL
+	}
+}
+
+// ClearTemplateCache clears the template cache
+func (g *Golem) ClearTemplateCache() {
+	if g.templateCache != nil {
+		g.templateCache.Cache = make(map[string]string)
+		g.templateCache.Timestamps = make(map[string]string)
+		g.templateCache.Hits = make(map[string]int)
+	}
+}
+
+// GetTemplateCacheStats returns template cache statistics
+func (g *Golem) GetTemplateCacheStats() map[string]interface{} {
+	if g.templateCache == nil {
+		return map[string]interface{}{
+			"cache_size": 0,
+			"hits":       0,
+			"misses":     0,
+			"hit_rate":   0.0,
+		}
+	}
+
+	totalRequests := g.templateMetrics.CacheHits + g.templateMetrics.CacheMisses
+	hitRate := 0.0
+	if totalRequests > 0 {
+		hitRate = float64(g.templateMetrics.CacheHits) / float64(totalRequests)
+	}
+
+	return map[string]interface{}{
+		"cache_size":      len(g.templateCache.Cache),
+		"max_size":        g.templateCache.MaxSize,
+		"ttl_seconds":     g.templateCache.TTL,
+		"hits":            g.templateMetrics.CacheHits,
+		"misses":          g.templateMetrics.CacheMisses,
+		"hit_rate":        hitRate,
+		"total_processed": g.templateMetrics.TotalProcessed,
+		"average_time_ms": g.templateMetrics.AverageProcessTime,
+		"error_count":     g.templateMetrics.ErrorCount,
+	}
+}
+
+// ResetTemplateMetrics resets template processing metrics
+func (g *Golem) ResetTemplateMetrics() {
+	if g.templateMetrics != nil {
+		g.templateMetrics.TotalProcessed = 0
+		g.templateMetrics.AverageProcessTime = 0.0
+		g.templateMetrics.CacheHits = 0
+		g.templateMetrics.CacheMisses = 0
+		g.templateMetrics.CacheHitRate = 0.0
+		g.templateMetrics.TagProcessingTimes = make(map[string]float64)
+		g.templateMetrics.ErrorCount = 0
+		g.templateMetrics.LastProcessed = ""
+		g.templateMetrics.MemoryPeak = 0
+		g.templateMetrics.ParallelOps = 0
+	}
+}
+
+// generateTemplateCacheKey creates a cache key from template, wildcards and minimal ctx
+func (g *Golem) generateTemplateCacheKey(template string, wildcards map[string]string, ctx *VariableContext) string {
+	// Build a deterministic key: template + sorted wildcards + session/topic markers
+	var b strings.Builder
+	b.WriteString("tpl:")
+	b.WriteString(template)
+	b.WriteString("|wc:")
+	// sort wildcards for deterministic order
+	keys := make([]string, 0, len(wildcards))
+	for k := range wildcards {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteString("=")
+		b.WriteString(wildcards[k])
+		b.WriteString(";")
+	}
+	if ctx != nil && ctx.Session != nil {
+		b.WriteString("|sid:")
+		b.WriteString(ctx.Session.ID)
+	}
+	if ctx != nil {
+		b.WriteString("|topic:")
+		b.WriteString(ctx.Topic)
+	}
+	return b.String()
+}
+
+// getFromTemplateCache fetches a cached response if present
+func (g *Golem) getFromTemplateCache(key string) (string, bool) {
+	if g.templateCache == nil {
+		return "", false
+	}
+	v, ok := g.templateCache.Cache[key]
+	if ok {
+		g.templateCache.Hits[key] = g.templateCache.Hits[key] + 1
+	}
+	return v, ok
+}
+
+// storeInTemplateCache stores a processed template result
+func (g *Golem) storeInTemplateCache(key, value string) {
+	if g.templateCache == nil {
+		return
+	}
+	// Evict if over capacity (simple FIFO by timestamps if needed)
+	if len(g.templateCache.Cache) >= g.templateCache.MaxSize {
+		// naive eviction: remove an arbitrary oldest by timestamp string comparison
+		var oldestKey string
+		var oldestTs string
+		for k, ts := range g.templateCache.Timestamps {
+			if oldestTs == "" || ts < oldestTs {
+				oldestTs = ts
+				oldestKey = k
+			}
+		}
+		if oldestKey != "" {
+			delete(g.templateCache.Cache, oldestKey)
+			delete(g.templateCache.Timestamps, oldestKey)
+			delete(g.templateCache.Hits, oldestKey)
+		}
+	}
+	g.templateCache.Cache[key] = value
+	// store a simple increasing timestamp using TotalProcessed to keep it consistent
+	g.templateMetrics.TotalProcessed++
+	g.templateCache.Timestamps[key] = strconv.Itoa(g.templateMetrics.TotalProcessed)
+	if _, exists := g.templateCache.Hits[key]; !exists {
+		g.templateCache.Hits[key] = 0
+	}
+}
+
+// updateCacheHitRate recomputes cache hit rate metric
+func (g *Golem) updateCacheHitRate() {
+	total := g.templateMetrics.CacheHits + g.templateMetrics.CacheMisses
+	if total > 0 {
+		g.templateMetrics.CacheHitRate = float64(g.templateMetrics.CacheHits) / float64(total)
+	} else {
+		g.templateMetrics.CacheHitRate = 0
+	}
 }
