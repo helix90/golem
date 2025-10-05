@@ -440,3 +440,358 @@ func TestSizeVersionPerformance(t *testing.T) {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}
 }
+
+func TestIdTagProcessing(t *testing.T) {
+	g := New(false)
+
+	// Initialize knowledge base if nil
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
+	tests := []struct {
+		name        string
+		template    string
+		sessionID   string
+		expected    string
+		description string
+	}{
+		{
+			name:        "Basic id tag with session",
+			template:    "Hello user <id/>!",
+			sessionID:   "user123",
+			expected:    "Hello user user123!",
+			description: "Should return the session ID",
+		},
+		{
+			name:        "Multiple id tags",
+			template:    "User <id/> has session <id/>.",
+			sessionID:   "session456",
+			expected:    "User session456 has session session456.",
+			description: "Should replace all id tags with session ID",
+		},
+		{
+			name:        "Id tag with other content",
+			template:    "Welcome <id/>! How can I help you?",
+			sessionID:   "guest789",
+			expected:    "Welcome guest789! How can I help you?",
+			description: "Should work with mixed content",
+		},
+		{
+			name:        "Id tag in question",
+			template:    "What is your ID? <id/> is your session.",
+			sessionID:   "admin001",
+			expected:    "What is your ID? admin001 is your session.",
+			description: "Should work in questions",
+		},
+		{
+			name:        "Id tag with empty session ID",
+			template:    "Session: <id/>",
+			sessionID:   "",
+			expected:    "Session: ",
+			description: "Should handle empty session ID",
+		},
+		{
+			name:        "Only id tag",
+			template:    "<id/>",
+			sessionID:   "test123",
+			expected:    "test123",
+			description: "Should return session ID for template with only id tag",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a test session
+			session := &ChatSession{
+				ID:              tt.sessionID,
+				Variables:       make(map[string]string),
+				History:         []string{},
+				CreatedAt:       "now",
+				LastActivity:    "now",
+				RequestHistory:  []string{},
+				ResponseHistory: []string{},
+			}
+
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       session,
+				Topic:         "",
+				KnowledgeBase: g.aimlKB,
+			}
+
+			result := g.processIdTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestIdTagWithNoSession(t *testing.T) {
+	g := New(false)
+
+	// Initialize knowledge base if nil
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Id tag with no session",
+			template: "Hello <id/>!",
+			expected: "Hello <id/>!",
+		},
+		{
+			name:     "Multiple id tags with no session",
+			template: "User <id/> has session <id/>.",
+			expected: "User <id/> has session <id/>.",
+		},
+		{
+			name:     "Only id tag with no session",
+			template: "<id/>",
+			expected: "<id/>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       nil, // No session
+				Topic:         "",
+				KnowledgeBase: g.aimlKB,
+			}
+
+			result := g.processIdTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestIdSizeVersionIntegration(t *testing.T) {
+	g := New(false)
+
+	// Initialize knowledge base if nil
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
+	// Set up test data
+	g.aimlKB.Properties["version"] = "2.0"
+	testCategories := []Category{
+		{Pattern: "HELLO", Template: "Hi there!"},
+		{Pattern: "HOW ARE YOU", Template: "I'm doing well!"},
+		{Pattern: "WHAT IS YOUR NAME", Template: "I'm GolemBot."},
+	}
+	g.aimlKB.Categories = testCategories
+
+	// Create a test session
+	session := &ChatSession{
+		ID:              "integration_test",
+		Variables:       make(map[string]string),
+		History:         []string{},
+		CreatedAt:       "now",
+		LastActivity:    "now",
+		RequestHistory:  []string{},
+		ResponseHistory: []string{},
+	}
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "All system tags together",
+			template: "User <id/> has <size/> patterns in AIML <version/>.",
+			expected: "User integration_test has 3 patterns in AIML 2.0.",
+		},
+		{
+			name:     "Id and size together",
+			template: "Session <id/> contains <size/> patterns.",
+			expected: "Session integration_test contains 3 patterns.",
+		},
+		{
+			name:     "Id and version together",
+			template: "User <id/> is using AIML <version/>.",
+			expected: "User integration_test is using AIML 2.0.",
+		},
+		{
+			name:     "Complex template with all tags",
+			template: "Welcome <id/>! I have <size/> patterns in AIML <version/>. How can I help you?",
+			expected: "Welcome integration_test! I have 3 patterns in AIML 2.0. How can I help you?",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       session,
+				Topic:         "",
+				KnowledgeBase: g.aimlKB,
+			}
+
+			// Process all system tags
+			result := g.processIdTagsWithContext(tt.template, ctx)
+			result = g.processSizeTagsWithContext(result, ctx)
+			result = g.processVersionTagsWithContext(result, ctx)
+
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestIdTagWithBotTags(t *testing.T) {
+	g := New(false)
+
+	// Initialize knowledge base if nil
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
+	// Set up test data
+	g.aimlKB.Properties["name"] = "TestBot"
+	g.aimlKB.Properties["version"] = "2.0"
+
+	// Create a test session
+	session := &ChatSession{
+		ID:              "bot_test_user",
+		Variables:       make(map[string]string),
+		History:         []string{},
+		CreatedAt:       "now",
+		LastActivity:    "now",
+		RequestHistory:  []string{},
+		ResponseHistory: []string{},
+	}
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Id with bot tag",
+			template: "I am <bot name=\"name\"/> and you are <id/>.",
+			expected: "I am TestBot and you are bot_test_user.",
+		},
+		{
+			name:     "All system tags together",
+			template: "I am <bot name=\"name\"/> version <bot name=\"version\"/>. User <id/> has access to <size/> patterns.",
+			expected: "I am TestBot version 2.0. User bot_test_user has access to 0 patterns.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       session,
+				Topic:         "",
+				KnowledgeBase: g.aimlKB,
+			}
+
+			// Process all tags
+			result := g.processBotTagsWithContext(tt.template, ctx)
+			result = g.processIdTagsWithContext(result, ctx)
+			result = g.processSizeTagsWithContext(result, ctx)
+			result = g.processVersionTagsWithContext(result, ctx)
+
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestIdTagEdgeCases(t *testing.T) {
+	g := New(false)
+
+	// Initialize knowledge base if nil
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
+	tests := []struct {
+		name        string
+		template    string
+		expected    string
+		description string
+	}{
+		{
+			name:        "No id tags",
+			template:    "Hello world!",
+			expected:    "Hello world!",
+			description: "Should not change template without id tags",
+		},
+		{
+			name:        "Empty template",
+			template:    "",
+			expected:    "",
+			description: "Should handle empty template",
+		},
+		{
+			name:        "Id tag with special characters in session ID",
+			template:    "Session: <id/>",
+			expected:    "Session: user@domain.com",
+			description: "Should handle special characters in session ID",
+		},
+		{
+			name:        "Id tag with numeric session ID",
+			template:    "User ID: <id/>",
+			expected:    "User ID: 12345",
+			description: "Should handle numeric session IDs",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var session *ChatSession
+
+			if tt.name == "Id tag with special characters in session ID" {
+				session = &ChatSession{
+					ID:              "user@domain.com",
+					Variables:       make(map[string]string),
+					History:         []string{},
+					CreatedAt:       "now",
+					LastActivity:    "now",
+					RequestHistory:  []string{},
+					ResponseHistory: []string{},
+				}
+			} else if tt.name == "Id tag with numeric session ID" {
+				session = &ChatSession{
+					ID:              "12345",
+					Variables:       make(map[string]string),
+					History:         []string{},
+					CreatedAt:       "now",
+					LastActivity:    "now",
+					RequestHistory:  []string{},
+					ResponseHistory: []string{},
+				}
+			} else {
+				session = nil
+			}
+
+			ctx := &VariableContext{
+				LocalVars:     make(map[string]string),
+				Session:       session,
+				Topic:         "",
+				KnowledgeBase: g.aimlKB,
+			}
+
+			result := g.processIdTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}

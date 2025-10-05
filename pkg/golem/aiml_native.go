@@ -1541,6 +1541,11 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processVersionTagsWithContext(response, ctx)
 	g.LogDebug("After version processing: '%s'", response)
 
+	// Process id tags (session ID)
+	g.LogDebug("Before id processing: '%s'", response)
+	response = g.processIdTagsWithContext(response, ctx)
+	g.LogDebug("After id processing: '%s'", response)
+
 	// Process request tags (user input history)
 	g.LogInfo("Before request processing: '%s'", response)
 	response = g.processRequestTags(response, ctx)
@@ -2647,6 +2652,29 @@ func (g *Golem) processVersionTagsWithContext(template string, ctx *VariableCont
 
 		// Replace all <version/> tags with the version
 		template = strings.ReplaceAll(template, "<version/>", version)
+	}
+
+	return template
+}
+
+// processIdTagsWithContext processes <id/> tags to return the current session ID
+func (g *Golem) processIdTagsWithContext(template string, ctx *VariableContext) string {
+	if ctx.Session == nil {
+		return template
+	}
+
+	// Find all <id/> tags
+	idTagRegex := regexp.MustCompile(`<id/>`)
+	matches := idTagRegex.FindAllString(template, -1)
+
+	if len(matches) > 0 {
+		// Get the session ID
+		sessionID := ctx.Session.ID
+
+		g.LogDebug("Id tag: found session ID '%s'", sessionID)
+
+		// Replace all <id/> tags with the session ID
+		template = strings.ReplaceAll(template, "<id/>", sessionID)
 	}
 
 	return template
