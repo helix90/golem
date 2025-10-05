@@ -188,7 +188,7 @@ func TestExpandContractions(t *testing.T) {
 		{
 			name:     "I'd contraction",
 			input:    "I'd like that",
-			expected: "I had like that",
+			expected: "I would like that",
 		},
 		{
 			name:     "You'd contraction",

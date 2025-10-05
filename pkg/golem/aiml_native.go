@@ -1506,6 +1506,11 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processGenderTagsWithContext(response, ctx)
 	g.LogInfo("After gender processing: '%s'", response)
 
+	// Process person2 tags (first-to-third person pronoun substitution)
+	g.LogInfo("Before person2 processing: '%s'", response)
+	response = g.processPerson2TagsWithContext(response, ctx)
+	g.LogInfo("After person2 processing: '%s'", response)
+
 	// Process sentence tags (sentence-level processing)
 	g.LogDebug("Before sentence processing: '%s'", response)
 	response = g.processSentenceTagsWithContext(response, ctx)
@@ -1585,6 +1590,30 @@ func (g *Golem) processGenderTagsWithContext(template string, ctx *VariableConte
 	}
 
 	g.LogInfo("Gender tag processing result: '%s'", template)
+
+	return template
+}
+
+// processPerson2TagsWithContext processes <person2> tags for first-to-third person pronoun substitution
+func (g *Golem) processPerson2TagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <person2> tags (including multiline content)
+	person2TagRegex := regexp.MustCompile(`(?s)<person2>(.*?)</person2>`)
+	matches := person2TagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogInfo("Person2 tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Normalize whitespace before processing
+			content = strings.Join(strings.Fields(content), " ")
+			substitutedContent := g.SubstitutePronouns2(content)
+			g.LogInfo("Person2 tag: '%s' -> '%s'", match[1], substitutedContent)
+			template = strings.ReplaceAll(template, match[0], substitutedContent)
+		}
+	}
+
+	g.LogInfo("Person2 tag processing result: '%s'", template)
 
 	return template
 }
@@ -1699,6 +1728,106 @@ func (g *Golem) fixVerbAgreement(text string) string {
 		"I were":  "I was",
 		"you has": "you have",
 		"I have":  "I have", // Keep as is
+	}
+
+	result := text
+	for wrong, correct := range verbFixes {
+		result = strings.ReplaceAll(result, wrong, correct)
+	}
+
+	return result
+}
+
+// SubstitutePronouns2 performs first-to-third person pronoun substitution for person2 tags
+func (g *Golem) SubstitutePronouns2(text string) string {
+	// Comprehensive pronoun mapping for first-to-third person substitution
+	pronounMap := map[string]string{
+		// First person to third person (neutral/they)
+		"I": "they", "i": "they",
+		"me": "them",
+		"my": "their", "My": "Their",
+		"mine": "theirs", "Mine": "Theirs",
+		"we": "they", "We": "They",
+		"us": "them", "Us": "Them",
+		"our": "their", "Our": "Their",
+		"ours": "theirs", "Ours": "Theirs",
+		"myself": "themselves", "Myself": "Themselves",
+		"ourselves": "themselves", "Ourselves": "Themselves",
+
+		// Contractions - first person to third person
+		"I'm": "they're", "i'm": "they're", "I'M": "they're",
+		"I've": "they've", "i've": "they've", "I'VE": "they've",
+		"I'll": "they'll", "i'll": "they'll", "I'LL": "they'll",
+		"I'd": "they'd", "i'd": "they'd", "I'D": "they'd",
+		"we're": "they're", "We're": "They're", "WE'RE": "they're",
+		"we've": "they've", "We've": "They've", "WE'VE": "they've",
+		"we'll": "they'll", "We'll": "They'll", "WE'LL": "they'll",
+		"we'd": "they'd", "We'd": "They'd", "WE'D": "they'd",
+	}
+
+	// Split text into words while preserving whitespace
+	words := strings.Fields(text)
+	substitutedWords := make([]string, len(words))
+
+	for i, word := range words {
+		// Check for exact match first
+		if substitution, exists := pronounMap[word]; exists {
+			substitutedWords[i] = substitution
+			continue
+		}
+
+		// Handle contractions and possessives more carefully
+		substituted := word
+
+		// Check for contractions (apostrophe) - only if the word starts with the contraction
+		if strings.Contains(word, "'") {
+			for contraction, replacement := range pronounMap {
+				if strings.HasPrefix(word, contraction) && strings.Contains(word, "'") {
+					substituted = strings.ReplaceAll(word, contraction, replacement)
+					break
+				}
+			}
+		}
+
+		// Check for possessive forms (only for pronouns)
+		if strings.HasSuffix(word, "'s") || strings.HasSuffix(word, "s'") {
+			base := strings.TrimSuffix(strings.TrimSuffix(word, "'s"), "s'")
+			// Only process if the base word is a pronoun
+			if replacement, exists := pronounMap[base]; exists {
+				if strings.HasSuffix(word, "'s") {
+					substituted = replacement + "'s"
+				} else {
+					substituted = replacement + "s'"
+				}
+			}
+		}
+
+		substitutedWords[i] = substituted
+	}
+
+	result := strings.Join(substitutedWords, " ")
+
+	// Handle verb agreement after pronoun substitution
+	result = g.fixVerbAgreement2(result)
+
+	g.LogInfo("Person2 substitution: '%s' -> '%s'", text, result)
+
+	return result
+}
+
+// fixVerbAgreement2 fixes verb agreement after person2 pronoun substitution
+func (g *Golem) fixVerbAgreement2(text string) string {
+	// Common verb agreement fixes for third person
+	verbFixes := map[string]string{
+		"they am":      "they are",
+		"they is":      "they are",
+		"they was":     "they were",
+		"they has":     "they have",
+		"they does":    "they do",
+		"they doesn't": "they don't",
+		"they isn't":   "they aren't",
+		"they wasn't":  "they weren't",
+		"they hasn't":  "they haven't",
 	}
 
 	result := text
@@ -1895,11 +2024,12 @@ func (g *Golem) processWordTagsWithContext(template string, ctx *VariableContext
 // processNormalizeTagsWithContext processes <normalize> tags for text normalization
 // <normalize> tag normalizes text using the same logic as pattern matching
 func (g *Golem) processNormalizeTagsWithContext(template string, ctx *VariableContext) string {
-	// Process normalize tags from innermost to outermost
-	// This handles nested tags correctly
-	for {
-		// Find the first <normalize> tag that doesn't contain another <normalize> tag
-		normalizeTagRegex := regexp.MustCompile(`(?s)<normalize>(.*?)</normalize>`)
+	// Process normalize tags iteratively until no more changes occur
+	prevTemplate := ""
+	for template != prevTemplate {
+		prevTemplate = template
+
+		normalizeTagRegex := regexp.MustCompile(`<normalize>([^<]*(?:<[^/][^>]*>[^<]*)*)</normalize>`)
 		match := normalizeTagRegex.FindStringSubmatch(template)
 
 		if match == nil {
@@ -1908,30 +2038,13 @@ func (g *Golem) processNormalizeTagsWithContext(template string, ctx *VariableCo
 		}
 
 		content := strings.TrimSpace(match[1])
-
-		// Check if this content contains another <normalize> tag
-		if strings.Contains(content, "<normalize>") {
-			// This is an outer tag, skip it for now
-			// We need to process inner tags first
-			// Find the innermost normalize tag
-			innerMatch := normalizeTagRegex.FindStringSubmatch(content)
-			if innerMatch != nil {
-				// Process the inner tag first
-				innerContent := strings.TrimSpace(innerMatch[1])
-				if innerContent != "" {
-					processedInnerContent := g.normalizeTextForOutput(innerContent)
-					content = strings.Replace(content, innerMatch[0], processedInnerContent, 1)
-				}
-			}
-		}
-
 		if content == "" {
 			// Empty normalize tag - replace with empty string
 			template = strings.Replace(template, match[0], "", 1)
 			continue
 		}
 
-		// Normalize the content using the same logic as pattern matching
+		// Normalize the content
 		processedContent := g.normalizeTextForOutput(content)
 
 		g.LogDebug("Normalize tag: '%s' -> '%s'", match[1], processedContent)
@@ -1939,38 +2052,40 @@ func (g *Golem) processNormalizeTagsWithContext(template string, ctx *VariableCo
 	}
 
 	g.LogDebug("Normalize tag processing result: '%s'", template)
-
 	return template
 }
 
 // processDenormalizeTagsWithContext processes <denormalize> tags for text denormalization
 // <denormalize> tag reverses the normalization process to restore more natural text
 func (g *Golem) processDenormalizeTagsWithContext(template string, ctx *VariableContext) string {
-	// Find all <denormalize> tags (including multiline content)
-	denormalizeTagRegex := regexp.MustCompile(`(?s)<denormalize>(.*?)</denormalize>`)
-	matches := denormalizeTagRegex.FindAllStringSubmatch(template, -1)
+	// Process denormalize tags iteratively until no more changes occur
+	prevTemplate := ""
+	for template != prevTemplate {
+		prevTemplate = template
 
-	g.LogDebug("Denormalize tag processing: found %d matches in template: '%s'", len(matches), template)
+		denormalizeTagRegex := regexp.MustCompile(`<denormalize>([^<]*(?:<[^/][^>]*>[^<]*)*)</denormalize>`)
+		match := denormalizeTagRegex.FindStringSubmatch(template)
 
-	for _, match := range matches {
-		if len(match) > 1 {
-			content := strings.TrimSpace(match[1])
-			if content == "" {
-				// Empty denormalize tag - replace with empty string
-				template = strings.ReplaceAll(template, match[0], "")
-				continue
-			}
-
-			// Denormalize the content to restore more natural text
-			processedContent := g.denormalizeText(content)
-
-			g.LogDebug("Denormalize tag: '%s' -> '%s'", match[1], processedContent)
-			template = strings.ReplaceAll(template, match[0], processedContent)
+		if match == nil {
+			// No more denormalize tags found
+			break
 		}
+
+		content := strings.TrimSpace(match[1])
+		if content == "" {
+			// Empty denormalize tag - replace with empty string
+			template = strings.Replace(template, match[0], "", 1)
+			continue
+		}
+
+		// Denormalize the content
+		processedContent := g.denormalizeText(content)
+
+		g.LogDebug("Denormalize tag: '%s' -> '%s'", match[1], processedContent)
+		template = strings.Replace(template, match[0], processedContent, 1)
 	}
 
 	g.LogDebug("Denormalize tag processing result: '%s'", template)
-
 	return template
 }
 
@@ -3798,7 +3913,7 @@ func expandContractions(text string) string {
 		// Negative contractions
 		"DON'T": "DO NOT", "Don't": "Do not", "don't": "do not",
 		"WON'T": "WILL NOT", "Won't": "Will not", "won't": "will not",
-		"CAN'T": "CAN NOT", "Can't": "Can not", "can't": "can not",
+		"CAN'T": "CANNOT", "Can't": "Cannot", "can't": "cannot",
 		"ISN'T": "IS NOT", "Isn't": "Is not", "isn't": "is not",
 		"AREN'T": "ARE NOT", "Aren't": "Are not", "aren't": "are not",
 		"WASN'T": "WAS NOT", "Wasn't": "Was not", "wasn't": "was not",
