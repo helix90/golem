@@ -1367,7 +1367,21 @@ func (g *Golem) ProcessTemplate(template string, wildcards map[string]string) st
 		KnowledgeBase: g.aimlKB,
 	}
 
-	return g.processTemplateWithContext(template, wildcards, ctx)
+	if g.aimlKB != nil {
+		g.LogInfo("ProcessTemplate: KB pointer=%p, KB variables=%v", g.aimlKB, g.aimlKB.Variables)
+		g.LogInfo("ProcessTemplate: Context KB pointer=%p, Context KB variables=%v", ctx.KnowledgeBase, ctx.KnowledgeBase.Variables)
+	} else {
+		g.LogInfo("ProcessTemplate: No knowledge base set")
+	}
+
+	result := g.processTemplateWithContext(template, wildcards, ctx)
+
+	if g.aimlKB != nil {
+		g.LogInfo("ProcessTemplate: After processing, KB pointer=%p, KB variables=%v", g.aimlKB, g.aimlKB.Variables)
+		g.LogInfo("ProcessTemplate: After processing, Context KB pointer=%p, Context KB variables=%v", ctx.KnowledgeBase, ctx.KnowledgeBase.Variables)
+	}
+
+	return result
 }
 
 // ProcessTemplateWithContext processes an AIML template with full context support
@@ -2549,6 +2563,7 @@ func (g *Golem) processConditionTagsWithContext(template string, ctx *VariableCo
 
 		// Get the actual variable value using context
 		actualValue := g.resolveVariable(varName, ctx)
+		g.LogInfo("Condition processing: varName='%s', actualValue='%s', expectedValue='%s'", varName, actualValue, expectedValue)
 
 		// Process the condition content
 		response := g.processConditionContentWithContext(conditionContent, varName, actualValue, expectedValue, ctx)
@@ -3068,9 +3083,12 @@ func (g *Golem) getVariableValue(varName string, session *ChatSession) string {
 
 // resolveVariable resolves a variable using proper scope hierarchy
 func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
+	g.LogInfo("Resolving variable '%s'", varName)
+
 	// 1. Check local scope (highest priority)
 	if ctx.LocalVars != nil {
 		if value, exists := ctx.LocalVars[varName]; exists {
+			g.LogInfo("Found variable '%s' in local scope: '%s'", varName, value)
 			return value
 		}
 	}
@@ -3078,6 +3096,7 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 	// 2. Check session scope
 	if ctx.Session != nil && ctx.Session.Variables != nil {
 		if value, exists := ctx.Session.Variables[varName]; exists {
+			g.LogInfo("Found variable '%s' in session scope: '%s'", varName, value)
 			return value
 		}
 	}
@@ -3093,23 +3112,36 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 
 	// 4. Check global scope (knowledge base variables)
 	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Variables != nil {
+		g.LogInfo("Checking knowledge base variables: %v", ctx.KnowledgeBase.Variables)
+		g.LogInfo("Knowledge base pointer: %p", ctx.KnowledgeBase)
+		g.LogInfo("Knowledge base Variables pointer: %p", ctx.KnowledgeBase.Variables)
 		if value, exists := ctx.KnowledgeBase.Variables[varName]; exists {
+			g.LogInfo("Found variable '%s' in knowledge base: '%s'", varName, value)
 			return value
+		}
+	} else {
+		g.LogInfo("Knowledge base is nil or Variables is nil: KB=%v, Variables=%v", ctx.KnowledgeBase != nil, ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Variables != nil)
+		if ctx.KnowledgeBase != nil {
+			g.LogInfo("Knowledge base exists but Variables is nil - THIS IS THE BUG!")
 		}
 	}
 
 	// 5. Check properties scope (read-only)
 	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Properties != nil {
 		if value, exists := ctx.KnowledgeBase.Properties[varName]; exists {
+			g.LogInfo("Found variable '%s' in properties: '%s'", varName, value)
 			return value
 		}
 	}
 
+	g.LogInfo("Variable '%s' not found", varName)
 	return "" // Variable not found
 }
 
 // setVariable sets a variable in the appropriate scope
 func (g *Golem) setVariable(varName, varValue string, scope VariableScope, ctx *VariableContext) {
+	g.LogInfo("setVariable called: varName='%s', varValue='%s', scope=%v", varName, varValue, scope)
+
 	switch scope {
 	case ScopeLocal:
 		if ctx.LocalVars == nil {
@@ -3140,12 +3172,16 @@ func (g *Golem) setVariable(varName, varValue string, scope VariableScope, ctx *
 		//     ctx.KnowledgeBase.Topics[ctx.Topic][varName] = varValue
 		// }
 	case ScopeGlobal:
+		g.LogInfo("Setting global variable '%s' to '%s'", varName, varValue)
+		g.LogInfo("Before: KB Variables=%v", ctx.KnowledgeBase.Variables)
 		if ctx.KnowledgeBase != nil {
 			if ctx.KnowledgeBase.Variables == nil {
+				g.LogInfo("Creating new Variables map - THIS IS THE BUG!")
 				ctx.KnowledgeBase.Variables = make(map[string]string)
 			}
 			ctx.KnowledgeBase.Variables[varName] = varValue
 		}
+		g.LogInfo("After: KB Variables=%v", ctx.KnowledgeBase.Variables)
 	case ScopeProperties:
 		// Properties are read-only, cannot be set
 		g.LogInfo("Warning: Cannot set property '%s' - properties are read-only", varName)
@@ -4524,6 +4560,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 	matches := listRegex.FindAllStringSubmatch(template, -1)
 
 	g.LogInfo("List processing: found %d matches in template: '%s'", len(matches), template)
+	g.LogInfo("Current lists state: %v", ctx.KnowledgeBase.Lists)
 
 	for _, match := range matches {
 		if len(match) >= 4 {
@@ -4537,8 +4574,10 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 			// Get or create the list
 			if ctx.KnowledgeBase.Lists[listName] == nil {
 				ctx.KnowledgeBase.Lists[listName] = make([]string, 0)
+				g.LogInfo("Created new list '%s'", listName)
 			}
 			list := ctx.KnowledgeBase.Lists[listName]
+			g.LogInfo("Before operation: list '%s' = %v", listName, list)
 
 			switch operation {
 			case "add", "append":
@@ -4547,6 +4586,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 				ctx.KnowledgeBase.Lists[listName] = list
 				template = strings.ReplaceAll(template, match[0], "")
 				g.LogInfo("Added '%s' to list '%s'", content, listName)
+				g.LogInfo("After add: list '%s' = %v", listName, list)
 
 			case "insert":
 				// Insert item at specific index
@@ -4557,12 +4597,14 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 						ctx.KnowledgeBase.Lists[listName] = list
 						template = strings.ReplaceAll(template, match[0], "")
 						g.LogInfo("Inserted '%s' at index %d in list '%s'", content, index, listName)
+						g.LogInfo("After insert: list '%s' = %v", listName, list)
 					} else {
 						// Invalid index, append to end
 						list = append(list, content)
 						ctx.KnowledgeBase.Lists[listName] = list
 						template = strings.ReplaceAll(template, match[0], "")
 						g.LogInfo("Invalid index %s, appended '%s' to list '%s'", indexStr, content, listName)
+						g.LogInfo("After append: list '%s' = %v", listName, list)
 					}
 				} else {
 					// No index specified, append to end
@@ -4570,6 +4612,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 					ctx.KnowledgeBase.Lists[listName] = list
 					template = strings.ReplaceAll(template, match[0], "")
 					g.LogInfo("No index specified, appended '%s' to list '%s'", content, listName)
+					g.LogInfo("After append: list '%s' = %v", listName, list)
 				}
 
 			case "remove", "delete":
@@ -4581,6 +4624,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 						ctx.KnowledgeBase.Lists[listName] = list
 						template = strings.ReplaceAll(template, match[0], "")
 						g.LogInfo("Removed item at index %d from list '%s'", index, listName)
+						g.LogInfo("After remove by index: list '%s' = %v", listName, list)
 					} else {
 						// Invalid index, try to remove by value
 						for i, item := range list {
@@ -4589,6 +4633,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 								ctx.KnowledgeBase.Lists[listName] = list
 								template = strings.ReplaceAll(template, match[0], "")
 								g.LogInfo("Removed '%s' from list '%s'", content, listName)
+								g.LogInfo("After remove by value: list '%s' = %v", listName, list)
 								break
 							}
 						}
@@ -4601,6 +4646,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 							ctx.KnowledgeBase.Lists[listName] = list
 							template = strings.ReplaceAll(template, match[0], "")
 							g.LogInfo("Removed '%s' from list '%s'", content, listName)
+							g.LogInfo("After remove by value: list '%s' = %v", listName, list)
 							break
 						}
 					}
@@ -4611,6 +4657,7 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 				ctx.KnowledgeBase.Lists[listName] = make([]string, 0)
 				template = strings.ReplaceAll(template, match[0], "")
 				g.LogInfo("Cleared list '%s'", listName)
+				g.LogInfo("After clear: list '%s' = %v", listName, ctx.KnowledgeBase.Lists[listName])
 
 			case "size", "length":
 				// Return the size of the list
@@ -4658,13 +4705,18 @@ func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext
 
 // processArrayTagsWithContext processes <array> tags with variable context
 func (g *Golem) processArrayTagsWithContext(template string, ctx *VariableContext) string {
+	g.LogInfo("Array processing: ctx.KnowledgeBase=%v, ctx.KnowledgeBase.Arrays=%v", ctx.KnowledgeBase != nil, ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Arrays != nil)
 	if ctx.KnowledgeBase == nil || ctx.KnowledgeBase.Arrays == nil {
+		g.LogInfo("Array processing: returning early due to nil knowledge base or arrays")
 		return template
 	}
 
 	// Find all <array> tags with various operations
 	arrayRegex := regexp.MustCompile(`<array\s+name=["']([^"']+)["'](?:\s+index=["']([^"']+)["'])?(?:\s+operation=["']([^"']+)["'])?>(.*?)</array>`)
 	matches := arrayRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogInfo("Array processing: found %d matches in template: '%s'", len(matches), template)
+	g.LogInfo("Current arrays state: %v", ctx.KnowledgeBase.Arrays)
 
 	for _, match := range matches {
 		if len(match) >= 4 {
@@ -4678,8 +4730,10 @@ func (g *Golem) processArrayTagsWithContext(template string, ctx *VariableContex
 			// Get or create the array
 			if ctx.KnowledgeBase.Arrays[arrayName] == nil {
 				ctx.KnowledgeBase.Arrays[arrayName] = make([]string, 0)
+				g.LogInfo("Created new array '%s'", arrayName)
 			}
 			array := ctx.KnowledgeBase.Arrays[arrayName]
+			g.LogInfo("Before operation: array '%s' = %v", arrayName, array)
 
 			switch operation {
 			case "set", "assign":
@@ -4694,6 +4748,7 @@ func (g *Golem) processArrayTagsWithContext(template string, ctx *VariableContex
 						ctx.KnowledgeBase.Arrays[arrayName] = array
 						template = strings.ReplaceAll(template, match[0], "")
 						g.LogInfo("Set array '%s'[%d] = '%s'", arrayName, index, content)
+						g.LogInfo("After set: array '%s' = %v", arrayName, array)
 					} else {
 						// Invalid index
 						template = strings.ReplaceAll(template, match[0], "")
@@ -4705,6 +4760,7 @@ func (g *Golem) processArrayTagsWithContext(template string, ctx *VariableContex
 					ctx.KnowledgeBase.Arrays[arrayName] = array
 					template = strings.ReplaceAll(template, match[0], "")
 					g.LogInfo("Appended '%s' to array '%s'", content, arrayName)
+					g.LogInfo("After append: array '%s' = %v", arrayName, array)
 				}
 
 			case "get", "":
@@ -4735,6 +4791,7 @@ func (g *Golem) processArrayTagsWithContext(template string, ctx *VariableContex
 				ctx.KnowledgeBase.Arrays[arrayName] = make([]string, 0)
 				template = strings.ReplaceAll(template, match[0], "")
 				g.LogInfo("Cleared array '%s'", arrayName)
+				g.LogInfo("After clear: array '%s' = %v", arrayName, ctx.KnowledgeBase.Arrays[arrayName])
 
 			default:
 				// Unknown operation, treat as get
