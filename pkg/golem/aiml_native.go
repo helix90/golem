@@ -1402,10 +1402,11 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	startTime := time.Now()
 
 	// Check cache first if enabled
-	// IMPORTANT: Disable caching for templates containing list/array tags because
-	// the cache key does not include list/array state, which can cause stale results
+	// IMPORTANT: Disable caching for templates containing list/array/condition tags because
+	// the cache key does not include list/array/condition state, which can cause stale results
 	hasListOrArrayTags := strings.Contains(template, "<list ") || strings.Contains(template, "<array ")
-	if g.templateConfig.EnableCaching && !hasListOrArrayTags {
+	hasConditionTags := strings.Contains(template, "<condition ")
+	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasConditionTags {
 		cacheKey := g.generateTemplateCacheKey(template, wildcards, ctx)
 		if cached, found := g.getFromTemplateCache(cacheKey); found {
 			g.templateMetrics.CacheHits++
@@ -1628,8 +1629,8 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	}
 
 	// Cache the result if caching is enabled
-	// IMPORTANT: Don't cache templates with list/array tags
-	if g.templateConfig.EnableCaching && !hasListOrArrayTags {
+	// IMPORTANT: Don't cache templates with list/array/condition tags
+	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasConditionTags {
 		cacheKey := g.generateTemplateCacheKey(template, wildcards, ctx)
 		g.storeInTemplateCache(cacheKey, finalResponse)
 	}
