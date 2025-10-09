@@ -1519,6 +1519,9 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	// Process learn tags (dynamic learning)
 	response = g.processLearnTagsWithContext(response, ctx)
 
+	// Process unlearn tags (remove learned categories)
+	response = g.processUnlearnTagsWithContext(response, ctx)
+
 	// Process condition tags
 	response = g.processConditionTagsWithContext(response, ctx)
 
@@ -2479,6 +2482,79 @@ func (g *Golem) processLearnTagsWithContext(template string, ctx *VariableContex
 			}
 
 			// Remove the learnf tag after processing
+			template = strings.ReplaceAll(template, match[0], "")
+		}
+	}
+
+	return template
+}
+
+// processUnlearnTagsWithContext processes <unlearn> and <unlearnf> tags with variable context
+func (g *Golem) processUnlearnTagsWithContext(template string, ctx *VariableContext) string {
+	if g.aimlKB == nil {
+		return template
+	}
+
+	// Process <unlearn> tags (session-specific unlearning)
+	unlearnRegex := regexp.MustCompile(`(?s)<unlearn>(.*?)</unlearn>`)
+	unlearnMatches := unlearnRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range unlearnMatches {
+		if len(match) > 1 {
+			unlearnContent := strings.TrimSpace(match[1])
+
+			g.LogInfo("Processing unlearn: '%s'", unlearnContent)
+
+			// Parse the AIML content within the unlearn tag
+			categories, err := g.parseLearnContent(unlearnContent)
+			if err != nil {
+				g.LogInfo("Failed to parse unlearn content: %v", err)
+				// Remove the unlearn tag on error
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Remove categories from session-specific knowledge base
+			for _, category := range categories {
+				err := g.removeSessionCategory(category, ctx)
+				if err != nil {
+					g.LogInfo("Failed to remove session category: %v", err)
+				}
+			}
+
+			// Remove the unlearn tag after processing
+			template = strings.ReplaceAll(template, match[0], "")
+		}
+	}
+
+	// Process <unlearnf> tags (persistent unlearning)
+	unlearnfRegex := regexp.MustCompile(`(?s)<unlearnf>(.*?)</unlearnf>`)
+	unlearnfMatches := unlearnfRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range unlearnfMatches {
+		if len(match) > 1 {
+			unlearnfContent := strings.TrimSpace(match[1])
+
+			g.LogInfo("Processing unlearnf: '%s'", unlearnfContent)
+
+			// Parse the AIML content within the unlearnf tag
+			categories, err := g.parseLearnContent(unlearnfContent)
+			if err != nil {
+				g.LogError("Failed to parse unlearnf content: %v", err)
+				// Remove the unlearnf tag on error
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Remove categories from persistent knowledge base
+			for _, category := range categories {
+				err := g.removePersistentCategory(category)
+				if err != nil {
+					g.LogInfo("Failed to remove persistent category: %v", err)
+				}
+			}
+
+			// Remove the unlearnf tag after processing
 			template = strings.ReplaceAll(template, match[0], "")
 		}
 	}
@@ -6651,6 +6727,70 @@ func (g *Golem) addPersistentCategory(category Category) error {
 	g.LogInfo("Note: Persistent learning not yet implemented - category added to memory only")
 
 	return nil
+}
+
+// removeSessionCategory removes a category from the session-specific knowledge base
+func (g *Golem) removeSessionCategory(category Category, ctx *VariableContext) error {
+	if g.aimlKB == nil {
+		return fmt.Errorf("no knowledge base available")
+	}
+
+	// Normalize the pattern
+	normalizedPattern := NormalizePattern(category.Pattern)
+
+	// Check if category exists
+	if _, exists := g.aimlKB.Patterns[normalizedPattern]; !exists {
+		g.LogInfo("Category not found for removal: %s", normalizedPattern)
+		return fmt.Errorf("category not found: %s", normalizedPattern)
+	}
+
+	// Remove from patterns map
+	delete(g.aimlKB.Patterns, normalizedPattern)
+
+	// Remove from categories slice
+	for i, cat := range g.aimlKB.Categories {
+		if NormalizePattern(cat.Pattern) == normalizedPattern {
+			// Remove the category by slicing it out
+			g.aimlKB.Categories = append(g.aimlKB.Categories[:i], g.aimlKB.Categories[i+1:]...)
+			g.LogInfo("Removed session category: %s", normalizedPattern)
+			return nil
+		}
+	}
+
+	g.LogInfo("Category not found in categories slice: %s", normalizedPattern)
+	return fmt.Errorf("category not found in categories slice: %s", normalizedPattern)
+}
+
+// removePersistentCategory removes a category from the persistent knowledge base
+func (g *Golem) removePersistentCategory(category Category) error {
+	if g.aimlKB == nil {
+		return fmt.Errorf("no knowledge base available")
+	}
+
+	// Normalize the pattern
+	normalizedPattern := NormalizePattern(category.Pattern)
+
+	// Check if category exists
+	if _, exists := g.aimlKB.Patterns[normalizedPattern]; !exists {
+		g.LogInfo("Category not found for removal: %s", normalizedPattern)
+		return fmt.Errorf("category not found: %s", normalizedPattern)
+	}
+
+	// Remove from patterns map
+	delete(g.aimlKB.Patterns, normalizedPattern)
+
+	// Remove from categories slice
+	for i, cat := range g.aimlKB.Categories {
+		if NormalizePattern(cat.Pattern) == normalizedPattern {
+			// Remove the category by slicing it out
+			g.aimlKB.Categories = append(g.aimlKB.Categories[:i], g.aimlKB.Categories[i+1:]...)
+			g.LogInfo("Removed persistent category: %s", normalizedPattern)
+			return nil
+		}
+	}
+
+	g.LogInfo("Category not found in categories slice: %s", normalizedPattern)
+	return fmt.Errorf("category not found in categories slice: %s", normalizedPattern)
 }
 
 // ThatPatternCache represents a cache for compiled that patterns
