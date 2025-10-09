@@ -2656,28 +2656,152 @@ func (g *Golem) replaceSessionVariableTagsWithContext(template string, ctx *Vari
 	return template
 }
 
-// processSetTagsWithContext processes <set name="var">value</set> tags
+// processSetTagsWithContext processes <set> tags with enhanced AIML2 set operations
 func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext) string {
-	// Find all <set name="var">value</set> tags
-	setTagRegex := regexp.MustCompile(`<set name="([^"]+)">(.*?)</set>`)
-	matches := setTagRegex.FindAllStringSubmatch(template, -1)
+	if ctx.KnowledgeBase == nil {
+		return template
+	}
+
+	// Find all <set> tags with various operations
+	// Support both variable assignment and set operations
+	setRegex := regexp.MustCompile(`(?s)<set\s+name=["']([^"']+)["'](?:\s+operation=["']([^"']+)["'])?>(.*?)</set>`)
+	matches := setRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogInfo("Set processing: found %d matches in template: '%s'", len(matches), template)
+	g.LogInfo("Current sets state: %v", ctx.KnowledgeBase.Sets)
 
 	for _, match := range matches {
-		if len(match) > 2 {
-			varName := match[1]
-			varValue := strings.TrimSpace(match[2])
+		if len(match) >= 4 {
+			setName := match[1]
+			operation := match[2]
+			content := strings.TrimSpace(match[3])
 
-			g.LogInfo("Setting variable '%s' to '%s'", varName, varValue)
+			g.LogInfo("Processing set tag: name='%s', operation='%s', content='%s'", setName, operation, content)
 
-			// Process the variable value through the template pipeline to handle wildcards
-			// Use a special processing that doesn't output the result
-			processedValue := g.processTemplateContentForVariable(varValue, make(map[string]string), ctx)
+			// Get or create the set
+			if ctx.KnowledgeBase.Sets[setName] == nil {
+				ctx.KnowledgeBase.Sets[setName] = make([]string, 0)
+				g.LogInfo("Created new set '%s'", setName)
+			}
+			set := ctx.KnowledgeBase.Sets[setName]
+			g.LogInfo("Before operation: set '%s' = %v", setName, set)
 
-			// Set the variable in the appropriate scope
-			g.setVariable(varName, processedValue, ScopeSession, ctx)
+			switch operation {
+			case "add", "insert":
+				// Add item to set (if not already present)
+				if content != "" {
+					// Process the content through the template pipeline to handle variables and other tags
+					processedContent := g.processTemplateContentForVariable(content, make(map[string]string), ctx)
 
-			// Remove the set tag from the template (don't replace with value)
-			template = strings.ReplaceAll(template, match[0], "")
+					// Check if item already exists
+					exists := false
+					for _, item := range set {
+						if strings.EqualFold(item, processedContent) {
+							exists = true
+							break
+						}
+					}
+					if !exists {
+						set = append(set, processedContent)
+						ctx.KnowledgeBase.Sets[setName] = set
+						g.LogInfo("Added '%s' to set '%s'", processedContent, setName)
+					} else {
+						g.LogInfo("Item '%s' already exists in set '%s'", processedContent, setName)
+					}
+					// Remove the set tag from the template (don't replace with value)
+					template = strings.ReplaceAll(template, match[0], "")
+				}
+
+			case "remove", "delete":
+				// Remove item from set
+				if content != "" {
+					// Process the content through the template pipeline to handle variables and other tags
+					processedContent := g.processTemplateContentForVariable(content, make(map[string]string), ctx)
+
+					for i, item := range set {
+						if strings.EqualFold(item, processedContent) {
+							set = append(set[:i], set[i+1:]...)
+							ctx.KnowledgeBase.Sets[setName] = set
+							template = strings.ReplaceAll(template, match[0], "")
+							g.LogInfo("Removed '%s' from set '%s'", processedContent, setName)
+							g.LogInfo("After remove: set '%s' = %v", setName, set)
+							break
+						}
+					}
+				}
+
+			case "clear":
+				// Clear the set
+				ctx.KnowledgeBase.Sets[setName] = make([]string, 0)
+				template = strings.ReplaceAll(template, match[0], "")
+				g.LogInfo("Cleared set '%s'", setName)
+				g.LogInfo("After clear: set '%s' = %v", setName, ctx.KnowledgeBase.Sets[setName])
+
+			case "size", "length":
+				// Return the size of the set
+				size := strconv.Itoa(len(set))
+				template = strings.ReplaceAll(template, match[0], size)
+				g.LogInfo("Set '%s' size: %s", setName, size)
+
+			case "contains", "has":
+				// Check if set contains item
+				contains := false
+				if content != "" {
+					// Process the content through the template pipeline to handle variables and other tags
+					processedContent := g.processTemplateContentForVariable(content, make(map[string]string), ctx)
+
+					for _, item := range set {
+						if strings.EqualFold(item, processedContent) {
+							contains = true
+							break
+						}
+					}
+				}
+				result := "false"
+				if contains {
+					result = "true"
+				}
+				template = strings.ReplaceAll(template, match[0], result)
+				g.LogInfo("Set '%s' contains '%s': %s", setName, content, result)
+
+			case "get", "list", "":
+				// Get all items in the set or return the set as a string
+				if len(set) == 0 {
+					template = strings.ReplaceAll(template, match[0], "")
+				} else {
+					setString := strings.Join(set, " ")
+					template = strings.ReplaceAll(template, match[0], setString)
+					g.LogInfo("Set '%s' contents: %s", setName, setString)
+				}
+
+			case "assign", "set":
+				// Set variable (original functionality)
+				if content != "" {
+					// Process the variable value through the template pipeline to handle wildcards
+					processedValue := g.processTemplateContentForVariable(content, make(map[string]string), ctx)
+
+					// Set the variable in the appropriate scope
+					g.setVariable(setName, processedValue, ScopeSession, ctx)
+					g.LogInfo("Set variable '%s' to '%s'", setName, processedValue)
+
+					// Remove the set tag from the template (don't replace with value)
+					template = strings.ReplaceAll(template, match[0], "")
+				}
+
+			default:
+				// Default to variable assignment for backward compatibility
+				if content != "" {
+					// Process the variable value through the template pipeline to handle wildcards
+					processedValue := g.processTemplateContentForVariable(content, make(map[string]string), ctx)
+
+					// Set the variable in the appropriate scope
+					g.setVariable(setName, processedValue, ScopeSession, ctx)
+					g.LogInfo("Set variable '%s' to '%s' (default operation)", setName, processedValue)
+
+					// Remove the set tag from the template (don't replace with value)
+					template = strings.ReplaceAll(template, match[0], "")
+				}
+			}
 		}
 	}
 
