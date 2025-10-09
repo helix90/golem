@@ -155,6 +155,8 @@ type Golem struct {
 	templateCache   *TemplateCache
 	templateConfig  *TemplateProcessingConfig
 	templateMetrics *TemplateProcessingMetrics
+	// Persistent learning components
+	persistentLearning *PersistentLearningManager
 }
 
 // New creates a new Golem instance
@@ -221,6 +223,9 @@ func New(verbose bool) *Golem {
 		ParallelOps:        0,
 	}
 
+	// Create persistent learning manager with default storage path
+	persistentLearning := NewPersistentLearningManager("./learned_categories")
+
 	return &Golem{
 		verbose:              verbose,
 		logLevel:             logLevel,
@@ -234,6 +239,7 @@ func New(verbose bool) *Golem {
 		templateCache:        templateCache,
 		templateConfig:       templateConfig,
 		templateMetrics:      templateMetrics,
+		persistentLearning:   persistentLearning,
 	}
 }
 
@@ -270,6 +276,68 @@ func (g *Golem) LogTrace(format string, args ...interface{}) {
 	if g.logLevel >= LogLevelTrace {
 		g.logger.Printf("[TRACE] "+format, args...)
 	}
+}
+
+// SetPersistentLearningPath sets the path for persistent learning storage
+func (g *Golem) SetPersistentLearningPath(path string) {
+	if g.persistentLearning != nil {
+		g.persistentLearning.SetStoragePath(path)
+	}
+}
+
+// GetPersistentLearningInfo returns information about persistent learning
+func (g *Golem) GetPersistentLearningInfo() (map[string]interface{}, error) {
+	if g.persistentLearning == nil {
+		return nil, fmt.Errorf("persistent learning not initialized")
+	}
+	return g.persistentLearning.GetPersistentCategoryInfo()
+}
+
+// LoadPersistentCategories loads categories from persistent storage
+func (g *Golem) LoadPersistentCategories() error {
+	if g.persistentLearning == nil {
+		return fmt.Errorf("persistent learning not initialized")
+	}
+
+	if g.aimlKB == nil {
+		return fmt.Errorf("no knowledge base available")
+	}
+
+	categories, err := g.persistentLearning.LoadPersistentCategories()
+	if err != nil {
+		return fmt.Errorf("failed to load persistent categories: %v", err)
+	}
+
+	// Add categories to the knowledge base
+	for _, category := range categories {
+		normalizedPattern := NormalizePattern(category.Pattern)
+
+		// Check if category already exists
+		if existingCategory, exists := g.aimlKB.Patterns[normalizedPattern]; exists {
+			// Update existing category
+			*existingCategory = category
+		} else {
+			// Add new category
+			g.aimlKB.Categories = append(g.aimlKB.Categories, category)
+			g.aimlKB.Patterns[normalizedPattern] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
+		}
+	}
+
+	g.LogInfo("Loaded %d persistent categories", len(categories))
+	return nil
+}
+
+// SavePersistentCategories saves all current categories to persistent storage
+func (g *Golem) SavePersistentCategories(source string) error {
+	if g.persistentLearning == nil {
+		return fmt.Errorf("persistent learning not initialized")
+	}
+
+	if g.aimlKB == nil {
+		return fmt.Errorf("no knowledge base available")
+	}
+
+	return g.persistentLearning.SavePersistentCategories(g.aimlKB.Categories, source)
 }
 
 // SetLogLevel sets the logging level

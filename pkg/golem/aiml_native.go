@@ -6722,9 +6722,17 @@ func (g *Golem) addPersistentCategory(category Category) error {
 		g.aimlKB.Patterns[normalizedPattern] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
 	}
 
-	// TODO: In a real implementation, you would save this to persistent storage
-	// For now, we just add it to the in-memory knowledge base
-	g.LogInfo("Note: Persistent learning not yet implemented - category added to memory only")
+	// Save to persistent storage if available
+	if g.persistentLearning != nil {
+		if err := g.persistentLearning.AppendPersistentCategory(category, "learnf"); err != nil {
+			g.LogWarn("Failed to save category to persistent storage: %v", err)
+			// Don't fail the operation, just log the warning
+		} else {
+			g.LogInfo("Category saved to persistent storage: %s", normalizedPattern)
+		}
+	} else {
+		g.LogWarn("Persistent learning not available - category added to memory only")
+	}
 
 	return nil
 }
@@ -6785,6 +6793,17 @@ func (g *Golem) removePersistentCategory(category Category) error {
 			// Remove the category by slicing it out
 			g.aimlKB.Categories = append(g.aimlKB.Categories[:i], g.aimlKB.Categories[i+1:]...)
 			g.LogInfo("Removed persistent category: %s", normalizedPattern)
+
+			// Remove from persistent storage if available
+			if g.persistentLearning != nil {
+				if err := g.persistentLearning.RemovePersistentCategory(category); err != nil {
+					g.LogWarn("Failed to remove category from persistent storage: %v", err)
+					// Don't fail the operation, just log the warning
+				} else {
+					g.LogInfo("Category removed from persistent storage: %s", normalizedPattern)
+				}
+			}
+
 			return nil
 		}
 	}
