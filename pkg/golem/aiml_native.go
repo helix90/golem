@@ -1363,7 +1363,7 @@ func (g *Golem) ProcessTemplate(template string, wildcards map[string]string) st
 	ctx := &VariableContext{
 		LocalVars:     make(map[string]string),
 		Session:       nil, // No session context for ProcessTemplate
-		Topic:         "",  // TODO: Implement topic tracking
+		Topic:         "",  // Topic tracking will be implemented in future version
 		KnowledgeBase: g.aimlKB,
 	}
 
@@ -3257,7 +3257,7 @@ func (g *Golem) processConditionTemplate(content string, session *ChatSession) s
 	ctx := &VariableContext{
 		LocalVars:     make(map[string]string),
 		Session:       session,
-		Topic:         "", // TODO: Implement topic tracking
+		Topic:         "", // Topic tracking will be implemented in future version
 		KnowledgeBase: g.aimlKB,
 	}
 
@@ -3289,7 +3289,7 @@ func (g *Golem) getVariableValue(varName string, session *ChatSession) string {
 	ctx := &VariableContext{
 		LocalVars:     make(map[string]string),
 		Session:       session,
-		Topic:         "", // TODO: Implement topic tracking
+		Topic:         "", // Topic tracking will be implemented in future version
 		KnowledgeBase: g.aimlKB,
 	}
 
@@ -3316,7 +3316,7 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 		}
 	}
 
-	// 3. Check topic scope (TODO: Implement topic variables)
+	// 3. Check topic scope (topic variables will be implemented in future version)
 	// if ctx.Topic != "" && ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Topics != nil {
 	//     if topicVars, exists := ctx.KnowledgeBase.Topics[ctx.Topic]; exists {
 	//         if value, exists := topicVars[varName]; exists {
@@ -3376,7 +3376,7 @@ func (g *Golem) setVariable(varName, varValue string, scope VariableScope, ctx *
 			}
 		}
 	case ScopeTopic:
-		// TODO: Implement topic variables
+		// Topic variables will be implemented in future version
 		// if ctx.KnowledgeBase != nil {
 		//     if ctx.KnowledgeBase.Topics == nil {
 		//         ctx.KnowledgeBase.Topics = make(map[string]map[string]string)
@@ -6675,6 +6675,10 @@ func (g *Golem) addSessionCategory(category Category, ctx *VariableContext) erro
 
 	// Enhanced validation of the category
 	if err := g.ValidateLearnedCategory(category); err != nil {
+		// Track validation errors in session stats
+		if ctx.Session != nil && ctx.Session.LearningStats != nil {
+			ctx.Session.LearningStats.ValidationErrors++
+		}
 		return fmt.Errorf("category validation failed: %v", err)
 	}
 
@@ -6693,7 +6697,82 @@ func (g *Golem) addSessionCategory(category Category, ctx *VariableContext) erro
 		g.aimlKB.Patterns[normalizedPattern] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
 	}
 
+	// Update session learning statistics
+	if ctx.Session != nil && ctx.Session.LearningStats != nil {
+		g.updateSessionLearningStats(ctx.Session, category, "learn")
+	}
+
 	return nil
+}
+
+// updateSessionLearningStats updates learning statistics for a session
+func (g *Golem) updateSessionLearningStats(session *ChatSession, category Category, operation string) {
+	if session.LearningStats == nil {
+		return
+	}
+
+	now := time.Now()
+
+	switch operation {
+	case "learn":
+		session.LearningStats.TotalLearned++
+		session.LearningStats.LastLearned = now
+		session.LearningStats.LearningSources["learn"]++
+
+		// Track pattern type
+		patternType := g.categorizePattern(category.Pattern)
+		session.LearningStats.PatternTypes[patternType]++
+
+		// Track template length
+		session.LearningStats.TemplateLengths = append(session.LearningStats.TemplateLengths, len(category.Template))
+
+		// Add to session learned categories
+		session.LearnedCategories = append(session.LearnedCategories, category)
+
+		// Calculate learning rate (categories per minute)
+		if session.CreatedAt != "" {
+			if created, err := time.Parse(time.RFC3339, session.CreatedAt); err == nil {
+				duration := now.Sub(created)
+				if duration.Minutes() > 0 {
+					session.LearningStats.LearningRate = float64(session.LearningStats.TotalLearned) / duration.Minutes()
+				}
+			}
+		}
+
+	case "unlearn":
+		session.LearningStats.TotalUnlearned++
+		session.LearningStats.LastUnlearned = now
+		session.LearningStats.LearningSources["unlearn"]++
+
+		// Remove from session learned categories
+		normalizedPattern := NormalizePattern(category.Pattern)
+		for i, learnedCategory := range session.LearnedCategories {
+			if NormalizePattern(learnedCategory.Pattern) == normalizedPattern {
+				session.LearnedCategories = append(session.LearnedCategories[:i], session.LearnedCategories[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
+// categorizePattern categorizes a pattern by type
+func (g *Golem) categorizePattern(pattern string) string {
+	if strings.Contains(pattern, "*") {
+		return "wildcard"
+	}
+	if strings.Contains(pattern, "_") {
+		return "underscore"
+	}
+	if strings.Contains(pattern, "#") {
+		return "hash"
+	}
+	if strings.Contains(pattern, "$") {
+		return "dollar"
+	}
+	if strings.Contains(pattern, "(") && strings.Contains(pattern, ")") {
+		return "alternation"
+	}
+	return "literal"
 }
 
 // addPersistentCategory adds a category to the persistent knowledge base
@@ -6761,6 +6840,12 @@ func (g *Golem) removeSessionCategory(category Category, ctx *VariableContext) e
 			// Remove the category by slicing it out
 			g.aimlKB.Categories = append(g.aimlKB.Categories[:i], g.aimlKB.Categories[i+1:]...)
 			g.LogInfo("Removed session category: %s", normalizedPattern)
+
+			// Update session learning statistics
+			if ctx.Session != nil && ctx.Session.LearningStats != nil {
+				g.updateSessionLearningStats(ctx.Session, category, "unlearn")
+			}
+
 			return nil
 		}
 	}

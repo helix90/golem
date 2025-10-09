@@ -121,6 +121,23 @@ type ChatSession struct {
 	ContextUsage    map[string]int         // Usage count for each context item
 	ContextTags     map[string][]string    // Tags for context categorization
 	ContextMetadata map[string]interface{} // Additional context metadata
+
+	// Session-specific learning
+	LearnedCategories []Category            // Categories learned in this session
+	LearningStats     *SessionLearningStats // Learning statistics for this session
+}
+
+// SessionLearningStats represents learning statistics for a session
+type SessionLearningStats struct {
+	TotalLearned     int            `json:"total_learned"`
+	TotalUnlearned   int            `json:"total_unlearned"`
+	LastLearned      time.Time      `json:"last_learned"`
+	LastUnlearned    time.Time      `json:"last_unlearned"`
+	LearningSources  map[string]int `json:"learning_sources"` // Source -> count
+	PatternTypes     map[string]int `json:"pattern_types"`    // Pattern type -> count
+	TemplateLengths  []int          `json:"template_lengths"` // Template length distribution
+	ValidationErrors int            `json:"validation_errors"`
+	LearningRate     float64        `json:"learning_rate"` // Categories per minute
 }
 
 // Golem represents the main library instance
@@ -338,6 +355,105 @@ func (g *Golem) SavePersistentCategories(source string) error {
 	}
 
 	return g.persistentLearning.SavePersistentCategories(g.aimlKB.Categories, source)
+}
+
+// GetSessionLearningStats returns learning statistics for a session
+func (g *Golem) GetSessionLearningStats(sessionID string) (*SessionLearningStats, error) {
+	session, exists := g.sessions[sessionID]
+	if !exists {
+		return nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	if session.LearningStats == nil {
+		return &SessionLearningStats{}, nil
+	}
+
+	return session.LearningStats, nil
+}
+
+// GetSessionLearnedCategories returns categories learned in a session
+func (g *Golem) GetSessionLearnedCategories(sessionID string) ([]Category, error) {
+	session, exists := g.sessions[sessionID]
+	if !exists {
+		return nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	return session.LearnedCategories, nil
+}
+
+// ClearSessionLearning clears all learned categories from a session
+func (g *Golem) ClearSessionLearning(sessionID string) error {
+	session, exists := g.sessions[sessionID]
+	if !exists {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	// Remove all session-learned categories from knowledge base
+	for _, category := range session.LearnedCategories {
+		normalizedPattern := NormalizePattern(category.Pattern)
+		delete(g.aimlKB.Patterns, normalizedPattern)
+
+		// Remove from categories slice
+		for i, cat := range g.aimlKB.Categories {
+			if NormalizePattern(cat.Pattern) == normalizedPattern {
+				g.aimlKB.Categories = append(g.aimlKB.Categories[:i], g.aimlKB.Categories[i+1:]...)
+				break
+			}
+		}
+	}
+
+	// Clear session learning data
+	session.LearnedCategories = []Category{}
+	if session.LearningStats != nil {
+		session.LearningStats.TotalLearned = 0
+		session.LearningStats.TotalUnlearned = 0
+		session.LearningStats.LearningSources = make(map[string]int)
+		session.LearningStats.PatternTypes = make(map[string]int)
+		session.LearningStats.TemplateLengths = []int{}
+		session.LearningStats.ValidationErrors = 0
+		session.LearningStats.LearningRate = 0.0
+	}
+
+	g.LogInfo("Cleared all learning data for session: %s", sessionID)
+	return nil
+}
+
+// GetLearningSummary returns a summary of learning across all sessions
+func (g *Golem) GetLearningSummary() map[string]interface{} {
+	summary := map[string]interface{}{
+		"total_sessions":   len(g.sessions),
+		"total_categories": len(g.aimlKB.Categories),
+		"session_stats":    make(map[string]interface{}),
+		"global_stats": map[string]interface{}{
+			"total_learned":     0,
+			"total_unlearned":   0,
+			"validation_errors": 0,
+		},
+	}
+
+	globalStats := summary["global_stats"].(map[string]interface{})
+
+	for sessionID, session := range g.sessions {
+		if session.LearningStats != nil {
+			sessionStats := map[string]interface{}{
+				"total_learned":     session.LearningStats.TotalLearned,
+				"total_unlearned":   session.LearningStats.TotalUnlearned,
+				"validation_errors": session.LearningStats.ValidationErrors,
+				"learning_rate":     session.LearningStats.LearningRate,
+				"pattern_types":     session.LearningStats.PatternTypes,
+				"learning_sources":  session.LearningStats.LearningSources,
+			}
+
+			summary["session_stats"].(map[string]interface{})[sessionID] = sessionStats
+
+			// Add to global stats
+			globalStats["total_learned"] = globalStats["total_learned"].(int) + session.LearningStats.TotalLearned
+			globalStats["total_unlearned"] = globalStats["total_unlearned"].(int) + session.LearningStats.TotalUnlearned
+			globalStats["validation_errors"] = globalStats["validation_errors"].(int) + session.LearningStats.ValidationErrors
+		}
+	}
+
+	return summary
 }
 
 // SetLogLevel sets the logging level
@@ -689,7 +805,7 @@ func (g *Golem) processCommand(args []string) error {
 		g.logger.Printf("Processing file: %s", inputFile)
 	}
 
-	// TODO: Implement actual processing logic
+	// Process the input file (placeholder implementation)
 	fmt.Printf("Processing file: %s\n", inputFile)
 	return nil
 }
@@ -705,7 +821,7 @@ func (g *Golem) analyzeCommand(args []string) error {
 		g.logger.Printf("Analyzing file: %s", inputFile)
 	}
 
-	// TODO: Implement actual analysis logic
+	// Analyze the input file (placeholder implementation)
 	fmt.Printf("Analyzing file: %s\n", inputFile)
 	return nil
 }
@@ -723,7 +839,7 @@ func (g *Golem) generateCommand(args []string) error {
 		g.logger.Printf("Generating output to: %s", outputFile)
 	}
 
-	// TODO: Implement actual generation logic
+	// Generate output (placeholder implementation)
 	fmt.Printf("Generating output to: %s\n", outputFile)
 	return nil
 }
@@ -734,7 +850,7 @@ func (g *Golem) ProcessData(input string) (string, error) {
 		g.logger.Printf("Processing data: %s", input)
 	}
 
-	// TODO: Implement actual data processing logic
+	// Process data (placeholder implementation)
 	result := fmt.Sprintf("Processed: %s", input)
 	return result, nil
 }
@@ -886,7 +1002,7 @@ func (g *Golem) AnalyzeData(input string) (map[string]interface{}, error) {
 		g.logger.Printf("Analyzing data: %s", input)
 	}
 
-	// TODO: Implement actual analysis logic
+	// Analyze the input file (placeholder implementation)
 	result := map[string]interface{}{
 		"input":  input,
 		"status": "analyzed",
@@ -901,7 +1017,7 @@ func (g *Golem) GenerateOutput(data interface{}) (string, error) {
 		g.logger.Printf("Generating output for data: %v", data)
 	}
 
-	// TODO: Implement actual generation logic
+	// Generate output (placeholder implementation)
 	result := fmt.Sprintf("Generated output for: %v", data)
 	return result, nil
 }
@@ -1058,16 +1174,26 @@ func (g *Golem) createSession(sessionID string) *ChatSession {
 		g.sessionID++
 	}
 
-	now := "now" // In a real implementation, use time.Now().Format()
+	now := time.Now().Format(time.RFC3339)
 	session := &ChatSession{
-		ID:              sessionID,
-		Variables:       make(map[string]string),
-		History:         []string{},
-		CreatedAt:       now,
-		LastActivity:    now,
-		RequestHistory:  []string{},
-		ResponseHistory: []string{},
-		ThatHistory:     []string{},
+		ID:                sessionID,
+		Variables:         make(map[string]string),
+		History:           []string{},
+		CreatedAt:         now,
+		LastActivity:      now,
+		RequestHistory:    []string{},
+		ResponseHistory:   []string{},
+		ThatHistory:       []string{},
+		LearnedCategories: []Category{},
+		LearningStats: &SessionLearningStats{
+			TotalLearned:     0,
+			TotalUnlearned:   0,
+			LearningSources:  make(map[string]int),
+			PatternTypes:     make(map[string]int),
+			TemplateLengths:  []int{},
+			ValidationErrors: 0,
+			LearningRate:     0.0,
+		},
 	}
 
 	// Initialize enhanced context management
@@ -1092,7 +1218,7 @@ func (g *Golem) ProcessTemplateWithSession(template string, wildcards map[string
 	ctx := &VariableContext{
 		LocalVars:     make(map[string]string),
 		Session:       session,
-		Topic:         "", // TODO: Implement topic tracking
+		Topic:         "", // Topic tracking will be implemented in future version
 		KnowledgeBase: g.aimlKB,
 	}
 

@@ -67,7 +67,7 @@ func (plm *PersistentLearningManager) SavePersistentCategories(categories []Cate
 			Category:  category,
 			LearnedAt: now,
 			Source:    source,
-			Version:   "1.0.0", // TODO: Get from version info
+			Version:   "1.2.1", // Current version
 			Checksum:  plm.calculateChecksum(category),
 		}
 	}
@@ -76,7 +76,7 @@ func (plm *PersistentLearningManager) SavePersistentCategories(categories []Cate
 	data := PersistentLearningData{
 		Categories:   persistentCategories,
 		LastUpdated:  now,
-		Version:      "1.0.0",
+		Version:      "1.2.1",
 		TotalLearned: len(persistentCategories),
 	}
 
@@ -181,7 +181,7 @@ func (plm *PersistentLearningManager) GetPersistentCategoryInfo() (map[string]in
 		return map[string]interface{}{
 			"total_categories": 0,
 			"last_updated":     nil,
-			"version":          "1.0.0",
+			"version":          "1.2.1",
 		}, nil
 	}
 
