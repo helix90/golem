@@ -2764,7 +2764,7 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 				template = strings.ReplaceAll(template, match[0], result)
 				g.LogInfo("Set '%s' contains '%s': %s", setName, content, result)
 
-			case "get", "list", "":
+			case "get", "list":
 				// Get all items in the set or return the set as a string
 				if len(ctx.KnowledgeBase.Sets[setName]) == 0 {
 					template = strings.ReplaceAll(template, match[0], "")
@@ -2789,8 +2789,9 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 				}
 
 			default:
-				// Default to variable assignment for backward compatibility
+				// Default case: distinguish between variable assignment and get operation
 				if content != "" {
+					// Content is not empty, treat as variable assignment
 					// Process the variable value through the template pipeline to handle wildcards
 					processedValue := g.processTemplateContentForVariable(content, make(map[string]string), ctx)
 
@@ -2800,6 +2801,15 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 
 					// Remove the set tag from the template (don't replace with value)
 					template = strings.ReplaceAll(template, match[0], "")
+				} else {
+					// Content is empty, treat as get operation (return set contents)
+					if len(ctx.KnowledgeBase.Sets[setName]) == 0 {
+						template = strings.ReplaceAll(template, match[0], "")
+					} else {
+						setString := strings.Join(ctx.KnowledgeBase.Sets[setName], " ")
+						template = strings.ReplaceAll(template, match[0], setString)
+						g.LogInfo("Set '%s' contents: %s", setName, setString)
+					}
 				}
 			}
 		}
