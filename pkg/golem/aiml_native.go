@@ -1402,12 +1402,13 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	startTime := time.Now()
 
 	// Check cache first if enabled
-	// IMPORTANT: Disable caching for templates containing list/array/set/condition tags because
-	// the cache key does not include list/array/set/condition state, which can cause stale results
+	// IMPORTANT: Disable caching for templates containing list/array/set/map/condition tags because
+	// the cache key does not include list/array/set/map/condition state, which can cause stale results
 	hasListOrArrayTags := strings.Contains(template, "<list ") || strings.Contains(template, "<array ")
 	hasSetTags := strings.Contains(template, "<set ")
+	hasMapTags := strings.Contains(template, "<map ")
 	hasConditionTags := strings.Contains(template, "<condition ")
-	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasSetTags && !hasConditionTags {
+	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasSetTags && !hasMapTags && !hasConditionTags {
 		cacheKey := g.generateTemplateCacheKey(template, wildcards, ctx)
 		if cached, found := g.getFromTemplateCache(cacheKey); found {
 			g.templateMetrics.CacheHits++
@@ -1630,8 +1631,8 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	}
 
 	// Cache the result if caching is enabled
-	// IMPORTANT: Don't cache templates with list/array/set/condition tags
-	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasSetTags && !hasConditionTags {
+	// IMPORTANT: Don't cache templates with list/array/set/map/condition tags
+	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasSetTags && !hasMapTags && !hasConditionTags {
 		cacheKey := g.generateTemplateCacheKey(template, wildcards, ctx)
 		g.storeInTemplateCache(cacheKey, finalResponse)
 	}
@@ -4635,39 +4636,165 @@ func (g *Golem) processTopicSettingTagsWithContext(template string, ctx *Variabl
 	return template
 }
 
-// processMapTagsWithContext processes <map> tags with variable context
+// processMapTagsWithContext processes <map> tags with enhanced AIML2 map operations
 func (g *Golem) processMapTagsWithContext(template string, ctx *VariableContext) string {
 	if ctx.KnowledgeBase == nil || ctx.KnowledgeBase.Maps == nil {
 		return template
 	}
 
-	// Find all <map> tags
-	mapRegex := regexp.MustCompile(`<map\s+name=["']([^"']+)["']>([^<]*)</map>`)
+	// Find all <map> tags with various operations
+	// Support both key lookup and map operations
+	// Format: <map name="mapName" key="keyValue" operation="op">content</map>
+	// or: <map name="mapName">keyValue</map> (original syntax)
+	mapRegex := regexp.MustCompile(`(?s)<map\s+name=["']([^"']+)["'](?:\s+key=["']([^"']+)["'])?(?:\s+operation=["']([^"']+)["'])?>(.*?)</map>`)
 	matches := mapRegex.FindAllStringSubmatch(template, -1)
 
+	g.LogInfo("Map processing: found %d matches in template: '%s'", len(matches), template)
+	g.LogInfo("Current maps state: %v", ctx.KnowledgeBase.Maps)
+
 	for _, match := range matches {
-		if len(match) >= 3 {
+		if len(match) >= 4 {
 			mapName := match[1]
-			key := strings.TrimSpace(match[2])
+			keyAttr := strings.TrimSpace(match[2])
+			operation := match[3]
+			content := strings.TrimSpace(match[4])
 
-			g.LogInfo("Processing map tag: name='%s', key='%s'", mapName, key)
+			// Determine the key: if key attribute is provided, use it; otherwise use content
+			key := keyAttr
+			if key == "" {
+				key = content
+			}
 
-			// Look up the map
-			if mapData, exists := ctx.KnowledgeBase.Maps[mapName]; exists {
-				// Look up the key in the map
-				if value, keyExists := mapData[key]; keyExists {
-					// Replace the map tag with the mapped value
-					template = strings.ReplaceAll(template, match[0], value)
-					g.LogInfo("Mapped '%s' -> '%s'", key, value)
-				} else {
-					// Key not found in map, leave the original key
-					g.LogInfo("Key '%s' not found in map '%s'", key, mapName)
-					template = strings.ReplaceAll(template, match[0], key)
+			g.LogInfo("Processing map tag: name='%s', key='%s', operation='%s', content='%s'", mapName, key, operation, content)
+
+			// Get or create the map
+			if ctx.KnowledgeBase.Maps[mapName] == nil {
+				ctx.KnowledgeBase.Maps[mapName] = make(map[string]string)
+				g.LogInfo("Created new map '%s'", mapName)
+			}
+			g.LogInfo("Before operation: map '%s' = %v", mapName, ctx.KnowledgeBase.Maps[mapName])
+
+			switch operation {
+			case "set", "assign":
+				// Set a key-value pair
+				if key != "" {
+					// Use content as value, or if key was from content, use a default value
+					value := content
+					if keyAttr != "" {
+						// Key was in attribute, content is the value
+						value = content
+					} else {
+						// Key was in content, we need to split key and value
+						// For now, assume the content is just the value and key was already extracted
+						value = content
+					}
+					processedValue := strings.TrimSpace(value)
+					ctx.KnowledgeBase.Maps[mapName][key] = processedValue
+					template = strings.ReplaceAll(template, match[0], "")
+					g.LogInfo("Set map '%s'['%s'] = '%s'", mapName, key, processedValue)
+					g.LogInfo("After set: map '%s' = %v", mapName, ctx.KnowledgeBase.Maps[mapName])
 				}
-			} else {
-				// Map not found, leave the original key
-				g.LogInfo("Map '%s' not found", mapName)
-				template = strings.ReplaceAll(template, match[0], key)
+
+			case "remove", "delete":
+				// Remove a key-value pair
+				if key != "" {
+					if _, exists := ctx.KnowledgeBase.Maps[mapName][key]; exists {
+						delete(ctx.KnowledgeBase.Maps[mapName], key)
+						template = strings.ReplaceAll(template, match[0], "")
+						g.LogInfo("Removed key '%s' from map '%s'", key, mapName)
+						g.LogInfo("After remove: map '%s' = %v", mapName, ctx.KnowledgeBase.Maps[mapName])
+					} else {
+						g.LogInfo("Key '%s' not found in map '%s'", key, mapName)
+						template = strings.ReplaceAll(template, match[0], "")
+					}
+				}
+
+			case "clear":
+				// Clear all entries
+				ctx.KnowledgeBase.Maps[mapName] = make(map[string]string)
+				template = strings.ReplaceAll(template, match[0], "")
+				g.LogInfo("Cleared map '%s'", mapName)
+				g.LogInfo("After clear: map '%s' = %v", mapName, ctx.KnowledgeBase.Maps[mapName])
+
+			case "size", "length":
+				// Return the size of the map
+				size := strconv.Itoa(len(ctx.KnowledgeBase.Maps[mapName]))
+				template = strings.ReplaceAll(template, match[0], size)
+				g.LogInfo("Map '%s' size: %s", mapName, size)
+
+			case "contains", "has":
+				// Check if map contains key
+				contains := false
+				if key != "" {
+					_, contains = ctx.KnowledgeBase.Maps[mapName][key]
+				}
+				result := "false"
+				if contains {
+					result = "true"
+				}
+				template = strings.ReplaceAll(template, match[0], result)
+				g.LogInfo("Map '%s' contains key '%s': %s", mapName, key, result)
+
+			case "keys":
+				// Return all keys
+				keys := make([]string, 0, len(ctx.KnowledgeBase.Maps[mapName]))
+				for k := range ctx.KnowledgeBase.Maps[mapName] {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys) // Sort for consistent output
+				keysString := strings.Join(keys, " ")
+				template = strings.ReplaceAll(template, match[0], keysString)
+				g.LogInfo("Map '%s' keys: %s", mapName, keysString)
+
+			case "values":
+				// Return all values
+				values := make([]string, 0, len(ctx.KnowledgeBase.Maps[mapName]))
+				for _, v := range ctx.KnowledgeBase.Maps[mapName] {
+					values = append(values, v)
+				}
+				sort.Strings(values) // Sort for consistent output
+				valuesString := strings.Join(values, " ")
+				template = strings.ReplaceAll(template, match[0], valuesString)
+				g.LogInfo("Map '%s' values: %s", mapName, valuesString)
+
+			case "list":
+				// Return all key-value pairs
+				pairs := make([]string, 0, len(ctx.KnowledgeBase.Maps[mapName]))
+				for k, v := range ctx.KnowledgeBase.Maps[mapName] {
+					pairs = append(pairs, k+":"+v)
+				}
+				sort.Strings(pairs) // Sort for consistent output
+				pairsString := strings.Join(pairs, " ")
+				template = strings.ReplaceAll(template, match[0], pairsString)
+				g.LogInfo("Map '%s' pairs: %s", mapName, pairsString)
+
+			case "get", "":
+				// Get value by key (original functionality)
+				if key != "" {
+					if value, exists := ctx.KnowledgeBase.Maps[mapName][key]; exists {
+						template = strings.ReplaceAll(template, match[0], value)
+						g.LogInfo("Mapped '%s' -> '%s'", key, value)
+					} else {
+						// Key not found in map, leave the original key
+						g.LogInfo("Key '%s' not found in map '%s'", key, mapName)
+						template = strings.ReplaceAll(template, match[0], key)
+					}
+				} else {
+					// No key specified, return empty
+					template = strings.ReplaceAll(template, match[0], "")
+				}
+
+			default:
+				// Unknown operation, treat as get
+				if key != "" {
+					if value, exists := ctx.KnowledgeBase.Maps[mapName][key]; exists {
+						template = strings.ReplaceAll(template, match[0], value)
+					} else {
+						template = strings.ReplaceAll(template, match[0], key)
+					}
+				} else {
+					template = strings.ReplaceAll(template, match[0], "")
+				}
 			}
 		}
 	}
