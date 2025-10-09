@@ -1402,11 +1402,12 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	startTime := time.Now()
 
 	// Check cache first if enabled
-	// IMPORTANT: Disable caching for templates containing list/array/condition tags because
-	// the cache key does not include list/array/condition state, which can cause stale results
+	// IMPORTANT: Disable caching for templates containing list/array/set/condition tags because
+	// the cache key does not include list/array/set/condition state, which can cause stale results
 	hasListOrArrayTags := strings.Contains(template, "<list ") || strings.Contains(template, "<array ")
+	hasSetTags := strings.Contains(template, "<set ")
 	hasConditionTags := strings.Contains(template, "<condition ")
-	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasConditionTags {
+	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasSetTags && !hasConditionTags {
 		cacheKey := g.generateTemplateCacheKey(template, wildcards, ctx)
 		if cached, found := g.getFromTemplateCache(cacheKey); found {
 			g.templateMetrics.CacheHits++
@@ -1629,8 +1630,8 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	}
 
 	// Cache the result if caching is enabled
-	// IMPORTANT: Don't cache templates with list/array/condition tags
-	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasConditionTags {
+	// IMPORTANT: Don't cache templates with list/array/set/condition tags
+	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasSetTags && !hasConditionTags {
 		cacheKey := g.generateTemplateCacheKey(template, wildcards, ctx)
 		g.storeInTemplateCache(cacheKey, finalResponse)
 	}
@@ -2683,28 +2684,27 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 				ctx.KnowledgeBase.Sets[setName] = make([]string, 0)
 				g.LogInfo("Created new set '%s'", setName)
 			}
-			set := ctx.KnowledgeBase.Sets[setName]
-			g.LogInfo("Before operation: set '%s' = %v", setName, set)
+			g.LogInfo("Before operation: set '%s' = %v", setName, ctx.KnowledgeBase.Sets[setName])
 
 			switch operation {
 			case "add", "insert":
 				// Add item to set (if not already present)
 				if content != "" {
-					// Process the content through the template pipeline to handle variables and other tags
-					processedContent := g.processTemplateContentForVariable(content, make(map[string]string), ctx)
+					// Use content directly (no template processing to avoid recursion)
+					processedContent := strings.TrimSpace(content)
 
 					// Check if item already exists
 					exists := false
-					for _, item := range set {
+					for _, item := range ctx.KnowledgeBase.Sets[setName] {
 						if strings.EqualFold(item, processedContent) {
 							exists = true
 							break
 						}
 					}
 					if !exists {
-						set = append(set, processedContent)
-						ctx.KnowledgeBase.Sets[setName] = set
+						ctx.KnowledgeBase.Sets[setName] = append(ctx.KnowledgeBase.Sets[setName], processedContent)
 						g.LogInfo("Added '%s' to set '%s'", processedContent, setName)
+						g.LogInfo("After add: set '%s' = %v", setName, ctx.KnowledgeBase.Sets[setName])
 					} else {
 						g.LogInfo("Item '%s' already exists in set '%s'", processedContent, setName)
 					}
@@ -2715,16 +2715,15 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 			case "remove", "delete":
 				// Remove item from set
 				if content != "" {
-					// Process the content through the template pipeline to handle variables and other tags
-					processedContent := g.processTemplateContentForVariable(content, make(map[string]string), ctx)
+					// Use content directly (no template processing to avoid recursion)
+					processedContent := strings.TrimSpace(content)
 
-					for i, item := range set {
+					for i, item := range ctx.KnowledgeBase.Sets[setName] {
 						if strings.EqualFold(item, processedContent) {
-							set = append(set[:i], set[i+1:]...)
-							ctx.KnowledgeBase.Sets[setName] = set
+							ctx.KnowledgeBase.Sets[setName] = append(ctx.KnowledgeBase.Sets[setName][:i], ctx.KnowledgeBase.Sets[setName][i+1:]...)
 							template = strings.ReplaceAll(template, match[0], "")
 							g.LogInfo("Removed '%s' from set '%s'", processedContent, setName)
-							g.LogInfo("After remove: set '%s' = %v", setName, set)
+							g.LogInfo("After remove: set '%s' = %v", setName, ctx.KnowledgeBase.Sets[setName])
 							break
 						}
 					}
@@ -2739,7 +2738,7 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 
 			case "size", "length":
 				// Return the size of the set
-				size := strconv.Itoa(len(set))
+				size := strconv.Itoa(len(ctx.KnowledgeBase.Sets[setName]))
 				template = strings.ReplaceAll(template, match[0], size)
 				g.LogInfo("Set '%s' size: %s", setName, size)
 
@@ -2747,10 +2746,10 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 				// Check if set contains item
 				contains := false
 				if content != "" {
-					// Process the content through the template pipeline to handle variables and other tags
-					processedContent := g.processTemplateContentForVariable(content, make(map[string]string), ctx)
+					// Use content directly (no template processing to avoid recursion)
+					processedContent := strings.TrimSpace(content)
 
-					for _, item := range set {
+					for _, item := range ctx.KnowledgeBase.Sets[setName] {
 						if strings.EqualFold(item, processedContent) {
 							contains = true
 							break
@@ -2766,10 +2765,10 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 
 			case "get", "list", "":
 				// Get all items in the set or return the set as a string
-				if len(set) == 0 {
+				if len(ctx.KnowledgeBase.Sets[setName]) == 0 {
 					template = strings.ReplaceAll(template, match[0], "")
 				} else {
-					setString := strings.Join(set, " ")
+					setString := strings.Join(ctx.KnowledgeBase.Sets[setName], " ")
 					template = strings.ReplaceAll(template, match[0], setString)
 					g.LogInfo("Set '%s' contents: %s", setName, setString)
 				}
