@@ -116,7 +116,7 @@
 - **`<unlearn>`** - Remove learned categories ✅ **IMPLEMENTED**
 - **`<unlearnf>`** - Remove persistent learned categories ✅ **IMPLEMENTED**
 - **Learning validation** - Enhanced validation for learned content ✅ **IMPLEMENTED**
-- **Learning rollback** - Undo learning operations
+- **Learning rollback** - Undo learning operations ✅ **IMPLEMENTED**
 
 #### Enhanced Learning System
 - **Session learning management** - Comprehensive session-specific learning tracking ✅ **IMPLEMENTED**
