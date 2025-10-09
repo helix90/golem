@@ -6254,15 +6254,352 @@ func (g *Golem) parseLearnContent(content string) ([]Category, error) {
 	return aiml.Categories, nil
 }
 
+// ValidateLearnedCategory performs comprehensive validation on learned categories
+func (g *Golem) ValidateLearnedCategory(category Category) error {
+	// Basic validation
+	if category.Pattern == "" {
+		return fmt.Errorf("pattern cannot be empty")
+	}
+	if category.Template == "" {
+		return fmt.Errorf("template cannot be empty")
+	}
+
+	// Security validation first (most critical)
+	if err := g.validateSecurity(category); err != nil {
+		return fmt.Errorf("security validation failed: %v", err)
+	}
+
+	// Content validation
+	if err := g.validateContent(category); err != nil {
+		return fmt.Errorf("content validation failed: %v", err)
+	}
+
+	// Pattern validation
+	if err := g.validatePatternStructure(category.Pattern); err != nil {
+		return fmt.Errorf("pattern validation failed: %v", err)
+	}
+
+	// Template validation
+	if err := g.validateTemplate(category.Template); err != nil {
+		return fmt.Errorf("template validation failed: %v", err)
+	}
+
+	return nil
+}
+
+// validatePatternStructure validates AIML patterns
+func (g *Golem) validatePatternStructure(pattern string) error {
+	// Check for reasonable length
+	if len(pattern) > 1000 {
+		return fmt.Errorf("pattern too long (max 1000 characters)")
+	}
+
+	// Check for valid wildcard usage
+	starCount := strings.Count(pattern, "*")
+	underscoreCount := strings.Count(pattern, "_")
+	hashCount := strings.Count(pattern, "#")
+	dollarCount := strings.Count(pattern, "$")
+	totalWildcards := starCount + underscoreCount + hashCount + dollarCount
+
+	// Limit total wildcards
+	if totalWildcards > 10 {
+		return fmt.Errorf("too many wildcards in pattern (max 10)")
+	}
+
+	// Check for invalid wildcard combinations
+	if strings.Contains(pattern, "**") {
+		return fmt.Errorf("consecutive wildcards not allowed")
+	}
+
+	// Check for balanced parentheses in alternation groups
+	if err := g.validateAlternationGroups(pattern); err != nil {
+		return fmt.Errorf("alternation group validation failed: %v", err)
+	}
+
+	// Check for valid characters
+	if err := g.validatePatternCharacters(pattern); err != nil {
+		return fmt.Errorf("invalid characters in pattern: %v", err)
+	}
+
+	return nil
+}
+
+// validateTemplate validates AIML templates
+func (g *Golem) validateTemplate(template string) error {
+	// Check for reasonable length
+	if len(template) > 10000 {
+		return fmt.Errorf("template too long (max 10000 characters)")
+	}
+
+	// Check for balanced tags
+	if err := g.validateBalancedTags(template); err != nil {
+		return fmt.Errorf("unbalanced tags in template: %v", err)
+	}
+
+	// Check for valid AIML tags
+	if err := g.validateAIMLTags(template); err != nil {
+		return fmt.Errorf("invalid AIML tags in template: %v", err)
+	}
+
+	// Check for reasonable nesting depth
+	if err := g.validateNestingDepth(template); err != nil {
+		return fmt.Errorf("excessive nesting depth in template: %v", err)
+	}
+
+	return nil
+}
+
+// validateSecurity performs security validation on learned content
+func (g *Golem) validateSecurity(category Category) error {
+	// Check for potential injection patterns
+	dangerousPatterns := []string{
+		"<script",
+		"javascript:",
+		"data:",
+		"vbscript:",
+		"onload=",
+		"onerror=",
+		"onclick=",
+		"eval(",
+		"exec(",
+		"system(",
+		"shell_exec(",
+	}
+
+	content := strings.ToLower(category.Pattern + " " + category.Template)
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(content, pattern) {
+			return fmt.Errorf("potentially dangerous content detected: %s", pattern)
+		}
+	}
+
+	// Check for excessive recursion potential
+	if strings.Count(category.Template, "<srai>") > 5 {
+		return fmt.Errorf("too many SRAI tags (max 5) - potential recursion")
+	}
+
+	// Check for excessive wildcard usage in template
+	wildcardCount := strings.Count(category.Template, "<star")
+	if wildcardCount > 10 {
+		return fmt.Errorf("too many wildcard references in template (max 10)")
+	}
+
+	return nil
+}
+
+// validateContent performs content validation
+func (g *Golem) validateContent(category Category) error {
+	// Check for empty or whitespace-only content first
+	if strings.TrimSpace(category.Pattern) == "" {
+		return fmt.Errorf("pattern cannot be empty or whitespace only")
+	}
+	if strings.TrimSpace(category.Template) == "" {
+		return fmt.Errorf("template cannot be empty or whitespace only")
+	}
+
+	// Check for minimum content length
+	if len(strings.TrimSpace(category.Pattern)) < 2 {
+		return fmt.Errorf("pattern too short (min 2 characters)")
+	}
+	if len(strings.TrimSpace(category.Template)) < 2 {
+		return fmt.Errorf("template too short (min 2 characters)")
+	}
+
+	// Check for reasonable word count
+	patternWords := len(strings.Fields(category.Pattern))
+	if patternWords > 50 {
+		return fmt.Errorf("pattern too complex (max 50 words)")
+	}
+
+	return nil
+}
+
+// validateAlternationGroups validates alternation groups in patterns
+func (g *Golem) validateAlternationGroups(pattern string) error {
+	// Check for balanced parentheses
+	openCount := strings.Count(pattern, "(")
+	closeCount := strings.Count(pattern, ")")
+	if openCount != closeCount {
+		return fmt.Errorf("unbalanced parentheses in alternation groups")
+	}
+
+	// Check for valid alternation syntax
+	// Look for patterns like (word1|word2|word3)
+	altRegex := regexp.MustCompile(`\([^)]*\|[^)]*\)`)
+	matches := altRegex.FindAllString(pattern, -1)
+
+	for _, match := range matches {
+		// Check that alternation group has at least 2 options
+		options := strings.Split(match[1:len(match)-1], "|")
+		if len(options) < 2 {
+			return fmt.Errorf("alternation group must have at least 2 options: %s", match)
+		}
+
+		// Check that options are not empty
+		for i, option := range options {
+			if strings.TrimSpace(option) == "" {
+				return fmt.Errorf("empty option in alternation group at position %d: %s", i+1, match)
+			}
+		}
+	}
+
+	// Check for single option groups like (word) - these should be flagged
+	singleOptionRegex := regexp.MustCompile(`\([^|)]+\)`)
+	singleMatches := singleOptionRegex.FindAllString(pattern, -1)
+	for _, match := range singleMatches {
+		// This is a single option group, which is invalid
+		return fmt.Errorf("alternation group must have at least 2 options: %s", match)
+	}
+
+	// Check for empty alternation groups like () - these should be flagged
+	emptyGroupRegex := regexp.MustCompile(`\(\)`)
+	emptyMatches := emptyGroupRegex.FindAllString(pattern, -1)
+	for _, match := range emptyMatches {
+		// This is an empty alternation group, which is invalid
+		return fmt.Errorf("alternation group must have at least 2 options: %s", match)
+	}
+
+	return nil
+}
+
+// validatePatternCharacters validates characters in patterns
+func (g *Golem) validatePatternCharacters(pattern string) error {
+	// Allow alphanumeric, spaces, wildcards, and alternation characters
+	validPatternRegex := regexp.MustCompile(`^[a-zA-Z0-9\s*_^#$()|]+$`)
+	if !validPatternRegex.MatchString(pattern) {
+		return fmt.Errorf("pattern contains invalid characters (only alphanumeric, spaces, wildcards, and alternation groups allowed)")
+	}
+
+	return nil
+}
+
+// validateBalancedTags validates that XML/AIML tags are balanced
+func (g *Golem) validateBalancedTags(template string) error {
+	// Find all opening and closing tags
+	openTagRegex := regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9]*)[^>]*>`)
+	closeTagRegex := regexp.MustCompile(`</([a-zA-Z][a-zA-Z0-9]*)>`)
+
+	openTags := openTagRegex.FindAllStringSubmatch(template, -1)
+	closeTags := closeTagRegex.FindAllStringSubmatch(template, -1)
+
+	// Check for self-closing tags (like <star/>)
+	selfClosingRegex := regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9]*)[^>]*/>`)
+	selfClosingTags := selfClosingRegex.FindAllString(template, -1)
+
+	// Count actual opening tags (excluding self-closing)
+	actualOpenTags := 0
+	for _, match := range openTags {
+		tagName := match[1]
+		// Check if this is a self-closing tag
+		isSelfClosing := false
+		for _, selfClosing := range selfClosingTags {
+			if strings.Contains(selfClosing, tagName) {
+				isSelfClosing = true
+				break
+			}
+		}
+		if !isSelfClosing {
+			actualOpenTags++
+		}
+	}
+
+	if actualOpenTags != len(closeTags) {
+		return fmt.Errorf("unbalanced tags: %d opening tags, %d closing tags", actualOpenTags, len(closeTags))
+	}
+
+	return nil
+}
+
+// validateAIMLTags validates that only known AIML tags are used
+func (g *Golem) validateAIMLTags(template string) error {
+	// List of known AIML tags
+	knownTags := map[string]bool{
+		"aiml": true, "category": true, "pattern": true, "template": true,
+		"star": true, "that": true, "sr": true, "srai": true, "sraix": true,
+		"think": true, "learn": true, "learnf": true, "condition": true,
+		"random": true, "li": true, "date": true, "time": true,
+		"map": true, "list": true, "array": true, "set": true, "get": true,
+		"bot": true, "request": true, "response": true, "person": true,
+		"gender": true, "person2": true, "uppercase": true, "lowercase": true,
+		"formal": true, "sentence": true, "word": true, "explode": true,
+		"normalize": true, "denormalize": true, "id": true, "size": true,
+		"version": true, "system": true, "javascript": true, "eval": true,
+		"gossip": true, "loop": true, "var": true, "unlearn": true, "unlearnf": true,
+	}
+
+	// Find all tags
+	tagRegex := regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9]*)[^>]*>`)
+	matches := tagRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		tagName := strings.ToLower(match[1])
+		if !knownTags[tagName] {
+			return fmt.Errorf("unknown AIML tag: %s", match[1])
+		}
+	}
+
+	return nil
+}
+
+// validateNestingDepth validates that nesting depth is reasonable
+func (g *Golem) validateNestingDepth(template string) error {
+	maxDepth := 20
+
+	// Track nesting depth by parsing tags in order
+	openTagRegex := regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9]*)[^>]*>`)
+	closeTagRegex := regexp.MustCompile(`</([a-zA-Z][a-zA-Z0-9]*)>`)
+	selfClosingRegex := regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9]*)[^>]*/>`)
+
+	// Find all tags in order
+	allTags := openTagRegex.FindAllString(template, -1)
+	allCloseTags := closeTagRegex.FindAllString(template, -1)
+	allSelfClosingTags := selfClosingRegex.FindAllString(template, -1)
+
+	// Create a map of self-closing tags for quick lookup
+	selfClosingMap := make(map[string]bool)
+	for _, tag := range allSelfClosingTags {
+		selfClosingMap[tag] = true
+	}
+
+	// Track actual nesting depth by counting opening and closing tags
+	currentDepth := 0
+	maxReachedDepth := 0
+
+	// Count opening tags (excluding self-closing)
+	for _, tag := range allTags {
+		if !selfClosingMap[tag] {
+			currentDepth++
+			if currentDepth > maxReachedDepth {
+				maxReachedDepth = currentDepth
+			}
+		}
+	}
+
+	// Subtract closing tags
+	for range allCloseTags {
+		currentDepth--
+		if currentDepth < 0 {
+			currentDepth = 0 // Shouldn't happen with balanced tags
+		}
+	}
+
+	// Use the maximum depth reached during parsing
+	if maxReachedDepth > maxDepth {
+		return fmt.Errorf("excessive nesting depth (estimated %d, max %d)", maxReachedDepth, maxDepth)
+	}
+
+	return nil
+}
+
 // addSessionCategory adds a category to the session-specific knowledge base
 func (g *Golem) addSessionCategory(category Category, ctx *VariableContext) error {
 	if g.aimlKB == nil {
 		return fmt.Errorf("no knowledge base available")
 	}
 
-	// Validate the category
-	if category.Pattern == "" || category.Template == "" {
-		return fmt.Errorf("invalid category: pattern and template are required")
+	// Enhanced validation of the category
+	if err := g.ValidateLearnedCategory(category); err != nil {
+		return fmt.Errorf("category validation failed: %v", err)
 	}
 
 	// Normalize the pattern
@@ -6289,9 +6626,9 @@ func (g *Golem) addPersistentCategory(category Category) error {
 		return fmt.Errorf("no knowledge base available")
 	}
 
-	// Validate the category
-	if category.Pattern == "" || category.Template == "" {
-		return fmt.Errorf("invalid category: pattern and template are required")
+	// Enhanced validation of the category
+	if err := g.ValidateLearnedCategory(category); err != nil {
+		return fmt.Errorf("category validation failed: %v", err)
 	}
 
 	// Normalize the pattern
