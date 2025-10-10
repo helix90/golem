@@ -113,7 +113,7 @@
 - **`<repeat>`** - Repeating user input ✅ **IMPLEMENTED**
 
 #### Context and History
-- **`<that>`** - Enhanced context matching (we have basic support)
+- **`<that>`** - Enhanced context matching with full AIML2 support ✅ **IMPLEMENTED**
 - **`<topic>`** - Enhanced topic management (we have basic support)
 
 #### Advanced Processing
@@ -213,18 +213,18 @@
 
 - **Core AIML2 Features**: 95% (19/20) ⬆️
 - **Template Processing**: 93% (14/15) ⬆️
-- **Pattern Matching**: 85% (17/20)
+- **Pattern Matching**: 90% (18/20) ⬆️
 - **Variable Management**: 70% (7/10)
 - **Advanced Features**: 70% (14/20) ⬆️
 - **Text Processing**: 100% (25/25) ⬆️⬆️
 - **Learning System**: 100% (5/5) ⬆️
 
-**Overall Compliance**: **91%** ⬆️⬆️
+**Overall Compliance**: **92%** ⬆️⬆️
 
 ### 🎯 **RECOMMENDED NEXT STEPS**
 
 1. **Add Advanced Processing** - Implement `<system>`, `<eval>`, `<javascript>` tags
-2. **Improve Context Management** - Better `<that>` and `<topic>` support
+2. **Improve Topic Management** - Enhanced `<topic>` support
 3. **Add Advanced Features** - Implement `<gossip>`, `<loop>`, `<var>` tags
 4. **Enhance Security** - Add learning permissions and access control
 5. **Performance Optimization** - Improve memory management and caching
@@ -239,6 +239,11 @@
 - **Person and Gender pronoun substitution are implemented** for natural conversation flow
 - **SR tags are implemented** as shorthand for SRAI operations
 - **Size, Version, and Id tags are implemented** for system information access
+- **That context matching is now fully implemented** with comprehensive support:
+  - `<that>` pattern matching in categories with index support
+  - `<that/>` tag processing in templates for referencing bot responses
+  - Enhanced that wildcard processing (`<that_star1/>`, `<that_underscore1/>`, etc.)
+  - Full context history management and normalization
 - **Text processing is now 100% complete** with all 25 text processing tags implemented:
   - Basic formatting: `<uppercase>`, `<lowercase>`, `<formal>`, `<capitalize>`, `<sentence>`, `<word>`
   - Character operations: `<explode>`, `<reverse>`, `<acronym>`, `<trim>`

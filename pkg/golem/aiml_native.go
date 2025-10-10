@@ -1728,6 +1728,11 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processThatWildcardTagsWithContext(response, ctx)
 	g.LogDebug("After that wildcard processing: '%s'", response)
 
+	// Process that tags (bot response references)
+	g.LogDebug("Before that processing: '%s'", response)
+	response = g.processThatTagsWithContext(response, ctx)
+	g.LogDebug("After that processing: '%s'", response)
+
 	// Process request tags (user input history)
 	g.LogInfo("Before request processing: '%s'", response)
 	response = g.processRequestTags(response, ctx)
@@ -4628,6 +4633,38 @@ func (g *Golem) processThatWildcardTagsWithContext(template string, ctx *Variabl
 			}
 		}
 	}
+
+	return template
+}
+
+// processThatTagsWithContext processes <that/> tags for referencing bot's previous response
+// <that/> tag references the bot's most recent response (equivalent to <response index="1"/>)
+func (g *Golem) processThatTagsWithContext(template string, ctx *VariableContext) string {
+	if ctx.Session == nil {
+		return template
+	}
+
+	// Find all <that/> tags
+	thatTagRegex := regexp.MustCompile(`<that/>`)
+	matches := thatTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("That tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		// Get the most recent response (index 1)
+		responseValue := ctx.Session.GetResponseByIndex(1)
+		if responseValue == "" {
+			g.LogDebug("No response found for that tag")
+			// Replace with empty string if no response found
+			template = strings.ReplaceAll(template, match[0], "")
+		} else {
+			// Replace the that tag with the actual response
+			template = strings.ReplaceAll(template, match[0], responseValue)
+			g.LogDebug("That tag: -> '%s'", responseValue)
+		}
+	}
+
+	g.LogDebug("That tag processing result: '%s'", template)
 
 	return template
 }

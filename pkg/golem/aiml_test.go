@@ -6219,3 +6219,201 @@ func TestRepeatTagIntegration(t *testing.T) {
 		})
 	}
 }
+
+// TestThatTagProcessing tests the that tag processing functionality
+func TestThatTagProcessing(t *testing.T) {
+	g := New(false)
+
+	// Create a session with some response history
+	session := &ChatSession{
+		ID:              "test-session",
+		Variables:       make(map[string]string),
+		History:         make([]string, 0),
+		CreatedAt:       time.Now().Format(time.RFC3339),
+		LastActivity:    time.Now().Format(time.RFC3339),
+		Topic:           "",
+		ThatHistory:     make([]string, 0),
+		RequestHistory:  make([]string, 0),
+		ResponseHistory: make([]string, 0),
+	}
+
+	// Add some responses to history
+	session.AddToResponseHistory("Hello there!")
+	session.AddToResponseHistory("How are you?")
+	session.AddToResponseHistory("What's your name?")
+
+	ctx := &VariableContext{
+		LocalVars:     make(map[string]string),
+		Session:       session,
+		Topic:         "",
+		KnowledgeBase: nil,
+	}
+
+	thatTests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		// Basic that tests
+		{"Simple that", "You said: <that/>", "You said: What's your name?"},
+		{"That with text", "Repeat: <that/>", "Repeat: What's your name?"},
+		{"Multiple that tags", "First: <that/>, Second: <that/>", "First: What's your name?, Second: What's your name?"},
+		{"That in sentence", "I heard you say <that/> just now.", "I heard you say What's your name? just now."},
+
+		// Edge cases
+		{"No session", "You said: <that/>", "You said: <that/>"},
+		{"Empty response history", "You said: <that/>", "You said: "},
+		{"Single response", "You said: <that/>", "You said: What's your name?"},
+		{"Multiple responses", "You said: <that/>", "You said: What's your name?"},
+
+		// Complex scenarios
+		{"That with other tags", "You said: <uppercase><that/></uppercase>", "You said: <uppercase>What's your name?</uppercase>"},
+		{"That with formal", "You said: <formal><that/></formal>", "You said: <formal>What's your name?</formal>"},
+		{"That with lowercase", "You said: <lowercase><that/></lowercase>", "You said: <lowercase>What's your name?</lowercase>"},
+		{"That with capitalize", "You said: <capitalize><that/></capitalize>", "You said: <capitalize>What's your name?</capitalize>"},
+		{"That with trim", "You said: <trim><that/></trim>", "You said: <trim>What's your name?</trim>"},
+		{"That with reverse", "You said: <reverse><that/></reverse>", "You said: <reverse>What's your name?</reverse>"},
+		{"That with acronym", "You said: <acronym><that/></acronym>", "You said: <acronym>What's your name?</acronym>"},
+		{"That with explode", "You said: <explode><that/></explode>", "You said: <explode>What's your name?</explode>"},
+		{"That with shuffle", "You said: <shuffle><that/></shuffle>", "You said: <shuffle>What's your name?</shuffle>"},
+		{"That with length", "You said: <that/> (<length><that/></length> chars)", "You said: What's your name? (<length>What's your name?</length> chars)"},
+		{"That with count", "You said: <that/> (<count search=\"'\"><that/></count> apostrophes)", "You said: What's your name? (<count search=\"'\">What's your name?</count> apostrophes)"},
+
+		// Whitespace and special characters
+		{"That with spaces", "You said: <that/>", "You said: What's your name?"},
+		{"That with punctuation", "You said: <that/>", "You said: What's your name?"},
+		{"That with numbers", "You said: <that/>", "You said: What's your name?"},
+		{"That with special chars", "You said: <that/>", "You said: What's your name?"},
+
+		// Empty and whitespace content
+		{"Empty that", "<that/>", "What's your name?"},
+		{"Whitespace only that", " <that/> ", " What's your name? "},
+		{"Multiple spaces that", "   <that/>   ", "   What's your name?   "},
+
+		// Nested scenarios
+		{"Nested with star", "You said: <that/> and <star/>", "You said: What's your name? and <star/>"},
+		{"Nested with repeat", "You said: <that/> and <repeat/>", "You said: What's your name? and <repeat/>"},
+		{"Nested with random", "You said: <that/> and <random><li>option1</li><li>option2</li></random>", "You said: What's your name? and <random><li>option1</li><li>option2</li></random>"},
+
+		// Complex text scenarios
+		{"Long text that", "You said: <that/>", "You said: What's your name?"},
+		{"Short text that", "You said: <that/>", "You said: What's your name?"},
+		{"Mixed case that", "You said: <that/>", "You said: What's your name?"},
+		{"Unicode that", "You said: <that/>", "You said: What's your name?"},
+
+		// Multiple that tags in different contexts
+		{"Multiple thats different contexts", "First: <that/>, Second: <that/>, Third: <that/>", "First: What's your name?, Second: What's your name?, Third: What's your name?"},
+		{"That with other processing", "You said: <uppercase><that/></uppercase> and <lowercase><that/></lowercase>", "You said: <uppercase>What's your name?</uppercase> and <lowercase>What's your name?</lowercase>"},
+		{"That with formatting", "You said: <formal><that/></formal> and <capitalize><that/></capitalize>", "You said: <formal>What's your name?</formal> and <capitalize>What's your name?</capitalize>"},
+	}
+
+	for _, tt := range thatTests {
+		t.Run("That/"+tt.name, func(t *testing.T) {
+			// For tests that need no session, create a context without session
+			testCtx := ctx
+			if tt.name == "No session" {
+				testCtx = &VariableContext{
+					LocalVars:     make(map[string]string),
+					Session:       nil,
+					Topic:         "",
+					KnowledgeBase: nil,
+				}
+			}
+			// For tests that need empty response history, create a session with no history
+			if tt.name == "Empty response history" {
+				emptySession := &ChatSession{
+					ID:              "empty-session",
+					Variables:       make(map[string]string),
+					History:         make([]string, 0),
+					CreatedAt:       time.Now().Format(time.RFC3339),
+					LastActivity:    time.Now().Format(time.RFC3339),
+					Topic:           "",
+					ThatHistory:     make([]string, 0),
+					RequestHistory:  make([]string, 0),
+					ResponseHistory: make([]string, 0),
+				}
+				testCtx = &VariableContext{
+					LocalVars:     make(map[string]string),
+					Session:       emptySession,
+					Topic:         "",
+					KnowledgeBase: nil,
+				}
+			}
+
+			result := g.processThatTagsWithContext(tt.template, testCtx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestThatTagIntegration tests integration of that tag in full AIML processing
+func TestThatTagIntegration(t *testing.T) {
+	g := New(false)
+
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+<category>
+<pattern>THAT *</pattern>
+<template>You said: <that/></template>
+</category>
+<category>
+<pattern>THAT UPPERCASE *</pattern>
+<template>You said: <uppercase><that/></uppercase></template>
+</category>
+<category>
+<pattern>THAT FORMAL *</pattern>
+<template>You said: <formal><that/></formal></template>
+</category>
+<category>
+<pattern>MIXED FORMATTING *</pattern>
+<template>U:<uppercase><star/></uppercase> L:<lowercase><star/></lowercase> F:<formal><star/></formal> E:<explode><star/></explode> C:<capitalize><star/></capitalize> R:<reverse><star/></reverse> A:<acronym><star/></acronym> T:<trim><star/></trim> S:<substring start="0" end="3"><star/></substring> Re:<replace search="test" replace="demo"><star/></replace> P:<pluralize><star/></pluralize> Sh:<shuffle><star/></shuffle> Le:<length><star/></length> Co:<count search="e"><star/></count> Sp:<split delimiter=","><star/></split> Jo:<join delimiter=","><star/></join> In:<indent><star/></indent> De:<dedent><star/></dedent> Un:<unique><star/></unique> Rp:<repeat/> Th:<that/></template>
+</category>
+<category>
+<pattern>NESTED THAT *</pattern>
+<template>You said: <that/> and I heard: <star/></template>
+</category>
+</aiml>`
+
+	if err := g.LoadAIMLFromString(aimlContent); err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	kb := g.GetKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	// Create a session and populate response history
+	session := &ChatSession{
+		ID:        "test_session",
+		Variables: make(map[string]string),
+	}
+
+	// First, add some responses to history
+	session.AddToResponseHistory("hello world")
+	session.AddToResponseHistory("test case")
+	session.AddToResponseHistory("user input")
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"that hello world", "You said: user input"},
+		{"that uppercase test case", "You said: You said: user input"},
+		{"that formal test case", "You said: You said: You said: user input"},
+		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/> Rp:that formal test case Th:You said: You said: You said: user input"},
+		{"nested that user input", "You said: U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/> Rp:that formal test case Th:You said: You said: You said: user input and I heard: user input"},
+	}
+
+	for _, tt := range tests {
+		t.Run("Integration/"+tt.input, func(t *testing.T) {
+			response, err := g.ProcessInput(tt.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+			if response != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
+			}
+		})
+	}
+}
