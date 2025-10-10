@@ -744,6 +744,11 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndex(input string, top
 }
 
 func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginal(normalizedInput string, originalInput string, topic string, that string, thatIndex int) (*Category, map[string]string, error) {
+	return kb.MatchPatternWithTopicAndThatIndexOriginalCached(nil, normalizedInput, originalInput, topic, that, thatIndex)
+}
+
+// MatchPatternWithTopicAndThatIndexOriginalCached attempts to match user input against AIML patterns with caching support
+func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginalCached(g *Golem, normalizedInput string, originalInput string, topic string, that string, thatIndex int) (*Category, map[string]string, error) {
 	// Use the already normalized input for matching
 	input := normalizedInput
 
@@ -878,7 +883,7 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginal(normalize
 		}
 
 		// Try enhanced matching with sets first
-		matched, _ := matchPatternWithWildcardsAndSetsCasePreserving(input, originalInput, basePattern, kb)
+		matched, _ := matchPatternWithWildcardsAndSetsCasePreservingCached(g, input, originalInput, basePattern, kb)
 		if matched && thatMatched {
 			priority := calculatePatternPriority(basePattern)
 
@@ -934,7 +939,7 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginal(normalize
 		casePreservingInput := NormalizeForMatchingCasePreserving(originalInput)
 		// Also normalize the pattern to lowercase for case-insensitive matching
 		normalizedPattern := strings.ToLower(bestMatch.Pattern)
-		_, inputWildcards := matchPatternWithWildcardsAndSetsCasePreserving(casePreservingInput, originalInput, normalizedPattern, kb)
+		_, inputWildcards := matchPatternWithWildcardsAndSetsCasePreservingCached(g, casePreservingInput, originalInput, normalizedPattern, kb)
 		if inputWildcards == nil {
 			_, inputWildcards = matchPatternWithWildcards(casePreservingInput, normalizedPattern)
 		}
@@ -1007,6 +1012,31 @@ func comparePatternPriorities(p1, p2 int) bool {
 // Higher priority values mean higher precedence
 // AIML2 Priority order: $ > # > _ > exact > ^ > *
 func calculatePatternPriority(pattern string) PatternPriorityInfo {
+	return calculatePatternPriorityCached(nil, pattern)
+}
+
+// calculatePatternPriorityCached calculates pattern priority with caching support
+func calculatePatternPriorityCached(g *Golem, pattern string) PatternPriorityInfo {
+	// Check cache first
+	if g != nil && g.patternMatchingCache != nil {
+		if priority, found := g.patternMatchingCache.GetPatternPriority(pattern); found {
+			return priority
+		}
+	}
+
+	// Calculate priority
+	priority := calculatePatternPriorityInternal(pattern)
+
+	// Cache the result
+	if g != nil && g.patternMatchingCache != nil {
+		g.patternMatchingCache.SetPatternPriority(pattern, priority)
+	}
+
+	return priority
+}
+
+// calculatePatternPriorityInternal calculates the priority of a pattern for matching (internal implementation)
+func calculatePatternPriorityInternal(pattern string) PatternPriorityInfo {
 	// Count wildcards
 	starCount := strings.Count(pattern, "*")
 	underscoreCount := strings.Count(pattern, "_")
@@ -1114,11 +1144,42 @@ func matchPatternWithWildcardsAndSets(input, pattern string, kb *AIMLKnowledgeBa
 }
 
 func matchPatternWithWildcardsAndSetsCasePreserving(normalizedInput, originalInput, pattern string, kb *AIMLKnowledgeBase) (bool, map[string]string) {
+	return matchPatternWithWildcardsAndSetsCasePreservingCached(nil, normalizedInput, originalInput, pattern, kb)
+}
+
+// matchPatternWithWildcardsAndSetsCasePreservingCached matches input against a pattern with wildcards and sets with caching support
+func matchPatternWithWildcardsAndSetsCasePreservingCached(g *Golem, normalizedInput, originalInput, pattern string, kb *AIMLKnowledgeBase) (bool, map[string]string) {
+	// Check cache first
+	if g != nil && g.patternMatchingCache != nil {
+		if result, found := g.patternMatchingCache.GetWildcardMatch(normalizedInput, pattern); found {
+			return result.Matched, result.Wildcards
+		}
+	}
+
+	// Perform the matching
+	matched, wildcards := matchPatternWithWildcardsAndSetsCasePreservingInternal(g, normalizedInput, originalInput, pattern, kb)
+
+	// Cache the result
+	if g != nil && g.patternMatchingCache != nil {
+		result := WildcardMatchResult{
+			Matched:   matched,
+			Wildcards: wildcards,
+			Pattern:   pattern,
+			Input:     normalizedInput,
+		}
+		g.patternMatchingCache.SetWildcardMatch(normalizedInput, pattern, result)
+	}
+
+	return matched, wildcards
+}
+
+// matchPatternWithWildcardsAndSetsCasePreservingInternal matches input against a pattern with wildcards and sets (internal implementation)
+func matchPatternWithWildcardsAndSetsCasePreservingInternal(g *Golem, normalizedInput, originalInput, pattern string, kb *AIMLKnowledgeBase) (bool, map[string]string) {
 	wildcards := make(map[string]string)
 
 	// Convert pattern to regex with set support
 	// If the pattern is lowercase, we need to make the regex case-insensitive
-	regexPattern := patternToRegexWithSets(pattern, kb)
+	regexPattern := patternToRegexWithSetsCached(g, pattern, kb)
 
 	// If the pattern is lowercase, make the regex case-insensitive
 	if pattern != strings.ToUpper(pattern) {
@@ -1150,12 +1211,12 @@ func matchPatternWithWildcardsAndSetsCasePreserving(normalizedInput, originalInp
 		originalNormalized := NormalizeForMatchingCasePreserving(originalInput)
 		// Convert pattern to lowercase for matching against case-preserved input
 		lowercasePattern := strings.ToLower(pattern)
-		lowercaseRegexPattern := patternToRegexWithSets(lowercasePattern, kb)
+		lowercaseRegexPattern := patternToRegexWithSetsCached(g, lowercasePattern, kb)
 		lowercaseRe, err := regexp.Compile(lowercaseRegexPattern)
 		if err == nil {
 			// Match against the case-preserved input
 			casePreservedMatches := lowercaseRe.FindStringSubmatch(originalNormalized)
-			if casePreservedMatches != nil && len(casePreservedMatches) > 1 {
+			if len(casePreservedMatches) > 1 {
 				// Overwrite with case-preserved values
 				starIndex := 1
 				for _, match := range casePreservedMatches[1:] {
@@ -1227,6 +1288,11 @@ func patternToRegex(pattern string) string {
 
 // patternToRegexWithSets converts AIML pattern to regex with proper set matching
 func patternToRegexWithSets(pattern string, kb *AIMLKnowledgeBase) string {
+	return patternToRegexWithSetsCached(nil, pattern, kb)
+}
+
+// patternToRegexWithSetsCached converts AIML pattern to regex with proper set matching and caching
+func patternToRegexWithSetsCached(g *Golem, pattern string, kb *AIMLKnowledgeBase) string {
 	// Handle set matching with proper set validation
 	setPattern := regexp.MustCompile(`<set>([^<]+)</set>`)
 	pattern = setPattern.ReplaceAllStringFunc(pattern, func(match string) string {
@@ -1236,6 +1302,14 @@ func patternToRegexWithSets(pattern string, kb *AIMLKnowledgeBase) string {
 			return "([^\\s]*)"
 		}
 		setName := strings.ToUpper(strings.TrimSpace(matches[1]))
+
+		// Check cache first
+		if g != nil && g.patternMatchingCache != nil {
+			if regex, found := g.patternMatchingCache.GetSetRegex(setName, kb.Sets[setName]); found {
+				return regex
+			}
+		}
+
 		if len(kb.Sets[setName]) > 0 {
 			// Create regex alternation for set members
 			var alternatives []string
@@ -1260,7 +1334,14 @@ func patternToRegexWithSets(pattern string, kb *AIMLKnowledgeBase) string {
 				// Don't escape | as it's needed for alternation
 				alternatives = append(alternatives, escaped)
 			}
-			return "(" + strings.Join(alternatives, "|") + ")"
+			regex := "(" + strings.Join(alternatives, "|") + ")"
+
+			// Cache the result
+			if g != nil && g.patternMatchingCache != nil {
+				g.patternMatchingCache.SetSetRegex(setName, kb.Sets[setName], regex)
+			}
+
+			return regex
 		}
 		// Fallback to wildcard if set not found
 		return "([^\\s]*)"
@@ -1397,18 +1478,40 @@ func (g *Golem) ProcessTemplateWithContext(template string, wildcards map[string
 	return g.processTemplateWithContext(template, wildcards, ctx)
 }
 
+// getCachedRegex returns a compiled regex from the appropriate cache
+func (g *Golem) getCachedRegex(pattern string, cacheType string) *regexp.Regexp {
+	var cache *RegexCache
+	switch cacheType {
+	case "normalization":
+		cache = g.normalizationCache
+	case "tag_processing":
+		cache = g.tagProcessingCache
+	case "pattern":
+		cache = g.patternRegexCache
+	default:
+		// Fallback to direct compilation
+		return regexp.MustCompile(pattern)
+	}
+
+	if cache != nil {
+		if compiled, err := cache.GetCompiledRegex(pattern); err == nil {
+			return compiled
+		}
+	}
+
+	// Fallback to direct compilation
+	return regexp.MustCompile(pattern)
+}
+
 // processTemplateWithContext processes a template with variable context
 func (g *Golem) processTemplateWithContext(template string, wildcards map[string]string, ctx *VariableContext) string {
 	startTime := time.Now()
 
 	// Check cache first if enabled
-	// IMPORTANT: Disable caching for templates containing list/array/set/map/condition tags because
-	// the cache key does not include list/array/set/map/condition state, which can cause stale results
-	hasListOrArrayTags := strings.Contains(template, "<list ") || strings.Contains(template, "<array ")
-	hasSetTags := strings.Contains(template, "<set ")
-	hasMapTags := strings.Contains(template, "<map ")
+	// IMPORTANT: Disable caching for templates containing condition tags because
+	// condition tags can have complex state dependencies that are hard to cache
 	hasConditionTags := strings.Contains(template, "<condition ")
-	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasSetTags && !hasMapTags && !hasConditionTags {
+	if g.templateConfig.EnableCaching && !hasConditionTags {
 		cacheKey := g.generateTemplateCacheKey(template, wildcards, ctx)
 		if cached, found := g.getFromTemplateCache(cacheKey); found {
 			g.templateMetrics.CacheHits++
@@ -1634,8 +1737,8 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	}
 
 	// Cache the result if caching is enabled
-	// IMPORTANT: Don't cache templates with list/array/set/map/condition tags
-	if g.templateConfig.EnableCaching && !hasListOrArrayTags && !hasSetTags && !hasMapTags && !hasConditionTags {
+	// IMPORTANT: Don't cache templates with condition tags
+	if g.templateConfig.EnableCaching && !hasConditionTags {
 		cacheKey := g.generateTemplateCacheKey(template, wildcards, ctx)
 		g.storeInTemplateCache(cacheKey, finalResponse)
 	}
@@ -1662,7 +1765,20 @@ func (g *Golem) processPersonTagsWithContext(template string, ctx *VariableConte
 			content := strings.TrimSpace(match[1])
 			// Normalize whitespace before processing
 			content = strings.Join(strings.Fields(content), " ")
-			substitutedContent := g.SubstitutePronouns(content)
+
+			// Check cache first
+			var substitutedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("person", content, ctx); found {
+					substitutedContent = cached
+				} else {
+					substitutedContent = g.SubstitutePronouns(content)
+					g.templateTagProcessingCache.SetProcessedTag("person", content, substitutedContent, ctx)
+				}
+			} else {
+				substitutedContent = g.SubstitutePronouns(content)
+			}
+
 			g.LogInfo("Person tag: '%s' -> '%s'", match[1], substitutedContent)
 			template = strings.ReplaceAll(template, match[0], substitutedContent)
 		}
@@ -1686,7 +1802,20 @@ func (g *Golem) processGenderTagsWithContext(template string, ctx *VariableConte
 			content := strings.TrimSpace(match[1])
 			// Normalize whitespace before processing
 			content = strings.Join(strings.Fields(content), " ")
-			substitutedContent := g.SubstituteGenderPronouns(content)
+
+			// Check cache first
+			var substitutedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("gender", content, ctx); found {
+					substitutedContent = cached
+				} else {
+					substitutedContent = g.SubstituteGenderPronouns(content)
+					g.templateTagProcessingCache.SetProcessedTag("gender", content, substitutedContent, ctx)
+				}
+			} else {
+				substitutedContent = g.SubstituteGenderPronouns(content)
+			}
+
 			g.LogInfo("Gender tag: '%s' -> '%s'", match[1], substitutedContent)
 			template = strings.ReplaceAll(template, match[0], substitutedContent)
 		}
@@ -2143,7 +2272,19 @@ func (g *Golem) processUppercaseTagsWithContext(template string, ctx *VariableCo
 
 			// Normalize whitespace before uppercasing
 			content = regexp.MustCompile(`\s+`).ReplaceAllString(content, " ")
-			processedContent := strings.ToUpper(content)
+
+			// Check cache first
+			var processedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("uppercase", content, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = strings.ToUpper(content)
+					g.templateTagProcessingCache.SetProcessedTag("uppercase", content, processedContent, ctx)
+				}
+			} else {
+				processedContent = strings.ToUpper(content)
+			}
 
 			g.LogDebug("Uppercase tag: '%s' -> '%s'", match[1], processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -2742,7 +2883,17 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 
 	// Find all <set> tags with various operations
 	// Support both variable assignment and set operations
-	setRegex := regexp.MustCompile(`(?s)<set\s+name=["']([^"']+)["'](?:\s+operation=["']([^"']+)["'])?>(.*?)</set>`)
+	var setRegex *regexp.Regexp
+	if g.tagProcessingCache != nil {
+		pattern := `(?s)<set\s+name=["']([^"']+)["'](?:\s+operation=["']([^"']+)["'])?>(.*?)</set>`
+		if compiled, err := g.tagProcessingCache.GetCompiledRegex(pattern); err == nil {
+			setRegex = compiled
+		} else {
+			setRegex = regexp.MustCompile(pattern)
+		}
+	} else {
+		setRegex = regexp.MustCompile(`(?s)<set\s+name=["']([^"']+)["'](?:\s+operation=["']([^"']+)["'])?>(.*?)</set>`)
+	}
 	matches := setRegex.FindAllStringSubmatch(template, -1)
 
 	g.LogInfo("Set processing: found %d matches in template: '%s'", len(matches), template)
@@ -3300,10 +3451,22 @@ func (g *Golem) getVariableValue(varName string, session *ChatSession) string {
 func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 	g.LogInfo("Resolving variable '%s'", varName)
 
+	// Check cache first
+	if g.variableResolutionCache != nil {
+		if value, found := g.variableResolutionCache.GetResolvedVariable(varName, ctx); found {
+			g.LogInfo("Found variable '%s' in cache: '%s'", varName, value)
+			return value
+		}
+	}
+
 	// 1. Check local scope (highest priority)
 	if ctx.LocalVars != nil {
 		if value, exists := ctx.LocalVars[varName]; exists {
 			g.LogInfo("Found variable '%s' in local scope: '%s'", varName, value)
+			// Cache the result
+			if g.variableResolutionCache != nil {
+				g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
+			}
 			return value
 		}
 	}
@@ -3312,6 +3475,10 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 	if ctx.Session != nil && ctx.Session.Variables != nil {
 		if value, exists := ctx.Session.Variables[varName]; exists {
 			g.LogInfo("Found variable '%s' in session scope: '%s'", varName, value)
+			// Cache the result
+			if g.variableResolutionCache != nil {
+				g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
+			}
 			return value
 		}
 	}
@@ -3332,6 +3499,10 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 		g.LogInfo("Knowledge base Variables pointer: %p", ctx.KnowledgeBase.Variables)
 		if value, exists := ctx.KnowledgeBase.Variables[varName]; exists {
 			g.LogInfo("Found variable '%s' in knowledge base: '%s'", varName, value)
+			// Cache the result
+			if g.variableResolutionCache != nil {
+				g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
+			}
 			return value
 		}
 	} else {
@@ -3345,6 +3516,10 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Properties != nil {
 		if value, exists := ctx.KnowledgeBase.Properties[varName]; exists {
 			g.LogInfo("Found variable '%s' in properties: '%s'", varName, value)
+			// Cache the result
+			if g.variableResolutionCache != nil {
+				g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
+			}
 			return value
 		}
 	}
@@ -4732,7 +4907,17 @@ func (g *Golem) processMapTagsWithContext(template string, ctx *VariableContext)
 	// Support both key lookup and map operations
 	// Format: <map name="mapName" key="keyValue" operation="op">content</map>
 	// or: <map name="mapName">keyValue</map> (original syntax)
-	mapRegex := regexp.MustCompile(`(?s)<map\s+name=["']([^"']+)["'](?:\s+key=["']([^"']+)["'])?(?:\s+operation=["']([^"']+)["'])?>(.*?)</map>`)
+	var mapRegex *regexp.Regexp
+	if g.tagProcessingCache != nil {
+		pattern := `(?s)<map\s+name=["']([^"']+)["'](?:\s+key=["']([^"']+)["'])?(?:\s+operation=["']([^"']+)["'])?>(.*?)</map>`
+		if compiled, err := g.tagProcessingCache.GetCompiledRegex(pattern); err == nil {
+			mapRegex = compiled
+		} else {
+			mapRegex = regexp.MustCompile(pattern)
+		}
+	} else {
+		mapRegex = regexp.MustCompile(`(?s)<map\s+name=["']([^"']+)["'](?:\s+key=["']([^"']+)["'])?(?:\s+operation=["']([^"']+)["'])?>(.*?)</map>`)
+	}
 	matches := mapRegex.FindAllStringSubmatch(template, -1)
 
 	g.LogInfo("Map processing: found %d matches in template: '%s'", len(matches), template)
@@ -5053,7 +5238,17 @@ func (g *Golem) processArrayTagsWithContext(template string, ctx *VariableContex
 	}
 
 	// Find all <array> tags with various operations
-	arrayRegex := regexp.MustCompile(`<array\s+name=["']([^"']+)["'](?:\s+index=["']([^"']+)["'])?(?:\s+operation=["']([^"']+)["'])?>(.*?)</array>`)
+	var arrayRegex *regexp.Regexp
+	if g.tagProcessingCache != nil {
+		pattern := `<array\s+name=["']([^"']+)["'](?:\s+index=["']([^"']+)["'])?(?:\s+operation=["']([^"']+)["'])?>(.*?)</array>`
+		if compiled, err := g.tagProcessingCache.GetCompiledRegex(pattern); err == nil {
+			arrayRegex = compiled
+		} else {
+			arrayRegex = regexp.MustCompile(pattern)
+		}
+	} else {
+		arrayRegex = regexp.MustCompile(`<array\s+name=["']([^"']+)["'](?:\s+index=["']([^"']+)["'])?(?:\s+operation=["']([^"']+)["'])?>(.*?)</array>`)
+	}
 	matches := arrayRegex.FindAllStringSubmatch(template, -1)
 
 	g.LogInfo("Array processing: found %d matches in template: '%s'", len(matches), template)
@@ -5774,9 +5969,7 @@ func (wbd *WordBoundaryDetector) SplitWords(text string) []string {
 	var words []string
 	var current strings.Builder
 
-	runes := []rune(text)
-
-	for _, r := range runes {
+	for _, r := range text {
 		if wbd.separators[r] {
 			// End of word
 			if current.Len() > 0 {
@@ -6105,21 +6298,58 @@ func validateThatWildcardCombinations(pattern string) error {
 	return nil
 }
 
-// matchThatPatternWithWildcards matches that context against a that pattern with enhanced wildcard support
+// matchThatPatternWithWildcards matches that context against a that pattern with enhanced wildcard support and caching
 func matchThatPatternWithWildcards(thatContext, thatPattern string) (bool, map[string]string) {
+	return matchThatPatternWithWildcardsCached(nil, thatContext, thatPattern)
+}
+
+// matchThatPatternWithWildcardsCached matches that context against a that pattern with caching support
+func matchThatPatternWithWildcardsCached(g *Golem, thatContext, thatPattern string) (bool, map[string]string) {
 	wildcards := make(map[string]string)
+
+	// Check for cached match result first
+	if g != nil && g.thatPatternCache != nil {
+		if result, found := g.thatPatternCache.GetMatchResult(thatPattern, thatContext); found {
+			if !result {
+				return false, nil
+			}
+			// If we have a cached positive result, we still need to extract wildcards
+			// For now, we'll proceed with the full matching process
+		}
+	}
 
 	// Convert that pattern to regex with enhanced wildcard support
 	regexPattern := thatPatternToRegexWordBased(thatPattern)
 	// Make regex case insensitive
 	regexPattern = "(?i)" + regexPattern
-	re, err := regexp.Compile(regexPattern)
+
+	// Try to get compiled regex from cache first
+	var re *regexp.Regexp
+	var err error
+
+	if g != nil && g.thatPatternCache != nil {
+		if compiled, found := g.thatPatternCache.GetCompiledPattern(regexPattern); found {
+			re = compiled
+		} else {
+			re, err = regexp.Compile(regexPattern)
+			if err == nil {
+				g.thatPatternCache.SetCompiledPattern(regexPattern, re)
+			}
+		}
+	} else {
+		re, err = regexp.Compile(regexPattern)
+	}
+
 	if err != nil {
 		return false, nil
 	}
 
 	matches := re.FindStringSubmatch(thatContext)
 	if matches == nil {
+		// Cache negative result
+		if g != nil && g.thatPatternCache != nil {
+			g.thatPatternCache.SetMatchResult(thatPattern, thatContext, false)
+		}
 		return false, nil
 	}
 
@@ -6131,6 +6361,11 @@ func matchThatPatternWithWildcards(thatContext, thatPattern string) (bool, map[s
 		wildcardKey := fmt.Sprintf("that_%s%d", wildcardType, wildcardIndex)
 		wildcards[wildcardKey] = match
 		wildcardIndex++
+	}
+
+	// Cache positive result
+	if g != nil && g.thatPatternCache != nil {
+		g.thatPatternCache.SetMatchResult(thatPattern, thatContext, true)
 	}
 
 	return true, wildcards
@@ -6897,49 +7132,124 @@ func (g *Golem) removePersistentCategory(category Category) error {
 	return fmt.Errorf("category not found in categories slice: %s", normalizedPattern)
 }
 
-// ThatPatternCache represents a cache for compiled that patterns
+// ThatPatternCache represents an enhanced cache for compiled that patterns
 type ThatPatternCache struct {
-	Patterns map[string]*regexp.Regexp `json:"patterns"`
-	Hits     map[string]int            `json:"hits"`
-	Misses   int                       `json:"misses"`
-	MaxSize  int                       `json:"max_size"`
+	Patterns    map[string]*regexp.Regexp `json:"patterns"`
+	Hits        map[string]int            `json:"hits"`
+	Misses      int                       `json:"misses"`
+	MaxSize     int                       `json:"max_size"`
+	TTL         int64                     `json:"ttl_seconds"`
+	Timestamps  map[string]time.Time      `json:"timestamps"`
+	AccessOrder []string                  `json:"access_order"` // For LRU eviction
+	// Context tracking for cache invalidation
+	ContextHashes map[string]string `json:"context_hashes"` // Maps pattern to context hash
+	// Pattern matching results cache
+	MatchResults map[string]bool `json:"match_results"` // Caches match results
+	ResultHits   map[string]int  `json:"result_hits"`
 }
 
-// NewThatPatternCache creates a new that pattern cache
+// NewThatPatternCache creates a new enhanced that pattern cache
 func NewThatPatternCache(maxSize int) *ThatPatternCache {
 	return &ThatPatternCache{
-		Patterns: make(map[string]*regexp.Regexp),
-		Hits:     make(map[string]int),
-		Misses:   0,
-		MaxSize:  maxSize,
+		Patterns:      make(map[string]*regexp.Regexp),
+		Hits:          make(map[string]int),
+		Misses:        0,
+		MaxSize:       maxSize,
+		TTL:           1800, // 30 minutes TTL
+		Timestamps:    make(map[string]time.Time),
+		AccessOrder:   make([]string, 0),
+		ContextHashes: make(map[string]string),
+		MatchResults:  make(map[string]bool),
+		ResultHits:    make(map[string]int),
 	}
 }
 
-// GetCompiledPattern returns a compiled regex pattern for a that pattern
+// GetCompiledPattern returns a compiled regex pattern for a that pattern with TTL and LRU
 func (cache *ThatPatternCache) GetCompiledPattern(pattern string) (*regexp.Regexp, bool) {
 	if compiled, exists := cache.Patterns[pattern]; exists {
-		cache.Hits[pattern]++
-		return compiled, true
+		// Check TTL
+		if time.Since(cache.Timestamps[pattern]).Seconds() < float64(cache.TTL) {
+			// Update access order for LRU
+			cache.updateAccessOrder(pattern)
+			cache.Hits[pattern]++
+			return compiled, true
+		}
+		// TTL expired, remove from cache
+		cache.removePattern(pattern)
 	}
 	cache.Misses++
 	return nil, false
 }
 
-// SetCompiledPattern stores a compiled regex pattern
+// SetCompiledPattern stores a compiled regex pattern with LRU eviction
 func (cache *ThatPatternCache) SetCompiledPattern(pattern string, compiled *regexp.Regexp) {
-	// Evict oldest patterns if cache is full
+	// Evict if cache is full
 	if len(cache.Patterns) >= cache.MaxSize {
-		// Simple eviction: remove a random pattern
-		for key := range cache.Patterns {
-			delete(cache.Patterns, key)
-			delete(cache.Hits, key)
+		cache.evictLRU()
+	}
+
+	cache.Patterns[pattern] = compiled
+	cache.Timestamps[pattern] = time.Now()
+	cache.updateAccessOrder(pattern)
+}
+
+// GetMatchResult returns a cached match result for a pattern-context combination
+func (cache *ThatPatternCache) GetMatchResult(pattern, context string) (bool, bool) {
+	cacheKey := fmt.Sprintf("%s|%s", pattern, context)
+	if result, exists := cache.MatchResults[cacheKey]; exists {
+		cache.ResultHits[cacheKey]++
+		return result, true
+	}
+	return false, false
+}
+
+// SetMatchResult caches a match result for a pattern-context combination
+func (cache *ThatPatternCache) SetMatchResult(pattern, context string, result bool) {
+	cacheKey := fmt.Sprintf("%s|%s", pattern, context)
+	cache.MatchResults[cacheKey] = result
+}
+
+// updateAccessOrder updates the LRU access order
+func (cache *ThatPatternCache) updateAccessOrder(pattern string) {
+	// Remove from current position
+	for i, p := range cache.AccessOrder {
+		if p == pattern {
+			cache.AccessOrder = append(cache.AccessOrder[:i], cache.AccessOrder[i+1:]...)
 			break
 		}
 	}
-	cache.Patterns[pattern] = compiled
+	// Add to end (most recently used)
+	cache.AccessOrder = append(cache.AccessOrder, pattern)
 }
 
-// GetCacheStats returns cache statistics
+// removePattern removes a pattern from the cache
+func (cache *ThatPatternCache) removePattern(pattern string) {
+	delete(cache.Patterns, pattern)
+	delete(cache.Timestamps, pattern)
+	delete(cache.Hits, pattern)
+	delete(cache.ContextHashes, pattern)
+
+	// Remove from access order
+	for i, p := range cache.AccessOrder {
+		if p == pattern {
+			cache.AccessOrder = append(cache.AccessOrder[:i], cache.AccessOrder[i+1:]...)
+			break
+		}
+	}
+}
+
+// evictLRU removes the least recently used pattern
+func (cache *ThatPatternCache) evictLRU() {
+	if len(cache.AccessOrder) == 0 {
+		return
+	}
+
+	// Remove the first (oldest) pattern
+	oldestPattern := cache.AccessOrder[0]
+	cache.removePattern(oldestPattern)
+}
+
+// GetCacheStats returns enhanced cache statistics
 func (cache *ThatPatternCache) GetCacheStats() map[string]interface{} {
 	totalRequests := cache.Misses
 	for _, hits := range cache.Hits {
@@ -6951,21 +7261,52 @@ func (cache *ThatPatternCache) GetCacheStats() map[string]interface{} {
 		hitRate = float64(len(cache.Hits)) / float64(totalRequests)
 	}
 
+	// Calculate result cache statistics
+	totalResultRequests := 0
+	for _, hits := range cache.ResultHits {
+		totalResultRequests += hits
+	}
+
+	resultHitRate := 0.0
+	if totalResultRequests > 0 {
+		resultHitRate = float64(len(cache.ResultHits)) / float64(totalResultRequests)
+	}
+
 	return map[string]interface{}{
-		"patterns":       len(cache.Patterns),
-		"max_size":       cache.MaxSize,
-		"hits":           cache.Hits,
-		"misses":         cache.Misses,
-		"hit_rate":       hitRate,
-		"total_requests": totalRequests,
+		"patterns":        len(cache.Patterns),
+		"max_size":        cache.MaxSize,
+		"ttl_seconds":     cache.TTL,
+		"hits":            cache.Hits,
+		"misses":          cache.Misses,
+		"hit_rate":        hitRate,
+		"total_requests":  totalRequests,
+		"match_results":   len(cache.MatchResults),
+		"result_hits":     cache.ResultHits,
+		"result_hit_rate": resultHitRate,
+		"context_hashes":  len(cache.ContextHashes),
 	}
 }
 
-// ClearCache clears the pattern cache
+// ClearCache clears the that pattern cache
 func (cache *ThatPatternCache) ClearCache() {
 	cache.Patterns = make(map[string]*regexp.Regexp)
 	cache.Hits = make(map[string]int)
 	cache.Misses = 0
+	cache.Timestamps = make(map[string]time.Time)
+	cache.AccessOrder = make([]string, 0)
+	cache.ContextHashes = make(map[string]string)
+	cache.MatchResults = make(map[string]bool)
+	cache.ResultHits = make(map[string]int)
+}
+
+// InvalidateContext invalidates cache entries for a specific context
+func (cache *ThatPatternCache) InvalidateContext(context string) {
+	// Remove all patterns that have this context hash
+	for pattern, contextHash := range cache.ContextHashes {
+		if contextHash == context {
+			cache.removePattern(pattern)
+		}
+	}
 }
 
 // ThatPatternValidationResult represents detailed validation results

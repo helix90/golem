@@ -3063,7 +3063,7 @@ func TestLoadAIMLFromDirectory(t *testing.T) {
 	}
 
 	// Test pattern matching works
-	category, wildcards, err := kb.MatchPattern("HELLO")
+	category, _, err := kb.MatchPattern("HELLO")
 	if err != nil {
 		t.Fatalf("Pattern match failed: %v", err)
 	}
@@ -3072,7 +3072,7 @@ func TestLoadAIMLFromDirectory(t *testing.T) {
 	}
 
 	// Test wildcard matching
-	category, wildcards, err = kb.MatchPattern("MY NAME IS JOHN")
+	_, wildcards, err := kb.MatchPattern("MY NAME IS JOHN")
 	if err != nil {
 		t.Fatalf("Wildcard match failed: %v", err)
 	}
@@ -3081,7 +3081,7 @@ func TestLoadAIMLFromDirectory(t *testing.T) {
 	}
 
 	// Test underscore wildcard matching
-	category, wildcards, err = kb.MatchPattern("I AM 25 YEARS OLD")
+	_, wildcards, err = kb.MatchPattern("I AM 25 YEARS OLD")
 	if err != nil {
 		t.Fatalf("Underscore wildcard match failed: %v", err)
 	}

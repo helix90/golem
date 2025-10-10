@@ -329,6 +329,7 @@ func TestLearnIntegration(t *testing.T) {
 	}
 	if category == nil {
 		t.Error("No category matched for teaching pattern")
+		return
 	}
 
 	// Process the matched template
@@ -389,6 +390,7 @@ func TestLearnfIntegration(t *testing.T) {
 	}
 	if category == nil {
 		t.Error("No category matched for saving pattern")
+		return
 	}
 
 	// Process the matched template

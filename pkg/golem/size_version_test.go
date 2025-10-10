@@ -22,9 +22,7 @@ func TestSizeTagProcessing(t *testing.T) {
 	}
 
 	// Add categories to knowledge base
-	for _, category := range testCategories {
-		g.aimlKB.Categories = append(g.aimlKB.Categories, category)
-	}
+	g.aimlKB.Categories = append(g.aimlKB.Categories, testCategories...)
 
 	tests := []struct {
 		name     string
@@ -83,9 +81,7 @@ func TestSizeTagProcessing(t *testing.T) {
 	}
 
 	// Restore test categories
-	for _, category := range testCategories {
-		g.aimlKB.Categories = append(g.aimlKB.Categories, category)
-	}
+	g.aimlKB.Categories = append(g.aimlKB.Categories, testCategories...)
 
 	// Test with populated knowledge base
 	for _, tt := range tests {
