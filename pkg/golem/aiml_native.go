@@ -1674,11 +1674,29 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processWordTagsWithContext(response, ctx)
 	g.LogDebug("After word processing: '%s'", response)
 
-	// Process uppercase/lowercase tags (case transforms)
-	g.LogDebug("Before uppercase/lowercase processing: '%s'", response)
+	// Process uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique/repeat tags (case transforms, character separation, reversal, acronym generation, whitespace trimming, substring extraction, string replacement, pluralization, word shuffling, length calculation, occurrence counting, text splitting, text joining, text indentation, text dedentation, removing duplicates, and repeating user input)
+	g.LogDebug("Before uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique/repeat processing: '%s'", response)
 	response = g.processUppercaseTagsWithContext(response, ctx)
 	response = g.processLowercaseTagsWithContext(response, ctx)
-	g.LogDebug("After uppercase/lowercase processing: '%s'", response)
+	response = g.processFormalTagsWithContext(response, ctx)
+	response = g.processExplodeTagsWithContext(response, ctx)
+	response = g.processCapitalizeTagsWithContext(response, ctx)
+	response = g.processReverseTagsWithContext(response, ctx)
+	response = g.processAcronymTagsWithContext(response, ctx)
+	response = g.processTrimTagsWithContext(response, ctx)
+	response = g.processSubstringTagsWithContext(response, ctx)
+	response = g.processReplaceTagsWithContext(response, ctx)
+	response = g.processPluralizeTagsWithContext(response, ctx)
+	response = g.processShuffleTagsWithContext(response, ctx)
+	response = g.processLengthTagsWithContext(response, ctx)
+	response = g.processCountTagsWithContext(response, ctx)
+	response = g.processSplitTagsWithContext(response, ctx)
+	response = g.processJoinTagsWithContext(response, ctx)
+	response = g.processIndentTagsWithContext(response, ctx)
+	response = g.processDedentTagsWithContext(response, ctx)
+	response = g.processUniqueTagsWithContext(response, ctx)
+	response = g.processRepeatTagsWithContext(response, ctx)
+	g.LogDebug("After uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique/repeat processing: '%s'", response)
 
 	// Process normalize tags (text normalization)
 	g.LogDebug("Before normalize processing: '%s'", response)
@@ -2325,6 +2343,1407 @@ func (g *Golem) processLowercaseTagsWithContext(template string, ctx *VariableCo
 	g.LogDebug("Lowercase tag processing result: '%s'", template)
 
 	return template
+}
+
+// processFormalTagsWithContext processes <formal> tags for formal text formatting
+// <formal> tag capitalizes the first letter of each word (title case)
+func (g *Golem) processFormalTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <formal> tags (including multiline content)
+	formalTagRegex := regexp.MustCompile(`(?s)<formal>(.*?)</formal>`)
+	matches := formalTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Formal tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Normalize whitespace before formal formatting
+			content = regexp.MustCompile(`\s+`).ReplaceAllString(content, " ")
+
+			// Check cache first
+			var processedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("formal", content, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.formatFormalText(content)
+					g.templateTagProcessingCache.SetProcessedTag("formal", content, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.formatFormalText(content)
+			}
+
+			g.LogDebug("Formal tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Formal tag processing result: '%s'", template)
+
+	return template
+}
+
+// formatFormalText formats text in formal style (title case)
+func (g *Golem) formatFormalText(input string) string {
+	// Split into words
+	words := strings.Fields(input)
+
+	// Capitalize first letter of each word
+	for i, word := range words {
+		if len(word) > 0 {
+			// Convert to lowercase first, then capitalize first letter
+			word = strings.ToLower(word)
+			words[i] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+
+	return strings.Join(words, " ")
+}
+
+// processExplodeTagsWithContext processes <explode> tags for character separation
+// <explode> tag separates each character with spaces
+func (g *Golem) processExplodeTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <explode> tags (including multiline content)
+	explodeTagRegex := regexp.MustCompile(`(?s)<explode>(.*?)</explode>`)
+	matches := explodeTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Explode tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("explode", content, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.explodeText(content)
+					g.templateTagProcessingCache.SetProcessedTag("explode", content, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.explodeText(content)
+			}
+
+			g.LogDebug("Explode tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Explode tag processing result: '%s'", template)
+
+	return template
+}
+
+// explodeText separates each character with spaces
+func (g *Golem) explodeText(input string) string {
+	// Convert string to rune slice to handle Unicode properly
+	runes := []rune(input)
+	if len(runes) == 0 {
+		return ""
+	}
+
+	// Join each character with a space
+	result := make([]string, len(runes))
+	for i, r := range runes {
+		result[i] = string(r)
+	}
+
+	return strings.Join(result, " ")
+}
+
+// processCapitalizeTagsWithContext processes <capitalize> tags for text capitalization
+// <capitalize> tag capitalizes only the first letter of the entire text
+func (g *Golem) processCapitalizeTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <capitalize> tags (including multiline content)
+	capitalizeTagRegex := regexp.MustCompile(`(?s)<capitalize>(.*?)</capitalize>`)
+	matches := capitalizeTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Capitalize tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("capitalize", content, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.capitalizeText(content)
+					g.templateTagProcessingCache.SetProcessedTag("capitalize", content, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.capitalizeText(content)
+			}
+
+			g.LogDebug("Capitalize tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Capitalize tag processing result: '%s'", template)
+
+	return template
+}
+
+// capitalizeText capitalizes only the first letter of the text
+func (g *Golem) capitalizeText(input string) string {
+	if len(input) == 0 {
+		return ""
+	}
+
+	// Convert to rune slice to handle Unicode properly
+	runes := []rune(input)
+	if len(runes) == 0 {
+		return ""
+	}
+
+	// Capitalize first character, lowercase the rest
+	runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+	for i := 1; i < len(runes); i++ {
+		runes[i] = []rune(strings.ToLower(string(runes[i])))[0]
+	}
+
+	return string(runes)
+}
+
+// processReverseTagsWithContext processes <reverse> tags for text reversal
+// <reverse> tag reverses the order of characters in the text
+func (g *Golem) processReverseTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <reverse> tags (including multiline content)
+	reverseTagRegex := regexp.MustCompile(`(?s)<reverse>(.*?)</reverse>`)
+	matches := reverseTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Reverse tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("reverse", content, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.reverseText(content)
+					g.templateTagProcessingCache.SetProcessedTag("reverse", content, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.reverseText(content)
+			}
+
+			g.LogDebug("Reverse tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Reverse tag processing result: '%s'", template)
+
+	return template
+}
+
+// reverseText reverses the order of characters in the text
+func (g *Golem) reverseText(input string) string {
+	// Convert to rune slice to handle Unicode properly
+	runes := []rune(input)
+	if len(runes) == 0 {
+		return ""
+	}
+
+	// Reverse the rune slice
+	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+		runes[i], runes[j] = runes[j], runes[i]
+	}
+
+	return string(runes)
+}
+
+// processAcronymTagsWithContext processes <acronym> tags for acronym generation
+// <acronym> tag creates an acronym by taking the first letter of each word
+func (g *Golem) processAcronymTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <acronym> tags (including multiline content)
+	acronymTagRegex := regexp.MustCompile(`(?s)<acronym>(.*?)</acronym>`)
+	matches := acronymTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Acronym tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("acronym", content, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.createAcronym(content)
+					g.templateTagProcessingCache.SetProcessedTag("acronym", content, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.createAcronym(content)
+			}
+
+			g.LogDebug("Acronym tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Acronym tag processing result: '%s'", template)
+
+	return template
+}
+
+// createAcronym creates an acronym from the first letter of each word
+func (g *Golem) createAcronym(input string) string {
+	// Split into words
+	words := strings.Fields(input)
+	if len(words) == 0 {
+		return ""
+	}
+
+	// Take first letter of each word and convert to uppercase
+	acronym := ""
+	for _, word := range words {
+		if len(word) > 0 {
+			// Convert to rune slice to handle Unicode properly
+			runes := []rune(word)
+			if len(runes) > 0 {
+				// Take first character and convert to uppercase
+				firstChar := strings.ToUpper(string(runes[0]))
+				acronym += firstChar
+			}
+		}
+	}
+
+	return acronym
+}
+
+// processTrimTagsWithContext processes <trim> tags for whitespace trimming
+// <trim> tag removes leading and trailing whitespace from text
+func (g *Golem) processTrimTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <trim> tags (including multiline content)
+	trimTagRegex := regexp.MustCompile(`(?s)<trim>(.*?)</trim>`)
+	matches := trimTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Trim tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := match[1] // Don't trim here, we want to preserve internal whitespace
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("trim", content, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.trimText(content)
+					g.templateTagProcessingCache.SetProcessedTag("trim", content, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.trimText(content)
+			}
+
+			g.LogDebug("Trim tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Trim tag processing result: '%s'", template)
+
+	return template
+}
+
+// trimText removes leading and trailing whitespace from text
+func (g *Golem) trimText(input string) string {
+	return strings.TrimSpace(input)
+}
+
+// processSubstringTagsWithContext processes <substring> tags for substring extraction
+// <substring> tag extracts a substring from text based on start and end positions
+func (g *Golem) processSubstringTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <substring> tags (including multiline content)
+	substringTagRegex := regexp.MustCompile(`(?s)<substring\s+start="([^"]*)"\s+end="([^"]*)"\s*>(.*?)</substring>`)
+	matches := substringTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Substring tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 3 {
+			startStr := strings.TrimSpace(match[1])
+			endStr := strings.TrimSpace(match[2])
+			content := strings.TrimSpace(match[3])
+
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			cacheKey := fmt.Sprintf("%s|%s|%s", startStr, endStr, content)
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("substring", cacheKey, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.extractSubstring(content, startStr, endStr)
+					g.templateTagProcessingCache.SetProcessedTag("substring", cacheKey, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.extractSubstring(content, startStr, endStr)
+			}
+
+			g.LogDebug("Substring tag: '%s' (start=%s, end=%s) -> '%s'", match[3], startStr, endStr, processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Substring tag processing result: '%s'", template)
+
+	return template
+}
+
+// extractSubstring extracts a substring from text based on start and end positions
+func (g *Golem) extractSubstring(input, startStr, endStr string) string {
+	// Convert to rune slice to handle Unicode properly
+	runes := []rune(input)
+	if len(runes) == 0 {
+		return ""
+	}
+
+	// Parse start position
+	start := 0
+	if startStr != "" {
+		if startInt, err := strconv.Atoi(startStr); err == nil {
+			start = startInt
+		}
+	}
+
+	// Parse end position
+	end := len(runes)
+	if endStr != "" {
+		if endInt, err := strconv.Atoi(endStr); err == nil {
+			end = endInt
+		}
+	}
+
+	// Validate bounds
+	if start < 0 {
+		start = 0
+	}
+	if end > len(runes) {
+		end = len(runes)
+	}
+	if start >= end {
+		return ""
+	}
+
+	// Extract substring
+	return string(runes[start:end])
+}
+
+// processReplaceTagsWithContext processes <replace> tags for string replacement
+// <replace> tag replaces occurrences of a search string with a replacement string
+func (g *Golem) processReplaceTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <replace> tags (including multiline content)
+	replaceTagRegex := regexp.MustCompile(`(?s)<replace\s+search="([^"]*)"\s+replace="([^"]*)"\s*>(.*?)</replace>`)
+	matches := replaceTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Replace tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 3 {
+			searchStr := match[1]
+			replaceStr := match[2]
+			content := strings.TrimSpace(match[3])
+
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			cacheKey := fmt.Sprintf("%s|%s|%s", searchStr, replaceStr, content)
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("replace", cacheKey, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.replaceText(content, searchStr, replaceStr)
+					g.templateTagProcessingCache.SetProcessedTag("replace", cacheKey, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.replaceText(content, searchStr, replaceStr)
+			}
+
+			g.LogDebug("Replace tag: '%s' (search='%s', replace='%s') -> '%s'", match[3], searchStr, replaceStr, processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Replace tag processing result: '%s'", template)
+
+	return template
+}
+
+// replaceText replaces all occurrences of search string with replacement string
+func (g *Golem) replaceText(input, search, replace string) string {
+	return strings.ReplaceAll(input, search, replace)
+}
+
+// processPluralizeTagsWithContext processes <pluralize> tags for pluralization
+// <pluralize> tag converts singular words to their plural forms
+func (g *Golem) processPluralizeTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <pluralize> tags (including multiline content)
+	pluralizeTagRegex := regexp.MustCompile(`(?s)<pluralize>(.*?)</pluralize>`)
+	matches := pluralizeTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Pluralize tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("pluralize", content, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.pluralizeText(content)
+					g.templateTagProcessingCache.SetProcessedTag("pluralize", content, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.pluralizeText(content)
+			}
+
+			g.LogDebug("Pluralize tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Pluralize tag processing result: '%s'", template)
+
+	return template
+}
+
+// pluralizeText converts singular words to their plural forms
+func (g *Golem) pluralizeText(input string) string {
+	// Split into words
+	words := strings.Fields(input)
+	if len(words) == 0 {
+		return ""
+	}
+
+	// Pluralize each word
+	pluralizedWords := make([]string, len(words))
+	for i, word := range words {
+		pluralizedWords[i] = g.pluralizeWord(word)
+	}
+
+	return strings.Join(pluralizedWords, " ")
+}
+
+// pluralizeWord converts a single word to its plural form
+func (g *Golem) pluralizeWord(word string) string {
+	if len(word) == 0 {
+		return word
+	}
+
+	// Convert to lowercase for processing
+	lowerWord := strings.ToLower(word)
+
+	// Handle irregular plurals
+	irregularPlurals := map[string]string{
+		"child":       "children",
+		"person":      "people",
+		"man":         "men",
+		"woman":       "women",
+		"foot":        "feet",
+		"tooth":       "teeth",
+		"mouse":       "mice",
+		"goose":       "geese",
+		"ox":          "oxen",
+		"sheep":       "sheep",
+		"deer":        "deer",
+		"fish":        "fish",
+		"moose":       "moose",
+		"series":      "series",
+		"species":     "species",
+		"crisis":      "crises",
+		"thesis":      "theses",
+		"analysis":    "analyses",
+		"basis":       "bases",
+		"diagnosis":   "diagnoses",
+		"oasis":       "oases",
+		"parenthesis": "parentheses",
+		"synopsis":    "synopses",
+		"cactus":      "cacti",
+		"fungus":      "fungi",
+		"nucleus":     "nuclei",
+		"stimulus":    "stimuli",
+		"syllabus":    "syllabi",
+		"alumnus":     "alumni",
+		"radius":      "radii",
+		"focus":       "foci",
+		"appendix":    "appendices",
+		"index":       "indices",
+		"matrix":      "matrices",
+		"vertex":      "vertices",
+		"vortex":      "vortices",
+		"corpus":      "corpora",
+		"genus":       "genera",
+		"opus":        "opera",
+		"stratum":     "strata",
+		"datum":       "data",
+		"medium":      "media",
+		"memorandum":  "memoranda",
+		"referendum":  "referenda",
+		"agenda":      "agenda",
+		"curriculum":  "curricula",
+		"maximum":     "maxima",
+		"minimum":     "minima",
+		"optimum":     "optima",
+		"quantum":     "quanta",
+		"spectrum":    "spectra",
+		"forum":       "fora",
+		"stadium":     "stadia",
+		"aquarium":    "aquaria",
+		"planetarium": "planetaria",
+		"sanitarium":  "sanitaria",
+		"solarium":    "solaria",
+		"terrarium":   "terraria",
+		"vivarium":    "vivaria",
+		"atrium":      "atria",
+		"auditorium":  "auditoria",
+		"gymnasium":   "gymnasia",
+		"emporium":    "emporia",
+		"crematorium": "crematoria",
+		"laboratory":  "laboratories",
+		"library":     "libraries",
+		"factory":     "factories",
+		"story":       "stories",
+		"country":     "countries",
+		"city":        "cities",
+		"baby":        "babies",
+		"lady":        "ladies",
+		"party":       "parties",
+		"company":     "companies",
+		"family":      "families",
+		"army":        "armies",
+		"enemy":       "enemies",
+		"monkey":      "monkeys",
+		"key":         "keys",
+		"toy":         "toys",
+		"boy":         "boys",
+		"day":         "days",
+		"way":         "ways",
+		"play":        "plays",
+		"stay":        "stays",
+		"say":         "says",
+		"buy":         "buys",
+		"guy":         "guys",
+		"cry":         "cries",
+		"fly":         "flies",
+		"try":         "tries",
+		"spy":         "spies",
+		"sky":         "skies",
+		"dry":         "dries",
+		"shy":         "shies",
+		"worry":       "worries",
+		"hurry":       "hurries",
+		"carry":       "carries",
+		"marry":       "marries",
+		"study":       "studies",
+		"apply":       "applies",
+		"reply":       "replies",
+		"supply":      "supplies",
+		"multiply":    "multiplies",
+		"identify":    "identifies",
+		"classify":    "classifies",
+		"justify":     "justifies",
+		"purify":      "purifies",
+		"amplify":     "amplifies",
+		"simplify":    "simplifies",
+		"beautify":    "beautifies",
+		"diversify":   "diversifies",
+		"intensify":   "intensifies",
+		"magnify":     "magnifies",
+		"modify":      "modifies",
+		"notify":      "notifies",
+		"qualify":     "qualifies",
+		"ratify":      "ratifies",
+		"rectify":     "rectifies",
+		"satisfy":     "satisfies",
+		"specify":     "specifies",
+		"testify":     "testifies",
+		"verify":      "verifies",
+	}
+
+	// Check for irregular plurals
+	if plural, exists := irregularPlurals[lowerWord]; exists {
+		// Preserve original case
+		if word == strings.ToUpper(word) {
+			return strings.ToUpper(plural)
+		} else if word[0] == strings.ToUpper(string(word[0]))[0] {
+			return strings.ToUpper(string(plural[0])) + plural[1:]
+		}
+		return plural
+	}
+
+	// Regular pluralization rules
+	runes := []rune(word)
+	if len(runes) == 0 {
+		return word
+	}
+
+	lastChar := runes[len(runes)-1]
+	lastTwoChars := ""
+	if len(runes) >= 2 {
+		lastTwoChars = string(runes[len(runes)-2:])
+	}
+
+	// Words ending in -s, -ss, -sh, -ch, -x, -z
+	if lastChar == 's' || lastChar == 'x' || lastChar == 'z' ||
+		lastTwoChars == "sh" || lastTwoChars == "ch" {
+		return word + "es"
+	}
+
+	// Words ending in -f or -fe
+	if lastChar == 'f' {
+		return string(runes[:len(runes)-1]) + "ves"
+	}
+	if lastTwoChars == "fe" {
+		return string(runes[:len(runes)-2]) + "ves"
+	}
+
+	// Words ending in -y preceded by a consonant
+	if lastChar == 'y' && len(runes) > 1 {
+		secondLastChar := runes[len(runes)-2]
+		if !isVowel(secondLastChar) {
+			return string(runes[:len(runes)-1]) + "ies"
+		}
+	}
+
+	// Words ending in -o preceded by a consonant
+	if lastChar == 'o' && len(runes) > 1 {
+		secondLastChar := runes[len(runes)-2]
+		if !isVowel(secondLastChar) {
+			return word + "es"
+		}
+	}
+
+	// Default: add -s
+	return word + "s"
+}
+
+// isVowel checks if a rune is a vowel
+func isVowel(r rune) bool {
+	switch r {
+	case 'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U':
+		return true
+	}
+	return false
+}
+
+// processShuffleTagsWithContext processes <shuffle> tags for word shuffling
+// <shuffle> tag randomly shuffles the order of words in the text
+func (g *Golem) processShuffleTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <shuffle> tags (including multiline content)
+	shuffleTagRegex := regexp.MustCompile(`(?s)<shuffle>(.*?)</shuffle>`)
+	matches := shuffleTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Shuffle tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			content := strings.TrimSpace(match[1])
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("shuffle", content, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.shuffleText(content)
+					g.templateTagProcessingCache.SetProcessedTag("shuffle", content, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.shuffleText(content)
+			}
+
+			g.LogDebug("Shuffle tag: '%s' -> '%s'", match[1], processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Shuffle tag processing result: '%s'", template)
+
+	return template
+}
+
+// shuffleText randomly shuffles the order of words in the text
+func (g *Golem) shuffleText(input string) string {
+	// Split into words
+	words := strings.Fields(input)
+	if len(words) <= 1 {
+		return input
+	}
+
+	// Create a copy of the words slice to avoid modifying the original
+	shuffledWords := make([]string, len(words))
+	copy(shuffledWords, words)
+
+	// Shuffle the words using Fisher-Yates algorithm
+	for i := len(shuffledWords) - 1; i > 0; i-- {
+		// Generate a random index between 0 and i (inclusive)
+		j := g.randomInt(i + 1)
+		// Swap words at positions i and j
+		shuffledWords[i], shuffledWords[j] = shuffledWords[j], shuffledWords[i]
+	}
+
+	return strings.Join(shuffledWords, " ")
+}
+
+// processLengthTagsWithContext processes <length> tags for text length calculation
+// <length> tag calculates the length of text with optional type parameter
+func (g *Golem) processLengthTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <length> tags (including multiline content)
+	lengthTagRegex := regexp.MustCompile(`(?s)<length(?:\s+type="([^"]*)")?>(.*?)</length>`)
+	matches := lengthTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Length tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 2 {
+			lengthType := strings.TrimSpace(match[1])
+			content := strings.TrimSpace(match[2])
+
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "0")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			cacheKey := fmt.Sprintf("%s|%s", lengthType, content)
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("length", cacheKey, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.calculateLength(content, lengthType)
+					g.templateTagProcessingCache.SetProcessedTag("length", cacheKey, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.calculateLength(content, lengthType)
+			}
+
+			g.LogDebug("Length tag: '%s' (type='%s') -> '%s'", match[2], lengthType, processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Length tag processing result: '%s'", template)
+
+	return template
+}
+
+// calculateLength calculates the length of text based on the specified type
+func (g *Golem) calculateLength(content, lengthType string) string {
+	switch strings.ToLower(lengthType) {
+	case "words":
+		// Count words
+		words := strings.Fields(content)
+		return strconv.Itoa(len(words))
+	case "sentences":
+		// Count sentences (split by sentence-ending punctuation)
+		sentences := g.splitSentences(content)
+		return strconv.Itoa(len(sentences))
+	case "characters", "chars":
+		// Count characters (including spaces)
+		return strconv.Itoa(len(content))
+	case "letters":
+		// Count only letters
+		letterCount := 0
+		for _, r := range content {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				letterCount++
+			}
+		}
+		return strconv.Itoa(letterCount)
+	case "digits":
+		// Count only digits
+		digitCount := 0
+		for _, r := range content {
+			if r >= '0' && r <= '9' {
+				digitCount++
+			}
+		}
+		return strconv.Itoa(digitCount)
+	case "lines":
+		// Count lines
+		lines := strings.Split(content, "\n")
+		return strconv.Itoa(len(lines))
+	default:
+		// Default: count characters (including spaces)
+		return strconv.Itoa(len(content))
+	}
+}
+
+// processCountTagsWithContext processes <count> tags for substring counting
+// <count> tag counts occurrences of a search string in the content
+func (g *Golem) processCountTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <count> tags (including multiline content)
+	countTagRegex := regexp.MustCompile(`(?s)<count\s+search="([^"]*)"\s*>(.*?)</count>`)
+	matches := countTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Count tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 2 {
+			searchStr := match[1]
+			content := strings.TrimSpace(match[2])
+
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "0")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			cacheKey := fmt.Sprintf("%s|%s", searchStr, content)
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("count", cacheKey, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.countOccurrences(content, searchStr)
+					g.templateTagProcessingCache.SetProcessedTag("count", cacheKey, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.countOccurrences(content, searchStr)
+			}
+
+			g.LogDebug("Count tag: '%s' (search='%s') -> '%s'", match[2], searchStr, processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Count tag processing result: '%s'", template)
+
+	return template
+}
+
+// countOccurrences counts the number of occurrences of search string in content
+func (g *Golem) countOccurrences(content, search string) string {
+	if search == "" {
+		return "0"
+	}
+
+	count := strings.Count(content, search)
+	return strconv.Itoa(count)
+}
+
+// splitSentences splits text into sentences based on sentence-ending punctuation
+func (g *Golem) splitSentences(text string) []string {
+	if text == "" {
+		return []string{}
+	}
+
+	// Split by sentence-ending punctuation followed by whitespace or end of string
+	// This handles . ! ? followed by space, newline, or end of string
+	sentenceRegex := regexp.MustCompile(`[.!?]+(?:\s+|$)`)
+	parts := sentenceRegex.Split(text, -1)
+
+	var sentences []string
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			sentences = append(sentences, part)
+		}
+	}
+
+	// If no sentence-ending punctuation found, treat the whole text as one sentence
+	if len(sentences) == 0 {
+		sentences = append(sentences, strings.TrimSpace(text))
+	}
+
+	return sentences
+}
+
+// processSplitTagsWithContext processes <split> tags for text splitting
+// <split> tag splits text by delimiter with optional limit parameter
+func (g *Golem) processSplitTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <split> tags (including multiline content)
+	splitTagRegex := regexp.MustCompile(`(?s)<split(?:\s+delimiter="([^"]*)")?(?:\s+limit="([^"]*)")?\s*>(.*?)</split>`)
+	matches := splitTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Split tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 3 {
+			delimiter := strings.TrimSpace(match[1])
+			limitStr := strings.TrimSpace(match[2])
+			content := strings.TrimSpace(match[3])
+
+			// Default delimiter is space if not specified
+			if delimiter == "" {
+				delimiter = " "
+			}
+
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			cacheKey := fmt.Sprintf("%s|%s|%s", delimiter, limitStr, content)
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("split", cacheKey, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.splitText(content, delimiter, limitStr)
+					g.templateTagProcessingCache.SetProcessedTag("split", cacheKey, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.splitText(content, delimiter, limitStr)
+			}
+
+			g.LogDebug("Split tag: '%s' (delimiter='%s', limit='%s') -> '%s'", match[3], delimiter, limitStr, processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Split tag processing result: '%s'", template)
+
+	return template
+}
+
+// splitText splits text by delimiter with optional limit
+func (g *Golem) splitText(content, delimiter, limitStr string) string {
+	if content == "" {
+		return ""
+	}
+
+	// Parse limit if provided
+	var limit int
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	// Split the text
+	var parts []string
+	if limit > 0 {
+		parts = strings.SplitN(content, delimiter, limit)
+	} else {
+		parts = strings.Split(content, delimiter)
+	}
+
+	// Join parts with spaces for output
+	return strings.Join(parts, " ")
+}
+
+// processJoinTagsWithContext processes <join> tags for text joining
+// <join> tag joins words with delimiter
+func (g *Golem) processJoinTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <join> tags (including multiline content)
+	joinTagRegex := regexp.MustCompile(`(?s)<join(?:\s+delimiter="([^"]*)")?\s*>(.*?)</join>`)
+	matches := joinTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Join tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 2 {
+			delimiter := strings.TrimSpace(match[1])
+			content := strings.TrimSpace(match[2])
+
+			// Default delimiter is space if not specified
+			if delimiter == "" {
+				delimiter = " "
+			}
+
+			// Replace empty content with empty string
+			if content == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			cacheKey := fmt.Sprintf("%s|%s", delimiter, content)
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("join", cacheKey, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.joinText(content, delimiter)
+					g.templateTagProcessingCache.SetProcessedTag("join", cacheKey, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.joinText(content, delimiter)
+			}
+
+			g.LogDebug("Join tag: '%s' (delimiter='%s') -> '%s'", match[2], delimiter, processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Join tag processing result: '%s'", template)
+
+	return template
+}
+
+// joinText joins words with delimiter
+func (g *Golem) joinText(content, delimiter string) string {
+	if content == "" {
+		return ""
+	}
+
+	// Split content into words and join with delimiter
+	words := strings.Fields(content)
+	return strings.Join(words, delimiter)
+}
+
+// processIndentTagsWithContext processes <indent> tags for text indentation
+// <indent> tag adds indentation to each line of text
+func (g *Golem) processIndentTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <indent> tags (including multiline content)
+	indentTagRegex := regexp.MustCompile(`(?s)<indent(?:\s+level="([^"]*)")?(?:\s+char="([^"]*)")?\s*>(.*?)</indent>`)
+	matches := indentTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Indent tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 3 {
+			levelStr := strings.TrimSpace(match[1])
+			char := strings.TrimSpace(match[2])
+			content := match[3]
+
+			// Default level is 1 if not specified
+			level := 1
+			if levelStr != "" {
+				if parsedLevel, err := strconv.Atoi(levelStr); err == nil && parsedLevel > 0 {
+					level = parsedLevel
+				}
+			}
+
+			// Default character is space if not specified
+			if char == "" {
+				char = " "
+			}
+
+			// Replace empty content with empty string
+			if strings.TrimSpace(content) == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			cacheKey := fmt.Sprintf("%d|%s|%s", level, char, content)
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("indent", cacheKey, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.indentText(content, level, char)
+					g.templateTagProcessingCache.SetProcessedTag("indent", cacheKey, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.indentText(content, level, char)
+			}
+
+			g.LogDebug("Indent tag: '%s' (level=%d, char='%s') -> '%s'", match[3], level, char, processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Indent tag processing result: '%s'", template)
+
+	return template
+}
+
+// indentText adds indentation to each line of text
+func (g *Golem) indentText(content string, level int, char string) string {
+	if content == "" {
+		return ""
+	}
+
+	// Create the indentation string
+	indent := strings.Repeat(char, level)
+
+	// Split content into lines
+	lines := strings.Split(content, "\n")
+
+	// Add indentation to each line
+	var result []string
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			// Keep empty lines as-is
+			result = append(result, line)
+		} else {
+			// Add indentation to non-empty lines
+			result = append(result, indent+line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// processDedentTagsWithContext processes <dedent> tags for text dedentation
+// <dedent> tag removes indentation from each line of text
+func (g *Golem) processDedentTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <dedent> tags (including multiline content)
+	dedentTagRegex := regexp.MustCompile(`(?s)<dedent(?:\s+level="([^"]*)")?(?:\s+char="([^"]*)")?\s*>(.*?)</dedent>`)
+	matches := dedentTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Dedent tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 3 {
+			levelStr := strings.TrimSpace(match[1])
+			char := strings.TrimSpace(match[2])
+			content := match[3]
+
+			// Default level is 1 if not specified
+			level := 1
+			if levelStr != "" {
+				if parsedLevel, err := strconv.Atoi(levelStr); err == nil && parsedLevel > 0 {
+					level = parsedLevel
+				}
+			}
+
+			// Default character is space if not specified
+			if char == "" {
+				char = " "
+			}
+
+			// Replace empty content with empty string
+			if strings.TrimSpace(content) == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			cacheKey := fmt.Sprintf("%d|%s|%s", level, char, content)
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("dedent", cacheKey, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.dedentText(content, level, char)
+					g.templateTagProcessingCache.SetProcessedTag("dedent", cacheKey, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.dedentText(content, level, char)
+			}
+
+			g.LogDebug("Dedent tag: '%s' (level=%d, char='%s') -> '%s'", match[3], level, char, processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Dedent tag processing result: '%s'", template)
+
+	return template
+}
+
+// dedentText removes indentation from each line of text
+func (g *Golem) dedentText(content string, level int, char string) string {
+	if content == "" {
+		return ""
+	}
+
+	// Create the dedentation string
+	dedent := strings.Repeat(char, level)
+
+	// Split content into lines
+	lines := strings.Split(content, "\n")
+
+	// Remove indentation from each line
+	var result []string
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			// Keep empty lines as-is
+			result = append(result, line)
+		} else if strings.HasPrefix(line, dedent) {
+			// Remove the specified indentation if present
+			result = append(result, line[len(dedent):])
+		} else {
+			// Line doesn't have the expected indentation, keep as-is
+			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// processUniqueTagsWithContext processes <unique> tags for removing duplicates
+// <unique> tag removes duplicate elements from text, supporting different delimiters
+func (g *Golem) processUniqueTagsWithContext(template string, ctx *VariableContext) string {
+	// Find all <unique> tags (including multiline content)
+	uniqueTagRegex := regexp.MustCompile(`(?s)<unique(?:\s+delimiter="([^"]*)")?\s*>(.*?)</unique>`)
+	matches := uniqueTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Unique tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		if len(match) > 2 {
+			delimiter := strings.TrimSpace(match[1])
+			content := match[2]
+
+			// Default delimiter is space if not specified
+			if delimiter == "" {
+				delimiter = " "
+			}
+
+			// Replace empty content with empty string
+			if strings.TrimSpace(content) == "" {
+				template = strings.ReplaceAll(template, match[0], "")
+				continue
+			}
+
+			// Check cache first
+			var processedContent string
+			cacheKey := fmt.Sprintf("%s|%s", delimiter, content)
+			if g.templateTagProcessingCache != nil {
+				if cached, found := g.templateTagProcessingCache.GetProcessedTag("unique", cacheKey, ctx); found {
+					processedContent = cached
+				} else {
+					processedContent = g.uniqueText(content, delimiter)
+					g.templateTagProcessingCache.SetProcessedTag("unique", cacheKey, processedContent, ctx)
+				}
+			} else {
+				processedContent = g.uniqueText(content, delimiter)
+			}
+
+			g.LogDebug("Unique tag: '%s' (delimiter='%s') -> '%s'", match[2], delimiter, processedContent)
+			template = strings.ReplaceAll(template, match[0], processedContent)
+		}
+	}
+
+	g.LogDebug("Unique tag processing result: '%s'", template)
+
+	return template
+}
+
+// processRepeatTagsWithContext processes <repeat> tags for repeating the last user input
+// <repeat> tag repeats the most recent user input (equivalent to <request index="1"/>)
+func (g *Golem) processRepeatTagsWithContext(template string, ctx *VariableContext) string {
+	if ctx.Session == nil {
+		return template
+	}
+
+	// Find all <repeat> tags
+	repeatTagRegex := regexp.MustCompile(`<repeat/>`)
+	matches := repeatTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Repeat tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		// Get the most recent request (index 1)
+		requestValue := ctx.Session.GetRequestByIndex(1)
+		if requestValue == "" {
+			g.LogDebug("No request found for repeat tag")
+			// Replace with empty string if no request found
+			template = strings.ReplaceAll(template, match[0], "")
+		} else {
+			// Replace the repeat tag with the actual request
+			template = strings.ReplaceAll(template, match[0], requestValue)
+			g.LogDebug("Repeat tag: -> '%s'", requestValue)
+		}
+	}
+
+	g.LogDebug("Repeat tag processing result: '%s'", template)
+
+	return template
+}
+
+// uniqueText removes duplicate elements from text using the specified delimiter
+func (g *Golem) uniqueText(content string, delimiter string) string {
+	if content == "" {
+		return ""
+	}
+
+	// Split content by delimiter
+	elements := strings.Split(content, delimiter)
+
+	// Use a map to track seen elements and maintain order
+	seen := make(map[string]bool)
+	var uniqueElements []string
+
+	for _, element := range elements {
+		// Trim whitespace for comparison but preserve original spacing
+		trimmed := strings.TrimSpace(element)
+		if !seen[trimmed] {
+			seen[trimmed] = true
+			uniqueElements = append(uniqueElements, element)
+		}
+	}
+
+	return strings.Join(uniqueElements, delimiter)
+}
+
+// randomInt generates a random integer between 0 and max (exclusive)
+func (g *Golem) randomInt(max int) int {
+	// Use a simple linear congruential generator for deterministic randomness
+	// This ensures the same input always produces the same output for caching
+	if g.randomSeed == 0 {
+		g.randomSeed = 1
+	}
+	g.randomSeed = (g.randomSeed*1103515245 + 12345) & 0x7fffffff
+	return int(g.randomSeed) % max
 }
 
 // processNormalizeTagsWithContext processes <normalize> tags for text normalization
@@ -6833,9 +8252,11 @@ func (g *Golem) validateAIMLTags(template string) error {
 		"bot": true, "request": true, "response": true, "person": true,
 		"gender": true, "person2": true, "uppercase": true, "lowercase": true,
 		"formal": true, "sentence": true, "word": true, "explode": true,
-		"normalize": true, "denormalize": true, "id": true, "size": true,
-		"version": true, "system": true, "javascript": true, "eval": true,
-		"gossip": true, "loop": true, "var": true, "unlearn": true, "unlearnf": true,
+		"capitalize": true, "reverse": true, "acronym": true, "trim": true,
+		"substring": true, "replace": true, "pluralize": true, "shuffle": true,
+		"length": true, "count": true, "split": true, "join": true, "indent": true, "dedent": true, "unique": true, "repeat": true, "normalize": true, "denormalize": true,
+		"id": true, "size": true, "version": true, "system": true, "javascript": true,
+		"eval": true, "gossip": true, "loop": true, "var": true, "unlearn": true, "unlearnf": true,
 	}
 
 	// Find all tags

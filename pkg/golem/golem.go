@@ -270,6 +270,8 @@ type Golem struct {
 	patternMatchingCache *PatternMatchingCache
 	// Persistent learning components
 	persistentLearning *PersistentLearningManager
+	// Random seed for deterministic shuffling
+	randomSeed int64
 }
 
 // NewRegexCache creates a new regex cache

@@ -107,8 +107,17 @@ The following processing order is now consistent across all template processing 
 20. **Gender tags processing** (`processGenderTagsWithContext`)
 21. **Sentence tags processing** (`processSentenceTagsWithContext`)
 22. **Word tags processing** (`processWordTagsWithContext`)
-23. **Request tags processing** (`processRequestTags`)
-24. **Response tags processing** (`processResponseTags`)
+23. **Uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique/repeat tags processing** (`processUppercaseTagsWithContext`, `processLowercaseTagsWithContext`, `processFormalTagsWithContext`, `processExplodeTagsWithContext`, `processCapitalizeTagsWithContext`, `processReverseTagsWithContext`, `processAcronymTagsWithContext`, `processTrimTagsWithContext`, `processSubstringTagsWithContext`, `processReplaceTagsWithContext`, `processPluralizeTagsWithContext`, `processShuffleTagsWithContext`, `processLengthTagsWithContext`, `processCountTagsWithContext`, `processSplitTagsWithContext`, `processJoinTagsWithContext`, `processIndentTagsWithContext`, `processDedentTagsWithContext`, `processUniqueTagsWithContext`, `processRepeatTagsWithContext`)
+    - **`<length>`** - Calculate text length with optional type parameter (words, sentences, characters, letters, digits, lines)
+    - **`<count>`** - Count occurrences of a search string in the content
+    - **`<split>`** - Split text by delimiter with optional limit parameter
+    - **`<join>`** - Join words with specified delimiter
+- **`<indent>`** - Add indentation to each line of text
+- **`<dedent>`** - Remove indentation from each line of text
+- **`<unique>`** - Remove duplicate elements from text
+- **`<repeat>`** - Repeat the most recent user input
+24. **Request tags processing** (`processRequestTags`)
+25. **Response tags processing** (`processResponseTags`)
 
 ## Testing
 

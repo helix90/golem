@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadAIML(t *testing.T) {
@@ -5815,6 +5816,405 @@ func TestGenderTagEdgeCases(t *testing.T) {
 			result := g.processGenderTagsWithContext(tt.template, ctx)
 			if result != tt.expected {
 				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestUniqueTagProcessing tests the unique tag processing functionality
+func TestUniqueTagProcessing(t *testing.T) {
+	g := New(false)
+
+	uniqueTests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		// Basic unique tests
+		{"Simple unique", `<unique>hello world hello test</unique>`, "hello world test"},
+		{"Unique with comma delimiter", `<unique delimiter=",">apple,banana,apple,cherry,banana</unique>`, "apple,banana,cherry"},
+		{"Unique with semicolon delimiter", `<unique delimiter=";">red;green;blue;red;yellow</unique>`, "red;green;blue;yellow"},
+		{"Empty unique", `<unique></unique>`, ""},
+		{"Whitespace only", `<unique>   </unique>`, ""},
+		{"Single word", `<unique>hello</unique>`, "hello"},
+		{"No duplicates", `<unique>hello world test</unique>`, "hello world test"},
+
+		// Delimiter tests
+		{"No delimiter", `<unique>hello world hello test</unique>`, "hello world test"},
+		{"Empty delimiter", `<unique delimiter="">hello world hello test</unique>`, "hello world test"},
+		{"Space delimiter", `<unique delimiter=" ">hello world hello test</unique>`, "hello world test"},
+		{"Comma delimiter", `<unique delimiter=",">a,b,c,a,d,b</unique>`, "a,b,c,d"},
+		{"Semicolon delimiter", `<unique delimiter=";">x;y;z;x;w;y</unique>`, "x;y;z;w"},
+		{"Pipe delimiter", `<unique delimiter="|">1|2|3|1|4|2</unique>`, "1|2|3|4"},
+		{"Tab delimiter", `<unique delimiter="\t">a\tb\tc\ta\td\tb</unique>`, `a\tb\tc\td`},
+		{"Newline delimiter", `<unique delimiter="\n">line1\nline2\nline1\nline3</unique>`, `line1\nline2\nline3`},
+		{"Dash delimiter", `<unique delimiter="-">one-two-three-one-four-two</unique>`, "one-two-three-four"},
+		{"Dot delimiter", `<unique delimiter=".">a.b.c.a.d.b</unique>`, "a.b.c.d"},
+		{"Colon delimiter", `<unique delimiter=":">a:b:c:a:d:b</unique>`, "a:b:c:d"},
+		{"Hash delimiter", `<unique delimiter="#">tag1#tag2#tag1#tag3</unique>`, "tag1#tag2#tag3"},
+		{"Ampersand delimiter", `<unique delimiter="&">a&b&c&a&d&b</unique>`, "a&b&c&d"},
+		{"Plus delimiter", `<unique delimiter="+">1+2+3+1+4+2</unique>`, "1+2+3+4"},
+		{"Equal delimiter", `<unique delimiter="=">a=b=c=a=d=b</unique>`, "a=b=c=d"},
+		{"Question delimiter", `<unique delimiter="?">a?b?c?a?d?b</unique>`, "a?b?c?d"},
+		{"Exclamation delimiter", `<unique delimiter="!">a!b!c!a!d!b</unique>`, "a!b!c!d"},
+		{"At delimiter", `<unique delimiter="@">a@b@c@a@d@b</unique>`, "a@b@c@d"},
+		{"Dollar delimiter", `<unique delimiter="$">a$b$c$a$d$b</unique>`, "a$b$c$d"},
+		{"Percent delimiter", `<unique delimiter="%">a%b%c%a%d%b</unique>`, "a%b%c%d"},
+		{"Caret delimiter", `<unique delimiter="^">a^b^c^a^d^b</unique>`, "a^b^c^d"},
+		{"Tilde delimiter", `<unique delimiter="~">a~b~c~a~d~b</unique>`, "a~b~c~d"},
+		{"Single quote delimiter", `<unique delimiter="'">a'b'c'a'd'b</unique>`, "a'b'c'd"},
+		{"Backslash delimiter", `<unique delimiter="\\">a\\b\\c\\a\\d\\b</unique>`, `a\\b\\c\\d`},
+		{"Forward slash delimiter", `<unique delimiter="/">a/b/c/a/d/b</unique>`, "a/b/c/d"},
+		{"Parentheses delimiter", `<unique delimiter="(">a(b(c(a(d(b</unique>`, "a(b(c(d"},
+		{"Brackets delimiter", `<unique delimiter="[">a[b[c[a[d[b</unique>`, "a[b[c[d"},
+		{"Braces delimiter", `<unique delimiter="{">a{b{c{a{d{b</unique>`, "a{b{c{d"},
+		{"Angle brackets delimiter", `<unique delimiter="<">a<b<c<a<d<b</unique>`, "a<b<c<d"},
+
+		// Multiple character delimiters
+		{"Multiple character delimiter", `<unique delimiter="--">a--b--c--a--d--b</unique>`, "a--b--c--d"},
+		{"Long delimiter", `<unique delimiter="----">a----b----c----a----d----b</unique>`, "a----b----c----d"},
+		{"Unicode delimiter", `<unique delimiter="→">a→b→c→a→d→b</unique>`, "a→b→c→d"},
+		{"Mixed case delimiter", `<unique delimiter="AbC">aAbCbAbCcAbCaAbCdAbCb</unique>`, "aAbCbAbCcAbCd"},
+		{"Numbers delimiter", `<unique delimiter="123">a123b123c123a123d123b</unique>`, "a123b123c123d"},
+		{"Special characters delimiter", `<unique delimiter="!@#">a!@#b!@#c!@#a!@#d!@#b</unique>`, "a!@#b!@#c!@#d"},
+
+		// Edge cases
+		{"Empty elements", `<unique delimiter=",">,a,,b,,c,</unique>`, ",a,b,c"},
+		{"Only delimiters", `<unique delimiter=",">,,,</unique>`, ""},
+		{"Single element", `<unique>hello</unique>`, "hello"},
+		{"Two identical elements", `<unique>hello hello</unique>`, "hello"},
+		{"Three identical elements", `<unique>hello hello hello</unique>`, "hello"},
+		{"Mixed case elements", `<unique>Hello hello HELLO</unique>`, "Hello hello HELLO"},
+		{"Numbers", `<unique>1 2 3 1 4 2</unique>`, "1 2 3 4"},
+		{"Special characters", `<unique>! @ # ! $ @</unique>`, "! @ # $"},
+		{"Unicode characters", `<unique>hello 世界 test 世界 world</unique>`, "hello 世界 test world"},
+		{"Mixed content", `<unique>hello 123 world 456 hello 789</unique>`, "hello 123 world 456 789"},
+
+		// Whitespace handling
+		{"Leading spaces", `<unique> hello world hello test</unique>`, " hello world test"},
+		{"Trailing spaces", `<unique>hello world hello test </unique>`, "hello world test "},
+		{"Multiple spaces", `<unique>hello   world   hello   test</unique>`, "hello  world test"},
+		{"Tabs", `<unique>hello\tworld\thello\ttest</unique>`, `hello\tworld\thello\ttest`},
+		{"Newlines", `<unique>hello
+world
+hello
+test</unique>`, `hello
+world
+hello
+test`},
+		{"Mixed whitespace", `<unique>hello \t world \n hello \t test</unique>`, `hello \t world \n test`},
+
+		// Multiple unique tags
+		{"Multiple unique tags", `<unique>a b a</unique> <unique>c d c</unique>`, "a b c d"},
+		{"Nested tags", `<unique>hello <star/> world <star/> test</unique>`, "hello <star/> world test"},
+		{"Complex text", `<unique>The quick brown fox jumps over the lazy dog quick</unique>`, "The quick brown fox jumps over the lazy dog"},
+
+		// Delimiter variations
+		{"Comma space delimiter", `<unique delimiter=", ">apple, banana, apple, cherry, banana</unique>`, "apple, banana, cherry"},
+		{"Space comma delimiter", `<unique delimiter=" ,">apple ,banana ,apple ,cherry ,banana</unique>`, "apple ,banana ,cherry "},
+		{"Multiple spaces delimiter", `<unique delimiter="  ">a  b  c  a  d  b</unique>`, "a  b c d"},
+		{"Tab space delimiter", `<unique delimiter="\t ">a\t b\t c\t a\t d\t b</unique>`, `a\t b\t c\t d`},
+		{"Space tab delimiter", `<unique delimiter=" \t">a \tb \tc \ta \td \tb</unique>`, `a \tb \tc \td `},
+
+		// Case sensitivity
+		{"Case sensitive", `<unique>Hello hello HELLO</unique>`, "Hello hello HELLO"},
+		{"Case insensitive comparison", `<unique>Hello hello HELLO</unique>`, "Hello hello HELLO"},
+		{"Mixed case with spaces", `<unique>Hello World hello world HELLO WORLD</unique>`, "Hello World hello world HELLO WORLD"},
+
+		// Empty and whitespace content
+		{"Empty content", `<unique></unique>`, ""},
+		{"Whitespace only", `<unique>   </unique>`, ""},
+		{"Single space", `<unique> </unique>`, ""},
+		{"Multiple spaces", `<unique>    </unique>`, ""},
+		{"Tabs only", `<unique>\t\t</unique>`, `\t\t`},
+		{"Newlines only", `<unique>\n\n</unique>`, `\n\n`},
+		{"Mixed whitespace", `<unique> \t \n </unique>`, ` \t \n`},
+
+		// Preserve original spacing
+		{"Preserve original spacing", `<unique>  hello   world   hello   test  </unique>`, " hello world test"},
+		{"Preserve tabs", `<unique>\thello\tworld\thello\ttest</unique>`, `\thello\tworld\thello\ttest`},
+		{"Preserve newlines", `<unique>
+hello
+world
+hello
+test
+</unique>`, `
+hello
+world
+hello
+test
+`},
+
+		// Complex scenarios
+		{"All identical", `<unique>hello hello hello hello</unique>`, "hello"},
+		{"Alternating pattern", `<unique>a b a b a b</unique>`, "a b"},
+		{"Reverse order", `<unique>z y x z y x</unique>`, "z y x"},
+		{"Mixed duplicates", `<unique>a b c a d b e c f</unique>`, "a b c d e f"},
+		{"Long sequence", `<unique>1 2 3 4 5 1 2 3 6 7 8 4 5 9</unique>`, "1 2 3 4 5 6 7 8 9"},
+	}
+
+	for _, tt := range uniqueTests {
+		t.Run("Unique/"+tt.name, func(t *testing.T) {
+			ctx := &VariableContext{LocalVars: make(map[string]string)}
+			result := g.processUniqueTagsWithContext(tt.template, ctx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestUniqueTagIntegration tests integration of unique tag in full AIML processing
+func TestUniqueTagIntegration(t *testing.T) {
+	g := New(false)
+
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+<category>
+<pattern>UNIQUE *</pattern>
+<template><unique><star/></unique></template>
+</category>
+<category>
+<pattern>UNIQUE COMMA *</pattern>
+<template><unique delimiter=","><star/></unique></template>
+</category>
+<category>
+<pattern>MIXED FORMATTING *</pattern>
+<template>U:<uppercase><star/></uppercase> L:<lowercase><star/></lowercase> F:<formal><star/></formal> E:<explode><star/></explode> C:<capitalize><star/></capitalize> R:<reverse><star/></reverse> A:<acronym><star/></acronym> T:<trim><star/></trim> S:<substring start="0" end="3"><star/></substring> Re:<replace search="test" replace="demo"><star/></replace> P:<pluralize><star/></pluralize> Sh:<shuffle><star/></shuffle> Le:<length><star/></length> Co:<count search="e"><star/></count> Sp:<split delimiter=","><star/></split> Jo:<join delimiter=","><star/></join> In:<indent><star/></indent> De:<dedent><star/></dedent> Un:<unique><star/></unique></template>
+</category>
+<category>
+<pattern>NESTED UNIQUE *</pattern>
+<template><unique>hello <star/> world <star/> test</unique></template>
+</category>
+</aiml>`
+
+	if err := g.LoadAIMLFromString(aimlContent); err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	kb := g.GetKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"unique hello world hello test", "hello world test"},
+		{"unique comma apple,banana,apple,cherry,banana", "comma applebananaapplecherrybanana"},
+		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/>"},
+		{"nested unique user", "hello user world test"},
+	}
+
+	for _, tt := range tests {
+		t.Run("Integration/"+tt.input, func(t *testing.T) {
+			session := &ChatSession{
+				ID:        "test_session",
+				Variables: make(map[string]string),
+			}
+			response, err := g.ProcessInput(tt.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+			if response != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
+			}
+		})
+	}
+}
+
+// TestRepeatTagProcessing tests the repeat tag processing functionality
+func TestRepeatTagProcessing(t *testing.T) {
+	g := New(false)
+
+	// Create a session with some request history
+	session := &ChatSession{
+		ID:              "test-session",
+		Variables:       make(map[string]string),
+		History:         make([]string, 0),
+		CreatedAt:       time.Now().Format(time.RFC3339),
+		LastActivity:    time.Now().Format(time.RFC3339),
+		Topic:           "",
+		ThatHistory:     make([]string, 0),
+		RequestHistory:  make([]string, 0),
+		ResponseHistory: make([]string, 0),
+	}
+
+	// Add some requests to history
+	session.AddToRequestHistory("Hello there!")
+	session.AddToRequestHistory("How are you?")
+	session.AddToRequestHistory("What's your name?")
+
+	ctx := &VariableContext{
+		LocalVars:     make(map[string]string),
+		Session:       session,
+		Topic:         "",
+		KnowledgeBase: nil,
+	}
+
+	repeatTests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		// Basic repeat tests
+		{"Simple repeat", "You said: <repeat/>", "You said: What's your name?"},
+		{"Repeat with text", "Repeat: <repeat/>", "Repeat: What's your name?"},
+		{"Multiple repeat tags", "First: <repeat/>, Second: <repeat/>", "First: What's your name?, Second: What's your name?"},
+		{"Repeat in sentence", "I heard you say <repeat/> just now.", "I heard you say What's your name? just now."},
+
+		// Edge cases
+		{"No session", "You said: <repeat/>", "You said: <repeat/>"},
+		{"Empty request history", "You said: <repeat/>", "You said: "},
+		{"Single request", "You said: <repeat/>", "You said: What's your name?"},
+		{"Multiple requests", "You said: <repeat/>", "You said: What's your name?"},
+
+		// Complex scenarios
+		{"Repeat with other tags", "You said: <uppercase><repeat/></uppercase>", "You said: <uppercase>What's your name?</uppercase>"},
+		{"Repeat with formal", "You said: <formal><repeat/></formal>", "You said: <formal>What's your name?</formal>"},
+		{"Repeat with lowercase", "You said: <lowercase><repeat/></lowercase>", "You said: <lowercase>What's your name?</lowercase>"},
+		{"Repeat with capitalize", "You said: <capitalize><repeat/></capitalize>", "You said: <capitalize>What's your name?</capitalize>"},
+		{"Repeat with trim", "You said: <trim><repeat/></trim>", "You said: <trim>What's your name?</trim>"},
+		{"Repeat with reverse", "You said: <reverse><repeat/></reverse>", "You said: <reverse>What's your name?</reverse>"},
+		{"Repeat with acronym", "You said: <acronym><repeat/></acronym>", "You said: <acronym>What's your name?</acronym>"},
+		{"Repeat with explode", "You said: <explode><repeat/></explode>", "You said: <explode>What's your name?</explode>"},
+		{"Repeat with shuffle", "You said: <shuffle><repeat/></shuffle>", "You said: <shuffle>What's your name?</shuffle>"},
+		{"Repeat with length", "You said: <repeat/> (<length><repeat/></length> chars)", "You said: What's your name? (<length>What's your name?</length> chars)"},
+		{"Repeat with count", "You said: <repeat/> (<count search=\"'\"><repeat/></count> apostrophes)", "You said: What's your name? (<count search=\"'\">What's your name?</count> apostrophes)"},
+
+		// Whitespace and special characters
+		{"Repeat with spaces", "You said: <repeat/>", "You said: What's your name?"},
+		{"Repeat with punctuation", "You said: <repeat/>", "You said: What's your name?"},
+		{"Repeat with numbers", "You said: <repeat/>", "You said: What's your name?"},
+		{"Repeat with special chars", "You said: <repeat/>", "You said: What's your name?"},
+
+		// Empty and whitespace content
+		{"Empty repeat", "<repeat/>", "What's your name?"},
+		{"Whitespace only repeat", " <repeat/> ", " What's your name? "},
+		{"Multiple spaces repeat", "   <repeat/>   ", "   What's your name?   "},
+
+		// Nested scenarios
+		{"Nested with star", "You said: <repeat/> and <star/>", "You said: What's your name? and <star/>"},
+		{"Nested with that", "You said: <repeat/> and <that/>", "You said: What's your name? and <that/>"},
+		{"Nested with random", "You said: <repeat/> and <random><li>option1</li><li>option2</li></random>", "You said: What's your name? and <random><li>option1</li><li>option2</li></random>"},
+
+		// Complex text scenarios
+		{"Long text repeat", "You said: <repeat/>", "You said: What's your name?"},
+		{"Short text repeat", "You said: <repeat/>", "You said: What's your name?"},
+		{"Mixed case repeat", "You said: <repeat/>", "You said: What's your name?"},
+		{"Unicode repeat", "You said: <repeat/>", "You said: What's your name?"},
+
+		// Multiple repeat tags in different contexts
+		{"Multiple repeats different contexts", "First: <repeat/>, Second: <repeat/>, Third: <repeat/>", "First: What's your name?, Second: What's your name?, Third: What's your name?"},
+		{"Repeat with other processing", "You said: <uppercase><repeat/></uppercase> and <lowercase><repeat/></lowercase>", "You said: <uppercase>What's your name?</uppercase> and <lowercase>What's your name?</lowercase>"},
+		{"Repeat with formatting", "You said: <formal><repeat/></formal> and <capitalize><repeat/></capitalize>", "You said: <formal>What's your name?</formal> and <capitalize>What's your name?</capitalize>"},
+	}
+
+	for _, tt := range repeatTests {
+		t.Run("Repeat/"+tt.name, func(t *testing.T) {
+			// For tests that need no session, create a context without session
+			testCtx := ctx
+			if tt.name == "No session" {
+				testCtx = &VariableContext{
+					LocalVars:     make(map[string]string),
+					Session:       nil,
+					Topic:         "",
+					KnowledgeBase: nil,
+				}
+			}
+			// For tests that need empty request history, create a session with no history
+			if tt.name == "Empty request history" {
+				emptySession := &ChatSession{
+					ID:              "empty-session",
+					Variables:       make(map[string]string),
+					History:         make([]string, 0),
+					CreatedAt:       time.Now().Format(time.RFC3339),
+					LastActivity:    time.Now().Format(time.RFC3339),
+					Topic:           "",
+					ThatHistory:     make([]string, 0),
+					RequestHistory:  make([]string, 0),
+					ResponseHistory: make([]string, 0),
+				}
+				testCtx = &VariableContext{
+					LocalVars:     make(map[string]string),
+					Session:       emptySession,
+					Topic:         "",
+					KnowledgeBase: nil,
+				}
+			}
+
+			result := g.processRepeatTagsWithContext(tt.template, testCtx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestRepeatTagIntegration tests integration of repeat tag in full AIML processing
+func TestRepeatTagIntegration(t *testing.T) {
+	g := New(false)
+
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+<category>
+<pattern>REPEAT *</pattern>
+<template>You said: <repeat/></template>
+</category>
+<category>
+<pattern>REPEAT UPPERCASE *</pattern>
+<template>You said: <uppercase><repeat/></uppercase></template>
+</category>
+<category>
+<pattern>REPEAT FORMAL *</pattern>
+<template>You said: <formal><repeat/></formal></template>
+</category>
+<category>
+<pattern>MIXED FORMATTING *</pattern>
+<template>U:<uppercase><star/></uppercase> L:<lowercase><star/></lowercase> F:<formal><star/></formal> E:<explode><star/></explode> C:<capitalize><star/></capitalize> R:<reverse><star/></reverse> A:<acronym><star/></acronym> T:<trim><star/></trim> S:<substring start="0" end="3"><star/></substring> Re:<replace search="test" replace="demo"><star/></replace> P:<pluralize><star/></pluralize> Sh:<shuffle><star/></shuffle> Le:<length><star/></length> Co:<count search="e"><star/></count> Sp:<split delimiter=","><star/></split> Jo:<join delimiter=","><star/></join> In:<indent><star/></indent> De:<dedent><star/></dedent> Un:<unique><star/></unique> Rp:<repeat/></template>
+</category>
+<category>
+<pattern>NESTED REPEAT *</pattern>
+<template>You said: <repeat/> and I heard: <star/></template>
+</category>
+</aiml>`
+
+	if err := g.LoadAIMLFromString(aimlContent); err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	kb := g.GetKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	// Create a session and populate request history
+	session := &ChatSession{
+		ID:        "test_session",
+		Variables: make(map[string]string),
+	}
+
+	// First, add some requests to history
+	session.AddToRequestHistory("hello world")
+	session.AddToRequestHistory("test case")
+	session.AddToRequestHistory("user input")
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"repeat hello world", "You said: user input"},
+		{"repeat uppercase test case", "You said: repeat hello world"},
+		{"repeat formal test case", "You said: repeat uppercase test case"},
+		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/> Rp:repeat formal test case"},
+		{"nested repeat user input", "You said: mixed formatting test case and I heard: user input"},
+	}
+
+	for _, tt := range tests {
+		t.Run("Integration/"+tt.input, func(t *testing.T) {
+			response, err := g.ProcessInput(tt.input, session)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+			if response != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
 			}
 		})
 	}
