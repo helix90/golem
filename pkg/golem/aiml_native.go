@@ -35,6 +35,7 @@ type AIMLKnowledgeBase struct {
 	Patterns   map[string]*Category
 	Sets       map[string][]string
 	Topics     map[string][]string
+	TopicVars  map[string]map[string]string // TopicVars: topicName -> varName -> value
 	Variables  map[string]string
 	Properties map[string]string
 	Maps       map[string]map[string]string // Maps: mapName -> key -> value
@@ -48,6 +49,7 @@ func NewAIMLKnowledgeBase() *AIMLKnowledgeBase {
 		Patterns:   make(map[string]*Category),
 		Sets:       make(map[string][]string),
 		Topics:     make(map[string][]string),
+		TopicVars:  make(map[string]map[string]string),
 		Variables:  make(map[string]string),
 		Properties: make(map[string]string),
 		Maps:       make(map[string]map[string]string),
@@ -1673,6 +1675,11 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	g.LogDebug("Before word processing: '%s'", response)
 	response = g.processWordTagsWithContext(response, ctx)
 	g.LogDebug("After word processing: '%s'", response)
+
+	// Process topic tags (current topic references) - before text processing
+	g.LogDebug("Before topic processing: '%s'", response)
+	response = g.processTopicTagsWithContext(response, ctx)
+	g.LogDebug("After topic processing: '%s'", response)
 
 	// Process uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique/repeat tags (case transforms, character separation, reversal, acronym generation, whitespace trimming, substring extraction, string replacement, pluralization, word shuffling, length calculation, occurrence counting, text splitting, text joining, text indentation, text dedentation, removing duplicates, and repeating user input)
 	g.LogDebug("Before uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique/repeat processing: '%s'", response)
@@ -4939,14 +4946,23 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 		}
 	}
 
-	// 3. Check topic scope (topic variables will be implemented in future version)
-	// if ctx.Topic != "" && ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Topics != nil {
-	//     if topicVars, exists := ctx.KnowledgeBase.Topics[ctx.Topic]; exists {
-	//         if value, exists := topicVars[varName]; exists {
-	//             return value
-	//         }
-	//     }
-	// }
+	// 3. Check topic scope
+	if ctx.Session != nil && ctx.KnowledgeBase != nil && ctx.KnowledgeBase.TopicVars != nil {
+		currentTopic := ctx.Session.GetSessionTopic()
+		if currentTopic == "" {
+			currentTopic = "default"
+		}
+		if topicVars, exists := ctx.KnowledgeBase.TopicVars[currentTopic]; exists {
+			if value, exists := topicVars[varName]; exists {
+				g.LogInfo("Found variable '%s' in topic scope '%s': '%s'", varName, currentTopic, value)
+				// Cache the result
+				if g.variableResolutionCache != nil {
+					g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
+				}
+				return value
+			}
+		}
+	}
 
 	// 4. Check global scope (knowledge base variables)
 	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Variables != nil {
@@ -5007,16 +5023,24 @@ func (g *Golem) setVariable(varName, varValue string, scope VariableScope, ctx *
 			}
 		}
 	case ScopeTopic:
-		// Topic variables will be implemented in future version
-		// if ctx.KnowledgeBase != nil {
-		//     if ctx.KnowledgeBase.Topics == nil {
-		//         ctx.KnowledgeBase.Topics = make(map[string]map[string]string)
-		//     }
-		//     if ctx.KnowledgeBase.Topics[ctx.Topic] == nil {
-		//         ctx.KnowledgeBase.Topics[ctx.Topic] = make(map[string]string)
-		//     }
-		//     ctx.KnowledgeBase.Topics[ctx.Topic][varName] = varValue
-		// }
+		// Topic variables are stored in the knowledge base
+		if ctx.KnowledgeBase != nil {
+			if ctx.KnowledgeBase.TopicVars == nil {
+				ctx.KnowledgeBase.TopicVars = make(map[string]map[string]string)
+			}
+			currentTopic := ""
+			if ctx.Session != nil {
+				currentTopic = ctx.Session.GetSessionTopic()
+			}
+			if currentTopic == "" {
+				currentTopic = "default"
+			}
+			if ctx.KnowledgeBase.TopicVars[currentTopic] == nil {
+				ctx.KnowledgeBase.TopicVars[currentTopic] = make(map[string]string)
+			}
+			ctx.KnowledgeBase.TopicVars[currentTopic][varName] = varValue
+			g.LogDebug("Set topic variable '%s' to '%s' in topic '%s'", varName, varValue, currentTopic)
+		}
 	case ScopeGlobal:
 		g.LogInfo("Setting global variable '%s' to '%s'", varName, varValue)
 		g.LogInfo("Before: KB Variables=%v", ctx.KnowledgeBase.Variables)
@@ -6349,6 +6373,38 @@ func (g *Golem) processTopicSettingTagsWithContext(template string, ctx *Variabl
 			template = strings.TrimSpace(template)
 		}
 	}
+
+	return template
+}
+
+// processTopicTagsWithContext processes <topic/> tags for referencing current topic
+// <topic/> tag references the current session topic
+func (g *Golem) processTopicTagsWithContext(template string, ctx *VariableContext) string {
+	if ctx.Session == nil {
+		return template
+	}
+
+	// Find all <topic/> tags
+	topicTagRegex := regexp.MustCompile(`<topic/>`)
+	matches := topicTagRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("Topic tag processing: found %d matches in template: '%s'", len(matches), template)
+
+	for _, match := range matches {
+		// Get the current topic
+		topicValue := ctx.Session.GetSessionTopic()
+		if topicValue == "" {
+			g.LogDebug("No topic found for topic tag")
+			// Replace with empty string if no topic found
+			template = strings.ReplaceAll(template, match[0], "")
+		} else {
+			// Replace the topic tag with the actual topic
+			template = strings.ReplaceAll(template, match[0], topicValue)
+			g.LogDebug("Topic tag: -> '%s'", topicValue)
+		}
+	}
+
+	g.LogDebug("Topic tag processing result: '%s'", template)
 
 	return template
 }
@@ -8293,7 +8349,7 @@ func (g *Golem) validateAIMLTags(template string) error {
 		"substring": true, "replace": true, "pluralize": true, "shuffle": true,
 		"length": true, "count": true, "split": true, "join": true, "indent": true, "dedent": true, "unique": true, "repeat": true, "normalize": true, "denormalize": true,
 		"id": true, "size": true, "version": true, "system": true, "javascript": true,
-		"eval": true, "gossip": true, "loop": true, "var": true, "unlearn": true, "unlearnf": true,
+		"eval": true, "gossip": true, "loop": true, "var": true, "unlearn": true, "unlearnf": true, "topic": true,
 	}
 
 	// Find all tags

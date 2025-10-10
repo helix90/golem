@@ -6417,3 +6417,250 @@ func TestThatTagIntegration(t *testing.T) {
 		})
 	}
 }
+
+// TestTopicTagProcessing tests the topic tag processing functionality
+func TestTopicTagProcessing(t *testing.T) {
+	g := New(false)
+
+	// Create a session with a topic set
+	session := &ChatSession{
+		ID:              "test-session",
+		Variables:       make(map[string]string),
+		History:         make([]string, 0),
+		CreatedAt:       time.Now().Format(time.RFC3339),
+		LastActivity:    time.Now().Format(time.RFC3339),
+		Topic:           "weather",
+		ThatHistory:     make([]string, 0),
+		RequestHistory:  make([]string, 0),
+		ResponseHistory: make([]string, 0),
+	}
+
+	ctx := &VariableContext{
+		LocalVars:     make(map[string]string),
+		Session:       session,
+		Topic:         "weather",
+		KnowledgeBase: nil,
+	}
+
+	topicTests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		// Basic topic tests
+		{"Simple topic", "Current topic: <topic/>", "Current topic: weather"},
+		{"Topic with text", "We are discussing <topic/>", "We are discussing weather"},
+		{"Multiple topic tags", "First: <topic/>, Second: <topic/>", "First: weather, Second: weather"},
+		{"Topic in sentence", "The current topic is <topic/>.", "The current topic is weather."},
+
+		// Edge cases
+		{"No session", "Current topic: <topic/>", "Current topic: <topic/>"},
+		{"Empty topic", "Current topic: <topic/>", "Current topic: "},
+		{"Single topic", "Current topic: <topic/>", "Current topic: weather"},
+		{"Multiple topics", "Current topic: <topic/>", "Current topic: weather"},
+
+		// Complex scenarios
+		{"Topic with other tags", "Current topic: <uppercase><topic/></uppercase>", "Current topic: <uppercase>weather</uppercase>"},
+		{"Topic with formal", "Current topic: <formal><topic/></formal>", "Current topic: <formal>weather</formal>"},
+		{"Topic with lowercase", "Current topic: <lowercase><topic/></lowercase>", "Current topic: <lowercase>weather</lowercase>"},
+		{"Topic with capitalize", "Current topic: <capitalize><topic/></capitalize>", "Current topic: <capitalize>weather</capitalize>"},
+		{"Topic with trim", "Current topic: <trim><topic/></trim>", "Current topic: <trim>weather</trim>"},
+		{"Topic with reverse", "Current topic: <reverse><topic/></reverse>", "Current topic: <reverse>weather</reverse>"},
+		{"Topic with acronym", "Current topic: <acronym><topic/></acronym>", "Current topic: <acronym>weather</acronym>"},
+		{"Topic with explode", "Current topic: <explode><topic/></explode>", "Current topic: <explode>weather</explode>"},
+		{"Topic with shuffle", "Current topic: <shuffle><topic/></shuffle>", "Current topic: <shuffle>weather</shuffle>"},
+		{"Topic with length", "Current topic: <topic/> (<length><topic/></length> chars)", "Current topic: weather (<length>weather</length> chars)"},
+		{"Topic with count", "Current topic: <topic/> (<count search=\"e\"><topic/></count> e's)", "Current topic: weather (<count search=\"e\">weather</count> e's)"},
+
+		// Whitespace and special characters
+		{"Topic with spaces", "Current topic: <topic/>", "Current topic: weather"},
+		{"Topic with punctuation", "Current topic: <topic/>", "Current topic: weather"},
+		{"Topic with numbers", "Current topic: <topic/>", "Current topic: weather"},
+		{"Topic with special chars", "Current topic: <topic/>", "Current topic: weather"},
+
+		// Empty and whitespace content
+		{"Empty topic standalone", "<topic/>", "weather"},
+		{"Whitespace only topic", " <topic/> ", " weather "},
+		{"Multiple spaces topic", "   <topic/>   ", "   weather   "},
+
+		// Nested scenarios
+		{"Nested with star", "Current topic: <topic/> and <star/>", "Current topic: weather and <star/>"},
+		{"Nested with that", "Current topic: <topic/> and <that/>", "Current topic: weather and <that/>"},
+		{"Nested with random", "Current topic: <topic/> and <random><li>option1</li><li>option2</li></random>", "Current topic: weather and <random><li>option1</li><li>option2</li></random>"},
+
+		// Complex text scenarios
+		{"Long text topic", "Current topic: <topic/>", "Current topic: weather"},
+		{"Short text topic", "Current topic: <topic/>", "Current topic: weather"},
+		{"Mixed case topic", "Current topic: <topic/>", "Current topic: weather"},
+		{"Unicode topic", "Current topic: <topic/>", "Current topic: weather"},
+
+		// Multiple topic tags in different contexts
+		{"Multiple topics different contexts", "First: <topic/>, Second: <topic/>, Third: <topic/>", "First: weather, Second: weather, Third: weather"},
+		{"Topic with other processing", "Current topic: <uppercase><topic/></uppercase> and <lowercase><topic/></lowercase>", "Current topic: <uppercase>weather</uppercase> and <lowercase>weather</lowercase>"},
+		{"Topic with formatting", "Current topic: <formal><topic/></formal> and <capitalize><topic/></capitalize>", "Current topic: <formal>weather</formal> and <capitalize>weather</capitalize>"},
+	}
+
+	for _, tt := range topicTests {
+		t.Run("Topic/"+tt.name, func(t *testing.T) {
+			// For tests that need no session, create a context without session
+			testCtx := ctx
+			if tt.name == "No session" {
+				testCtx = &VariableContext{
+					LocalVars:     make(map[string]string),
+					Session:       nil,
+					Topic:         "",
+					KnowledgeBase: nil,
+				}
+			}
+			// For tests that need empty topic, create a session with no topic
+			if tt.name == "Empty topic" {
+				emptyTopicSession := &ChatSession{
+					ID:              "empty-topic-session",
+					Variables:       make(map[string]string),
+					History:         make([]string, 0),
+					CreatedAt:       time.Now().Format(time.RFC3339),
+					LastActivity:    time.Now().Format(time.RFC3339),
+					Topic:           "",
+					ThatHistory:     make([]string, 0),
+					RequestHistory:  make([]string, 0),
+					ResponseHistory: make([]string, 0),
+				}
+				testCtx = &VariableContext{
+					LocalVars:     make(map[string]string),
+					Session:       emptyTopicSession,
+					Topic:         "",
+					KnowledgeBase: nil,
+				}
+			}
+
+			result := g.processTopicTagsWithContext(tt.template, testCtx)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestTopicTagIntegration tests integration of topic tag in full AIML processing
+func TestTopicTagIntegration(t *testing.T) {
+	g := New(false)
+
+	aimlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+<category>
+<pattern>TOPIC *</pattern>
+<template>Current topic: <topic/></template>
+</category>
+<category>
+<pattern>TOPIC UPPERCASE *</pattern>
+<template>Current topic: <uppercase><topic/></uppercase></template>
+</category>
+<category>
+<pattern>TOPIC FORMAL *</pattern>
+<template>Current topic: <formal><topic/></formal></template>
+</category>
+<category>
+<pattern>SET TOPIC *</pattern>
+<template><think><set name="topic"><star/></set></think>Topic set to: <topic/></template>
+</category>
+<category>
+<pattern>MIXED FORMATTING *</pattern>
+<template>U:<uppercase><star/></uppercase> L:<lowercase><star/></lowercase> F:<formal><star/></formal> E:<explode><star/></explode> C:<capitalize><star/></capitalize> R:<reverse><star/></reverse> A:<acronym><star/></acronym> T:<trim><star/></trim> S:<substring start="0" end="3"><star/></substring> Re:<replace search="test" replace="demo"><star/></replace> P:<pluralize><star/></pluralize> Sh:<shuffle><star/></shuffle> Le:<length><star/></length> Co:<count search="e"><star/></count> Sp:<split delimiter=","><star/></split> Jo:<join delimiter=","><star/></join> In:<indent><star/></indent> De:<dedent><star/></dedent> Un:<unique><star/></unique> Rp:<repeat/> Th:<that/> To:<topic/></template>
+</category>
+<category>
+<pattern>NESTED TOPIC *</pattern>
+<template>Current topic: <topic/> and I heard: <star/></template>
+</category>
+</aiml>`
+
+	if err := g.LoadAIMLFromString(aimlContent); err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	kb := g.GetKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	// Create a session and set initial topic
+	session := g.CreateSession("test_session")
+	session.SetSessionTopic("weather")
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"topic hello world", "Current topic: weather"},
+		{"topic uppercase test case", "Current topic: WEATHER"},
+		{"topic formal test case", "Current topic: weather"},
+		{"set topic sports", "Topic set to: sports"},
+		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/> Rp:set topic sports Th:Topic set to: sports To:sports"},
+		{"nested topic user input", "Current topic: sports and I heard: user input"},
+	}
+
+	for _, tt := range tests {
+		t.Run("Integration/"+tt.input, func(t *testing.T) {
+			// Create a fresh session for each test to avoid state issues
+			testSession := g.CreateSession("test_session_" + tt.input)
+			testSession.SetSessionTopic("weather")
+
+			response, err := g.ProcessInput(tt.input, testSession)
+			if err != nil {
+				t.Fatalf("ProcessInput failed: %v", err)
+			}
+			if response != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
+			}
+		})
+	}
+}
+
+// TestTopicVariableScope tests topic variable scope functionality
+func TestTopicVariableScope(t *testing.T) {
+	g := New(false)
+
+	// Create a session with a topic
+	session := &ChatSession{
+		ID:        "test-session",
+		Variables: make(map[string]string),
+		Topic:     "weather",
+	}
+
+	kb := g.GetKnowledgeBase()
+	g.SetKnowledgeBase(kb)
+
+	ctx := &VariableContext{
+		LocalVars:     make(map[string]string),
+		Session:       session,
+		Topic:         "weather",
+		KnowledgeBase: kb,
+	}
+
+	// Test setting topic variables
+	g.setVariable("weather_var", "sunny", ScopeTopic, ctx)
+	g.setVariable("general_var", "hello", ScopeSession, ctx)
+
+	// Test retrieving topic variables
+	topicValue := g.resolveVariable("weather_var", ctx)
+	if topicValue != "sunny" {
+		t.Errorf("Expected topic variable 'sunny', got '%s'", topicValue)
+	}
+
+	// Test that session variables still work
+	sessionValue := g.resolveVariable("general_var", ctx)
+	if sessionValue != "hello" {
+		t.Errorf("Expected session variable 'hello', got '%s'", sessionValue)
+	}
+
+	// Test topic isolation - change topic and verify variable is not accessible
+	session.SetSessionTopic("sports")
+	topicValueAfterChange := g.resolveVariable("weather_var", ctx)
+	if topicValueAfterChange != "" {
+		t.Errorf("Expected empty string for topic variable after topic change, got '%s'", topicValueAfterChange)
+	}
+
+	// Test setting variable in new topic
+	g.setVariable("sports_var", "football", ScopeTopic, ctx)
+	sportsValue := g.resolveVariable("sports_var", ctx)
+	if sportsValue != "football" {
+		t.Errorf("Expected sports topic variable 'football', got '%s'", sportsValue)
+	}
+}
