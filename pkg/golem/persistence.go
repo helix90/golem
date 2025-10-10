@@ -181,7 +181,7 @@ func (plm *PersistentLearningManager) GetPersistentCategoryInfo() (map[string]in
 		return map[string]interface{}{
 			"total_categories": 0,
 			"last_updated":     nil,
-			"version":          "1.2.4",
+			"version":          "1.2.5",
 		}, nil
 	}
 

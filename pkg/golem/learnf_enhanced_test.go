@@ -297,8 +297,8 @@ func TestEnhancedLearnfStorageInfo(t *testing.T) {
 		t.Errorf("Expected 2 total categories, got %v", info["total_categories"])
 	}
 
-	if info["version"] != "1.2.3" {
-		t.Errorf("Expected version 1.2.3, got %v", info["version"])
+	if info["version"] != "1.2.5" {
+		t.Errorf("Expected version 1.2.5, got %v", info["version"])
 	}
 
 	if info["storage_path"] != tempDir {
