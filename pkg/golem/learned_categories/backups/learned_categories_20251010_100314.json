@@ -10,7 +10,7 @@
       },
       "learned_at": "2025-10-10T10:03:14.808583743-07:00",
       "source": "learnf",
-      "version": "1.2.3",
+      "version": "1.2.5",
       "checksum": "3114cbd94c6b4fe5"
     },
     {
@@ -23,11 +23,11 @@
       },
       "learned_at": "2025-10-10T10:03:14.808583743-07:00",
       "source": "learnf",
-      "version": "1.2.3",
+      "version": "1.2.5",
       "checksum": "-2eb6a3ab18f3f50b"
     }
   ],
   "last_updated": "2025-10-10T10:03:14.808583743-07:00",
-  "version": "1.2.3",
+  "version": "1.2.5",
   "total_learned": 2
 }
