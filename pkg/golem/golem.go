@@ -270,6 +270,9 @@ type Golem struct {
 	patternMatchingCache *PatternMatchingCache
 	// Persistent learning components
 	persistentLearning *PersistentLearningManager
+	// Enhanced context resolution components
+	fuzzyMatcher    *FuzzyContextMatcher
+	semanticMatcher *SemanticContextMatcher
 	// Random seed for deterministic shuffling
 	randomSeed int64
 }
@@ -628,6 +631,14 @@ func (cache *VariableResolutionCache) generateScopeHash(ctx *VariableContext) st
 	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Properties != nil {
 		for k, v := range ctx.KnowledgeBase.Properties {
 			scopeData = append(scopeData, fmt.Sprintf("properties:%s=%s", k, v))
+		}
+	}
+
+	// Include current topic (important for topic-scoped variables)
+	if ctx.Session != nil {
+		currentTopic := ctx.Session.GetSessionTopic()
+		if currentTopic != "" {
+			scopeData = append(scopeData, fmt.Sprintf("topic:%s", currentTopic))
 		}
 	}
 

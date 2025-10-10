@@ -873,7 +873,7 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginalCached(g *
 
 			// Use enhanced wildcard matching for that context
 			var thatWildcards map[string]string
-			thatMatched, thatWildcards = matchThatPatternWithWildcards(normalizedThat, category.That)
+			thatMatched, thatWildcards = matchThatPatternWithWildcardsWithGolem(g, normalizedThat, category.That)
 			_ = thatWildcards // Suppress unused variable warning for now
 			if !thatMatched {
 				continue // Skip patterns that don't match the that context
@@ -950,8 +950,9 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginalCached(g *
 		thatWildcards := make(map[string]string)
 		if bestMatch.Category.That != "" && (strings.Contains(bestMatch.Category.That, "*") ||
 			strings.Contains(bestMatch.Category.That, "_") || strings.Contains(bestMatch.Category.That, "^") ||
-			strings.Contains(bestMatch.Category.That, "#") || strings.Contains(bestMatch.Category.That, "$")) {
-			_, thatWildcards = matchThatPatternWithWildcards(normalizedThat, bestMatch.Category.That)
+			strings.Contains(bestMatch.Category.That, "#") || strings.Contains(bestMatch.Category.That, "$") ||
+			strings.Contains(bestMatch.Category.That, "<set>") || strings.Contains(bestMatch.Category.That, "<topic>")) {
+			_, thatWildcards = matchThatPatternWithWildcardsWithGolem(g, normalizedThat, bestMatch.Category.That)
 		}
 
 		// Capture wildcard values from topic context if it has wildcards
@@ -1090,6 +1091,19 @@ func calculatePatternPriorityInternal(pattern string) PatternPriorityInfo {
 
 	// Bonus for fewer wildcards (more specific patterns)
 	priority += (9 - totalWildcards) * 100
+
+	// Bonus for word count (more specific patterns have more words)
+	// This ensures "TOPIC UPPERCASE *" has higher priority than "TOPIC *"
+	words := strings.Fields(pattern)
+	wordCount := 0
+	for _, word := range words {
+		// Don't count wildcards as words
+		if word != "*" && word != "_" && word != "^" && word != "#" && word != "$" {
+			wordCount++
+		}
+	}
+	// Add word count bonus (each word adds 10 points)
+	priority += wordCount * 10
 
 	return PatternPriorityInfo{
 		Priority:         priority,
@@ -1681,8 +1695,13 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processTopicTagsWithContext(response, ctx)
 	g.LogDebug("After topic processing: '%s'", response)
 
-	// Process uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique/repeat tags (case transforms, character separation, reversal, acronym generation, whitespace trimming, substring extraction, string replacement, pluralization, word shuffling, length calculation, occurrence counting, text splitting, text joining, text indentation, text dedentation, removing duplicates, and repeating user input)
-	g.LogDebug("Before uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique/repeat processing: '%s'", response)
+	// Process repeat tags first (before text formatting) so they can be processed by other tags
+	g.LogDebug("Before repeat processing: '%s'", response)
+	response = g.processRepeatTagsWithContext(response, ctx)
+	g.LogDebug("After repeat processing: '%s'", response)
+
+	// Process uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique tags (case transforms, character separation, reversal, acronym generation, whitespace trimming, substring extraction, string replacement, pluralization, word shuffling, length calculation, occurrence counting, text splitting, text joining, text indentation, text dedentation, removing duplicates)
+	g.LogDebug("Before uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique processing: '%s'", response)
 	response = g.processUppercaseTagsWithContext(response, ctx)
 	response = g.processLowercaseTagsWithContext(response, ctx)
 	response = g.processFormalTagsWithContext(response, ctx)
@@ -1702,8 +1721,7 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response = g.processIndentTagsWithContext(response, ctx)
 	response = g.processDedentTagsWithContext(response, ctx)
 	response = g.processUniqueTagsWithContext(response, ctx)
-	response = g.processRepeatTagsWithContext(response, ctx)
-	g.LogDebug("After uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique/repeat processing: '%s'", response)
+	g.LogDebug("After uppercase/lowercase/formal/explode/capitalize/reverse/acronym/trim/substring/replace/pluralize/shuffle/length/count/split/join/indent/dedent/unique processing: '%s'", response)
 
 	// Process normalize tags (text normalization)
 	g.LogDebug("Before normalize processing: '%s'", response)
@@ -2309,11 +2327,11 @@ func (g *Golem) processUppercaseTagsWithContext(template string, ctx *VariableCo
 				if cached, found := g.templateTagProcessingCache.GetProcessedTag("uppercase", content, ctx); found {
 					processedContent = cached
 				} else {
-					processedContent = strings.ToUpper(content)
+					processedContent = g.uppercaseTextPreservingTags(content)
 					g.templateTagProcessingCache.SetProcessedTag("uppercase", content, processedContent, ctx)
 				}
 			} else {
-				processedContent = strings.ToUpper(content)
+				processedContent = g.uppercaseTextPreservingTags(content)
 			}
 
 			g.LogDebug("Uppercase tag: '%s' -> '%s'", match[1], processedContent)
@@ -2416,6 +2434,38 @@ func (g *Golem) formatFormalText(input string) string {
 	}
 
 	return strings.Join(words, " ")
+}
+
+// uppercaseTextPreservingTags converts text to uppercase while preserving tag names
+func (g *Golem) uppercaseTextPreservingTags(input string) string {
+	// Use regex to find all XML/AIML tags and preserve them
+	tagRegex := regexp.MustCompile(`<[^>]*>`)
+
+	// Split the input into parts: text and tags
+	var result strings.Builder
+	lastIndex := 0
+
+	for _, match := range tagRegex.FindAllStringIndex(input, -1) {
+		// Add text before the tag (uppercased)
+		if match[0] > lastIndex {
+			textPart := input[lastIndex:match[0]]
+			result.WriteString(strings.ToUpper(textPart))
+		}
+
+		// Add the tag as-is (preserve case)
+		tagPart := input[match[0]:match[1]]
+		result.WriteString(tagPart)
+
+		lastIndex = match[1]
+	}
+
+	// Add any remaining text after the last tag (uppercased)
+	if lastIndex < len(input) {
+		textPart := input[lastIndex:]
+		result.WriteString(strings.ToUpper(textPart))
+	}
+
+	return result.String()
 }
 
 // processExplodeTagsWithContext processes <explode> tags for character separation
@@ -7815,6 +7865,11 @@ func matchThatPatternWithWildcards(thatContext, thatPattern string) (bool, map[s
 	return matchThatPatternWithWildcardsCached(nil, thatContext, thatPattern)
 }
 
+// matchThatPatternWithWildcardsWithGolem matches that context against a that pattern with enhanced wildcard support and caching using Golem instance
+func matchThatPatternWithWildcardsWithGolem(g *Golem, thatContext, thatPattern string) (bool, map[string]string) {
+	return matchThatPatternWithWildcardsCached(g, thatContext, thatPattern)
+}
+
 // matchThatPatternWithWildcardsCached matches that context against a that pattern with caching support
 func matchThatPatternWithWildcardsCached(g *Golem, thatContext, thatPattern string) (bool, map[string]string) {
 	wildcards := make(map[string]string)
@@ -7831,7 +7886,14 @@ func matchThatPatternWithWildcardsCached(g *Golem, thatContext, thatPattern stri
 	}
 
 	// Convert that pattern to regex with enhanced wildcard support
-	regexPattern := thatPatternToRegexWordBased(thatPattern)
+	var regexPattern string
+	if g != nil && g.aimlKB != nil {
+		// Use enhanced set/topic matching if knowledge base is available
+		regexPattern = thatPatternToRegexWithSetsAndTopics(g, thatPattern, g.aimlKB)
+	} else {
+		// Fallback to basic word-based matching
+		regexPattern = thatPatternToRegexWordBased(thatPattern)
+	}
 	// Make regex case insensitive
 	regexPattern = "(?i)" + regexPattern
 
@@ -7881,6 +7943,409 @@ func matchThatPatternWithWildcardsCached(g *Golem, thatContext, thatPattern stri
 	}
 
 	return true, wildcards
+}
+
+// matchThatPatternWithEnhancedContext performs enhanced context resolution with fuzzy and semantic matching
+func matchThatPatternWithEnhancedContext(g *Golem, thatContext, thatPattern string) (bool, map[string]string) {
+	// Initialize fuzzy and semantic matchers if not already done
+	if g.fuzzyMatcher == nil {
+		g.fuzzyMatcher = NewFuzzyContextMatcher()
+	}
+	if g.semanticMatcher == nil {
+		g.semanticMatcher = NewSemanticContextMatcher()
+		g.semanticMatcher.InitializeSynonyms()
+		g.semanticMatcher.InitializeDomainMappings()
+	}
+
+	// First try exact pattern matching with sets and topics
+	exactMatch, wildcards := matchThatPatternWithWildcardsWithGolem(g, thatContext, thatPattern)
+	if exactMatch {
+		return true, wildcards
+	}
+
+	// Try fuzzy matching with set/topic expansion
+	fuzzyMatch, fuzzyScore := matchThatPatternWithFuzzyAndSets(g, thatContext, thatPattern)
+	if fuzzyMatch && fuzzyScore >= 0.5 {
+		// For fuzzy matches, we'll use the original pattern as wildcard
+		wildcards := make(map[string]string)
+		wildcards["that_fuzzy"] = thatContext
+		return true, wildcards
+	}
+
+	// Try semantic similarity matching with set/topic expansion
+	semanticMatch, semanticScore := matchThatPatternWithSemanticAndSets(g, thatContext, thatPattern)
+	if semanticMatch && semanticScore >= 0.4 {
+		// For semantic matches, we'll use the original pattern as wildcard
+		wildcards := make(map[string]string)
+		wildcards["that_semantic"] = thatContext
+		return true, wildcards
+	}
+
+	// Try partial matching with wildcards
+	partialMatch, partialWildcards := matchThatPatternWithPartialMatching(thatContext, thatPattern)
+	if partialMatch {
+		return true, partialWildcards
+	}
+
+	return false, nil
+}
+
+// matchThatPatternWithPartialMatching performs partial matching with wildcards
+func matchThatPatternWithPartialMatching(thatContext, thatPattern string) (bool, map[string]string) {
+	// Split both context and pattern into words
+	contextWords := strings.Fields(strings.ToLower(thatContext))
+	patternWords := strings.Fields(strings.ToLower(thatPattern))
+
+	if len(contextWords) == 0 || len(patternWords) == 0 {
+		return false, nil
+	}
+
+	wildcards := make(map[string]string)
+	contextIndex := 0
+	patternIndex := 0
+	wildcardCount := 0
+
+	// Try to match pattern words against context words
+	for patternIndex < len(patternWords) && contextIndex < len(contextWords) {
+		patternWord := patternWords[patternIndex]
+		contextWord := contextWords[contextIndex]
+
+		// Check for wildcard patterns
+		if patternWord == "*" || patternWord == "_" || patternWord == "^" || patternWord == "#" || patternWord == "$" {
+			// Handle different wildcard types
+			if patternWord == "*" || patternWord == "^" || patternWord == "#" {
+				// Zero or more words - collect until next pattern word matches
+				wildcardWords := []string{}
+				nextPatternIndex := patternIndex + 1
+
+				// Find the next non-wildcard pattern word
+				for nextPatternIndex < len(patternWords) {
+					nextPatternWord := patternWords[nextPatternIndex]
+					if nextPatternWord != "*" && nextPatternWord != "_" && nextPatternWord != "^" && nextPatternWord != "#" && nextPatternWord != "$" {
+						break
+					}
+					nextPatternIndex++
+				}
+
+				if nextPatternIndex < len(patternWords) {
+					// Look for the next pattern word in context
+					found := false
+					for contextIndex < len(contextWords) {
+						if contextWords[contextIndex] == patternWords[nextPatternIndex] {
+							found = true
+							break
+						}
+						wildcardWords = append(wildcardWords, contextWords[contextIndex])
+						contextIndex++
+					}
+					if !found {
+						return false, nil
+					}
+				} else {
+					// No more pattern words, collect remaining context words
+					for contextIndex < len(contextWords) {
+						wildcardWords = append(wildcardWords, contextWords[contextIndex])
+						contextIndex++
+					}
+				}
+
+				if len(wildcardWords) > 0 {
+					wildcardCount++
+					wildcardKey := fmt.Sprintf("that_wildcard%d", wildcardCount)
+					wildcards[wildcardKey] = strings.Join(wildcardWords, " ")
+				}
+				patternIndex = nextPatternIndex
+			} else if patternWord == "_" || patternWord == "$" {
+				// Exactly one word
+				wildcardCount++
+				wildcardKey := fmt.Sprintf("that_wildcard%d", wildcardCount)
+				wildcards[wildcardKey] = contextWord
+				contextIndex++
+				patternIndex++
+			}
+		} else {
+			// Regular word matching
+			if contextWord == patternWord {
+				contextIndex++
+				patternIndex++
+			} else {
+				// Try fuzzy matching for this word
+				fuzzyMatcher := NewFuzzyContextMatcher()
+				if match, score := fuzzyMatcher.MatchWithFuzzy(contextWord, patternWord); match && score >= 0.7 {
+					contextIndex++
+					patternIndex++
+				} else {
+					return false, nil
+				}
+			}
+		}
+	}
+
+	// Check if we've matched all pattern words
+	if patternIndex < len(patternWords) {
+		return false, nil
+	}
+
+	return true, wildcards
+}
+
+// matchThatPatternWithFuzzyAndSets performs fuzzy matching with set/topic expansion
+func matchThatPatternWithFuzzyAndSets(g *Golem, thatContext, thatPattern string) (bool, float64) {
+	if g == nil || g.fuzzyMatcher == nil || g.aimlKB == nil {
+		// Fallback to basic fuzzy matching
+		return g.fuzzyMatcher.MatchWithFuzzy(thatContext, thatPattern)
+	}
+
+	// Check if pattern contains set or topic tags
+	if !strings.Contains(thatPattern, "<set>") && !strings.Contains(thatPattern, "<topic>") {
+		// No set/topic tags, use basic fuzzy matching
+		return g.fuzzyMatcher.MatchWithFuzzy(thatContext, thatPattern)
+	}
+
+	// Expand set and topic patterns for fuzzy matching
+	expandedPatterns := expandSetAndTopicPatterns(thatPattern, g.aimlKB)
+
+	// Try fuzzy matching against each expanded pattern
+	bestScore := 0.0
+	bestMatch := false
+
+	for _, expandedPattern := range expandedPatterns {
+		match, score := g.fuzzyMatcher.MatchWithFuzzy(thatContext, expandedPattern)
+
+		// For set/topic matching, we need to be more strict
+		// Only allow fuzzy matching if the words are in the same domain
+		if match && score > bestScore {
+			// Check if this is a legitimate domain match
+			if g.isLegitimateDomainMatch(thatContext, expandedPattern) {
+				bestScore = score
+				bestMatch = true
+			}
+		}
+	}
+
+	// Only consider it a match if the score is high enough for set/topic matching
+	// For set/topic matching, we need to be strict but allow legitimate fuzzy matches
+	if bestMatch && bestScore < 0.75 {
+		bestMatch = false
+	}
+
+	return bestMatch, bestScore
+}
+
+// isLegitimateDomainMatch checks if a fuzzy match is legitimate for domain matching
+func (g *Golem) isLegitimateDomainMatch(context, pattern string) bool {
+	if g.semanticMatcher == nil {
+		return true // Fallback to allowing all matches if no semantic matcher
+	}
+
+	// Extract the key words from context and pattern
+	contextWords := strings.Fields(context)
+	patternWords := strings.Fields(pattern)
+
+	if len(contextWords) != len(patternWords) {
+		return false // Different lengths, not a legitimate match
+	}
+
+	// Check each word pair to see if they're in the same domain
+	for i, contextWord := range contextWords {
+		if i < len(patternWords) {
+			patternWord := patternWords[i]
+
+			// If words are identical, it's legitimate
+			if contextWord == patternWord {
+				continue
+			}
+
+			// Check if words are in the same domain OR if one is a close typo of a word in the domain
+			inSameDomain := g.semanticMatcher.areInSameDomain(contextWord, patternWord)
+			isCloseTypo := g.isCloseTypoInDomain(contextWord, patternWord)
+
+			if !inSameDomain && !isCloseTypo {
+				return false // Words are not in the same domain and not close typos
+			}
+		}
+	}
+
+	return true
+}
+
+// isCloseTypoInDomain checks if one word is a close typo of a word in the same domain as the other
+func (g *Golem) isCloseTypoInDomain(word1, word2 string) bool {
+	if g.fuzzyMatcher == nil {
+		return false
+	}
+
+	// Check if word1 is a close typo of any word in the same domain as word2
+	for _, domainWords := range g.semanticMatcher.DomainMappings {
+		// Check if word2 is in this domain
+		word2InDomain := false
+		for _, domainWord := range domainWords {
+			if domainWord == word2 {
+				word2InDomain = true
+				break
+			}
+		}
+
+		if word2InDomain {
+			// Check if word1 is a close typo of any word in this domain
+			for _, domainWord := range domainWords {
+				// Use fuzzy matching to check if word1 is a close typo of domainWord
+				_, score := g.fuzzyMatcher.MatchWithFuzzy(word1, domainWord)
+
+				if score >= 0.45 { // Even lower threshold for typo detection
+					return true
+				}
+			}
+		}
+	}
+
+	// Check if word2 is a close typo of any word in the same domain as word1
+	for _, domainWords := range g.semanticMatcher.DomainMappings {
+		// Check if word1 is in this domain
+		word1InDomain := false
+		for _, domainWord := range domainWords {
+			if domainWord == word1 {
+				word1InDomain = true
+				break
+			}
+		}
+
+		if word1InDomain {
+			// Check if word2 is a close typo of any word in this domain
+			for _, domainWord := range domainWords {
+				// Use fuzzy matching to check if word2 is a close typo of domainWord
+				_, score := g.fuzzyMatcher.MatchWithFuzzy(word2, domainWord)
+				if score >= 0.45 { // Even lower threshold for typo detection
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// matchThatPatternWithSemanticAndSets performs semantic matching with set/topic expansion
+func matchThatPatternWithSemanticAndSets(g *Golem, thatContext, thatPattern string) (bool, float64) {
+	if g == nil || g.semanticMatcher == nil || g.aimlKB == nil {
+		// Fallback to basic semantic matching
+		return g.semanticMatcher.MatchWithSemanticSimilarity(thatContext, thatPattern)
+	}
+
+	// Check if pattern contains set or topic tags
+	if !strings.Contains(thatPattern, "<set>") && !strings.Contains(thatPattern, "<topic>") {
+		// No set/topic tags, use basic semantic matching
+		return g.semanticMatcher.MatchWithSemanticSimilarity(thatContext, thatPattern)
+	}
+
+	// Expand set and topic patterns for semantic matching
+	expandedPatterns := expandSetAndTopicPatterns(thatPattern, g.aimlKB)
+
+	// Try semantic matching against each expanded pattern
+	bestScore := 0.0
+	bestMatch := false
+
+	for _, expandedPattern := range expandedPatterns {
+		match, score := g.semanticMatcher.MatchWithSemanticSimilarity(thatContext, expandedPattern)
+
+		// For set/topic matching, we need to be more strict
+		// Only allow semantic matching if the words are in the same domain
+		if match && score > bestScore {
+			// Check if this is a legitimate domain match
+			if g.isLegitimateDomainMatch(thatContext, expandedPattern) {
+				bestScore = score
+				bestMatch = true
+			}
+		}
+	}
+
+	// Only consider it a match if the score is high enough for set/topic matching
+	// For set/topic matching, we need to be strict but allow legitimate semantic matches
+	if bestMatch && bestScore < 0.7 {
+		bestMatch = false
+	}
+
+	return bestMatch, bestScore
+}
+
+// expandSetAndTopicPatterns expands set and topic patterns into multiple concrete patterns
+func expandSetAndTopicPatterns(pattern string, kb *AIMLKnowledgeBase) []string {
+	if kb == nil {
+		return []string{pattern}
+	}
+
+	// Handle set patterns
+	setPattern := regexp.MustCompile(`<set>([^<]+)</set>`)
+	if setPattern.MatchString(pattern) {
+		return expandPatternWithSets(pattern, kb)
+	}
+
+	// Handle topic patterns
+	topicPattern := regexp.MustCompile(`<topic>([^<]+)</topic>`)
+	if topicPattern.MatchString(pattern) {
+		return expandPatternWithTopics(pattern, kb)
+	}
+
+	// No set/topic patterns found
+	return []string{pattern}
+}
+
+// expandPatternWithSets expands patterns containing set tags
+func expandPatternWithSets(pattern string, kb *AIMLKnowledgeBase) []string {
+	setPattern := regexp.MustCompile(`<set>([^<]+)</set>`)
+	matches := setPattern.FindAllStringSubmatch(pattern, -1)
+
+	if len(matches) == 0 {
+		return []string{pattern}
+	}
+
+	// Get the first set match
+	setName := strings.ToUpper(strings.TrimSpace(matches[0][1]))
+	setMembers, exists := kb.Sets[setName]
+
+	if !exists || len(setMembers) == 0 {
+		// Fallback to wildcard
+		expandedPattern := setPattern.ReplaceAllString(pattern, "*")
+		return []string{expandedPattern}
+	}
+
+	// Generate all combinations with set members
+	var expandedPatterns []string
+	for _, member := range setMembers {
+		expandedPattern := setPattern.ReplaceAllString(pattern, member)
+		expandedPatterns = append(expandedPatterns, expandedPattern)
+	}
+
+	return expandedPatterns
+}
+
+// expandPatternWithTopics expands patterns containing topic tags
+func expandPatternWithTopics(pattern string, kb *AIMLKnowledgeBase) []string {
+	topicPattern := regexp.MustCompile(`<topic>([^<]+)</topic>`)
+	matches := topicPattern.FindAllStringSubmatch(pattern, -1)
+
+	if len(matches) == 0 {
+		return []string{pattern}
+	}
+
+	// Get the first topic match
+	topicName := strings.ToUpper(strings.TrimSpace(matches[0][1]))
+	topicMembers, exists := kb.Topics[topicName]
+
+	if !exists || len(topicMembers) == 0 {
+		// Fallback to wildcard
+		expandedPattern := topicPattern.ReplaceAllString(pattern, "*")
+		return []string{expandedPattern}
+	}
+
+	// Generate all combinations with topic members
+	var expandedPatterns []string
+	for _, member := range topicMembers {
+		expandedPattern := topicPattern.ReplaceAllString(pattern, member)
+		expandedPatterns = append(expandedPatterns, expandedPattern)
+	}
+
+	return expandedPatterns
 }
 
 // thatPatternToRegex converts a that pattern to regex with enhanced wildcard support
@@ -7992,6 +8457,157 @@ func thatPatternToRegexWordBased(pattern string) string {
 			// Regular word - escape special characters
 			escaped := regexp.QuoteMeta(word)
 			result.WriteString(escaped)
+		}
+	}
+
+	// Add word boundary at the end to ensure exact matching
+	result.WriteString("$")
+
+	return result.String()
+}
+
+// thatPatternToRegexWithSetsAndTopics converts a that pattern to regex with enhanced set and topic matching
+func thatPatternToRegexWithSetsAndTopics(g *Golem, pattern string, kb *AIMLKnowledgeBase) string {
+	// Handle set matching with proper set content
+	setPattern := regexp.MustCompile(`<set>([^<]+)</set>`)
+	pattern = setPattern.ReplaceAllStringFunc(pattern, func(match string) string {
+		// Extract set name using regex groups
+		matches := setPattern.FindStringSubmatch(match)
+		if len(matches) < 2 {
+			return "([^\\s]*)"
+		}
+		setName := strings.ToUpper(strings.TrimSpace(matches[1]))
+
+		// Check cache first
+		if g != nil && g.patternMatchingCache != nil {
+			if regex, found := g.patternMatchingCache.GetSetRegex(setName, kb.Sets[setName]); found {
+				return regex
+			}
+		}
+
+		if len(kb.Sets[setName]) > 0 {
+			// Create regex alternation for set members
+			var alternatives []string
+			for _, member := range kb.Sets[setName] {
+				// Escape only specific regex characters, not the pipe
+				upperMember := strings.ToUpper(member)
+				// Escape characters that have special meaning in regex, but not |
+				escaped := strings.ReplaceAll(upperMember, "(", "\\(")
+				escaped = strings.ReplaceAll(escaped, ")", "\\)")
+				escaped = strings.ReplaceAll(escaped, "[", "\\[")
+				escaped = strings.ReplaceAll(escaped, "]", "\\]")
+				escaped = strings.ReplaceAll(escaped, "{", "\\{")
+				escaped = strings.ReplaceAll(escaped, "}", "\\}")
+				escaped = strings.ReplaceAll(escaped, "^", "\\^")
+				escaped = strings.ReplaceAll(escaped, "$", "\\$")
+				escaped = strings.ReplaceAll(escaped, ".", "\\.")
+				escaped = strings.ReplaceAll(escaped, "+", "\\+")
+				escaped = strings.ReplaceAll(escaped, "?", "\\?")
+				escaped = strings.ReplaceAll(escaped, "*", "\\*")
+				escaped = strings.ReplaceAll(escaped, "-", "\\-")
+				escaped = strings.ReplaceAll(escaped, "@", "\\@")
+				// Don't escape | as it's needed for alternation
+				alternatives = append(alternatives, escaped)
+			}
+			regex := "(" + strings.Join(alternatives, "|") + ")"
+
+			// Cache the result
+			if g != nil && g.patternMatchingCache != nil {
+				g.patternMatchingCache.SetSetRegex(setName, kb.Sets[setName], regex)
+			}
+
+			return regex
+		}
+		// Fallback to wildcard if set not found
+		return "([^\\s]*)"
+	})
+
+	// Handle topic matching with proper topic content
+	topicPattern := regexp.MustCompile(`<topic>([^<]+)</topic>`)
+	pattern = topicPattern.ReplaceAllStringFunc(pattern, func(match string) string {
+		// Extract topic name using regex groups
+		matches := topicPattern.FindStringSubmatch(match)
+		if len(matches) < 2 {
+			return "([^\\s]*)"
+		}
+		topicName := strings.ToUpper(strings.TrimSpace(matches[1]))
+
+		// Check if topic exists in knowledge base
+		if len(kb.Topics[topicName]) > 0 {
+			// Create regex alternation for topic members
+			var alternatives []string
+			for _, member := range kb.Topics[topicName] {
+				// Escape only specific regex characters, not the pipe
+				upperMember := strings.ToUpper(member)
+				// Escape characters that have special meaning in regex, but not |
+				escaped := strings.ReplaceAll(upperMember, "(", "\\(")
+				escaped = strings.ReplaceAll(escaped, ")", "\\)")
+				escaped = strings.ReplaceAll(escaped, "[", "\\[")
+				escaped = strings.ReplaceAll(escaped, "]", "\\]")
+				escaped = strings.ReplaceAll(escaped, "{", "\\{")
+				escaped = strings.ReplaceAll(escaped, "}", "\\}")
+				escaped = strings.ReplaceAll(escaped, "^", "\\^")
+				escaped = strings.ReplaceAll(escaped, "$", "\\$")
+				escaped = strings.ReplaceAll(escaped, ".", "\\.")
+				escaped = strings.ReplaceAll(escaped, "+", "\\+")
+				escaped = strings.ReplaceAll(escaped, "?", "\\?")
+				escaped = strings.ReplaceAll(escaped, "*", "\\*")
+				escaped = strings.ReplaceAll(escaped, "-", "\\-")
+				escaped = strings.ReplaceAll(escaped, "@", "\\@")
+				// Don't escape | as it's needed for alternation
+				alternatives = append(alternatives, escaped)
+			}
+			return "(" + strings.Join(alternatives, "|") + ")"
+		}
+		// Fallback to wildcard if topic not found
+		return "([^\\s]*)"
+	})
+
+	// For multiple wildcards, we need a more sophisticated approach
+	// Split the pattern into words and process each word
+	words := strings.Fields(pattern)
+	var result strings.Builder
+
+	for i, word := range words {
+		if i > 0 {
+			result.WriteString("\\s*") // Match zero or more spaces between words
+		}
+
+		// Check if this word is a wildcard
+		if word == "*" || word == "^" || word == "#" {
+			// Zero+ wildcard: matches zero or more words
+			// For multiple wildcards, we need to be more specific
+			if i < len(words)-1 {
+				// Not the last word, match until the next non-wildcard word
+				nextWord := words[i+1]
+				if nextWord != "*" && nextWord != "_" && nextWord != "^" && nextWord != "#" && nextWord != "$" {
+					// Next word is not a wildcard, match until we see it
+					result.WriteString("(.*?)")
+				} else {
+					// Next word is also a wildcard, match one word
+					result.WriteString("([^\\s]+)")
+				}
+			} else {
+				// Last word, match everything
+				result.WriteString("(.*?)")
+			}
+		} else if word == "_" {
+			// Single wildcard: matches exactly one word
+			result.WriteString("([^\\s]+)")
+		} else if word == "$" {
+			// Dollar wildcard: highest priority exact match (AIML2)
+			// For regex purposes, treat as a wildcard that matches one word
+			result.WriteString("([^\\s]+)")
+		} else {
+			// Check if this word is already a regex pattern (contains parentheses)
+			if strings.Contains(word, "(") && strings.Contains(word, ")") {
+				// This is already a regex pattern (from set/topic replacement), don't escape it
+				result.WriteString(word)
+			} else {
+				// Regular word - escape special characters
+				escaped := regexp.QuoteMeta(word)
+				result.WriteString(escaped)
+			}
 		}
 	}
 
