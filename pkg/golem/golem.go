@@ -1351,9 +1351,7 @@ Set log level manually:
 // - Will persist in interactive mode and library mode
 // - Will be lost in single-command mode
 func (g *Golem) Execute(command string, args []string) error {
-	if g.verbose {
-		g.logger.Printf("Executing command: %s with args: %v", command, args)
-	}
+	g.LogInfo("Executing command: %s with args: %v", command, args)
 
 	switch command {
 	case "load":
@@ -1384,9 +1382,7 @@ func (g *Golem) Execute(command string, args []string) error {
 func (g *Golem) loadAllRelatedFiles(filePath string) error {
 	dir := filepath.Dir(filePath)
 
-	if g.verbose {
-		g.logger.Printf("Loading all related files from directory: %s", dir)
-	}
+	g.LogInfo("Loading all related files from directory: %s", dir)
 
 	// Load AIML files from directory
 	aimlKB, err := g.LoadAIMLFromDirectory(dir)
@@ -1444,9 +1440,7 @@ func (g *Golem) loadCommand(args []string) error {
 	}
 
 	path := args[0]
-	if g.verbose {
-		g.logger.Printf("Loading: %s", path)
-	}
+	g.LogInfo("Loading: %s", path)
 
 	// Check if path exists and get absolute path
 	absPath, err := filepath.Abs(path)
@@ -1528,9 +1522,7 @@ func (g *Golem) chatCommand(args []string) error {
 	}
 
 	input := strings.Join(args, " ")
-	if g.verbose {
-		g.logger.Printf("Processing chat input in session %s: %s", session.ID, input)
-	}
+	g.LogInfo("Processing chat input in session %s: %s", session.ID, input)
 
 	// Check for OOB messages first
 	if oobMsg, isOOB := ParseOOBMessage(input); isOOB {
@@ -1623,9 +1615,7 @@ func (g *Golem) processCommand(args []string) error {
 	}
 
 	inputFile := args[0]
-	if g.verbose {
-		g.logger.Printf("Processing file: %s", inputFile)
-	}
+	g.LogInfo("Processing file: %s", inputFile)
 
 	// Process the input file (placeholder implementation)
 	fmt.Printf("Processing file: %s\n", inputFile)
@@ -1639,9 +1629,7 @@ func (g *Golem) analyzeCommand(args []string) error {
 	}
 
 	inputFile := args[0]
-	if g.verbose {
-		g.logger.Printf("Analyzing file: %s", inputFile)
-	}
+	g.LogInfo("Analyzing file: %s", inputFile)
 
 	// Analyze the input file (placeholder implementation)
 	fmt.Printf("Analyzing file: %s\n", inputFile)
@@ -1657,9 +1645,7 @@ func (g *Golem) generateCommand(args []string) error {
 		outputFile = args[1]
 	}
 
-	if g.verbose {
-		g.logger.Printf("Generating output to: %s", outputFile)
-	}
+	g.LogInfo("Generating output to: %s", outputFile)
 
 	// Generate output (placeholder implementation)
 	fmt.Printf("Generating output to: %s\n", outputFile)
@@ -1668,9 +1654,7 @@ func (g *Golem) generateCommand(args []string) error {
 
 // ProcessData is a library function that can be used by other programs
 func (g *Golem) ProcessData(input string) (string, error) {
-	if g.verbose {
-		g.logger.Printf("Processing data: %s", input)
-	}
+	g.LogInfo("Processing data: %s", input)
 
 	// Process data (placeholder implementation)
 	result := fmt.Sprintf("Processed: %s", input)
@@ -1683,9 +1667,7 @@ func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error)
 		return "", fmt.Errorf("no AIML knowledge base loaded")
 	}
 
-	if g.verbose {
-		g.logger.Printf("Processing input: %s", input)
-	}
+	g.LogInfo("Processing input: %s", input)
 
 	// Normalize input
 	normalizedInput := g.CachedNormalizePattern(input)
@@ -1737,9 +1719,7 @@ func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, th
 		return "", fmt.Errorf("no AIML knowledge base loaded")
 	}
 
-	if g.verbose {
-		g.logger.Printf("Processing input with that index %d: %s", thatIndex, input)
-	}
+	g.LogInfo("Processing input with that index %d: %s", thatIndex, input)
 
 	// Normalize input
 	normalizedInput := g.CachedNormalizePattern(input)
@@ -1748,10 +1728,8 @@ func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, th
 	currentTopic := session.GetSessionTopic()
 	thatContext := session.GetThatByIndex(thatIndex)
 
-	if g.verbose {
-		g.logger.Printf("That context for index %d: '%s'", thatIndex, thatContext)
-		g.logger.Printf("That history: %v", session.ThatHistory)
-	}
+	g.LogInfo("That context for index %d: '%s'", thatIndex, thatContext)
+	g.LogInfo("That history: %v", session.ThatHistory)
 
 	// Normalize the that context for matching using enhanced that normalization
 	normalizedThat := ""
@@ -1820,9 +1798,7 @@ func (g *Golem) extractThatContextFromTemplate(template string) string {
 
 // AnalyzeData is a library function that can be used by other programs
 func (g *Golem) AnalyzeData(input string) (map[string]interface{}, error) {
-	if g.verbose {
-		g.logger.Printf("Analyzing data: %s", input)
-	}
+	g.LogInfo("Analyzing data: %s", input)
 
 	// Analyze the input file (placeholder implementation)
 	result := map[string]interface{}{
@@ -1835,9 +1811,7 @@ func (g *Golem) AnalyzeData(input string) (map[string]interface{}, error) {
 
 // GenerateOutput is a library function that can be used by other programs
 func (g *Golem) GenerateOutput(data interface{}) (string, error) {
-	if g.verbose {
-		g.logger.Printf("Generating output for data: %v", data)
-	}
+	g.LogInfo("Generating output for data: %v", data)
 
 	// Generate output (placeholder implementation)
 	result := fmt.Sprintf("Generated output for: %v", data)
@@ -1846,9 +1820,7 @@ func (g *Golem) GenerateOutput(data interface{}) (string, error) {
 
 // LoadFile is a library function that loads a file and returns its contents
 func (g *Golem) LoadFile(filename string) (string, error) {
-	if g.verbose {
-		g.logger.Printf("Loading file: %s", filename)
-	}
+	g.LogInfo("Loading file: %s", filename)
 
 	// Open the file
 	file, err := os.Open(filename)
