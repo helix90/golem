@@ -1,0 +1,42 @@
+[
+  {
+    "name": "openai_service",
+    "base_url": "https://api.openai.com/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "Authorization": "Bearer ${OPENAI_API_KEY}",
+      "Content-Type": "application/json"
+    },
+    "timeout": 30,
+    "response_format": "json",
+    "response_path": "choices.0.message.content",
+    "fallback_response": "I'm sorry, I couldn't process that request right now.",
+    "include_wildcards": true
+  },
+  {
+    "name": "weather_service",
+    "base_url": "https://api.openweathermap.org/data/2.5/weather",
+    "method": "GET",
+    "headers": {
+      "User-Agent": "Golem-AIML-Bot/1.0"
+    },
+    "timeout": 10,
+    "response_format": "json",
+    "response_path": "weather.0.description",
+    "fallback_response": "Sorry, I couldn't get the weather information right now.",
+    "include_wildcards": true
+  },
+  {
+    "name": "translation_service",
+    "base_url": "https://api.mymemory.translated.net/get",
+    "method": "GET",
+    "headers": {
+      "User-Agent": "Golem-AIML-Bot/1.0"
+    },
+    "timeout": 15,
+    "response_format": "json",
+    "response_path": "responseData.translatedText",
+    "fallback_response": "Sorry, I couldn't translate that right now.",
+    "include_wildcards": true
+  }
+]
