@@ -1,21 +1,6 @@
 package golem
 
-// EnableConsolidatedPipeline enables the consolidated template processing pipeline
-func (g *Golem) EnableConsolidatedPipeline() {
-	g.useConsolidatedPipeline = true
-	g.LogInfo("Consolidated template processing pipeline enabled")
-}
-
-// DisableConsolidatedPipeline disables the consolidated template processing pipeline
-func (g *Golem) DisableConsolidatedPipeline() {
-	g.useConsolidatedPipeline = false
-	g.LogInfo("Consolidated template processing pipeline disabled")
-}
-
-// IsConsolidatedPipelineEnabled returns whether the consolidated pipeline is enabled
-func (g *Golem) IsConsolidatedPipelineEnabled() bool {
-	return g.useConsolidatedPipeline
-}
+// Note: The consolidated pipeline is now always enabled and cannot be disabled
 
 // GetConsolidatedProcessor returns the consolidated template processor
 func (g *Golem) GetConsolidatedProcessor() *ConsolidatedTemplateProcessor {

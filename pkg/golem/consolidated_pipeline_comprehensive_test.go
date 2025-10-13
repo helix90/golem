@@ -9,8 +9,7 @@ func TestConsolidatedPipelineComprehensive(t *testing.T) {
 	// Create a new Golem instance
 	g := New(true)
 
-	// Enable consolidated pipeline
-	g.EnableConsolidatedPipeline()
+	// Consolidated pipeline is now always enabled
 
 	// Test with a complex template that uses multiple processors
 	template := "Hello <star/>, today is <date/> and the time is <time/>. <random><li>Have a great day!</li><li>Hope you're doing well!</li><li>Take care!</li></random>"
@@ -60,8 +59,7 @@ func TestConsolidatedPipelineWithFormatting(t *testing.T) {
 	// Create a new Golem instance
 	g := New(true)
 
-	// Enable consolidated pipeline
-	g.EnableConsolidatedPipeline()
+	// Consolidated pipeline is now always enabled
 
 	// Test with formatting tags
 	template := "Hello <star/>, your name in uppercase is <uppercase><star/></uppercase>"
@@ -87,8 +85,7 @@ func TestConsolidatedPipelineProcessorOrder(t *testing.T) {
 	// Create a new Golem instance
 	g := New(true)
 
-	// Enable consolidated pipeline
-	g.EnableConsolidatedPipeline()
+	// Consolidated pipeline is now always enabled
 
 	// Get the processing order
 	order := g.GetProcessingOrder()
@@ -99,7 +96,7 @@ func TestConsolidatedPipelineProcessorOrder(t *testing.T) {
 	}
 
 	// Check that wildcard processor comes first (PriorityEarly)
-	expectedOrder := []string{"wildcard", "variable", "recursive", "data", "text", "format"}
+	expectedOrder := []string{"wildcard", "variable", "recursive", "data", "text", "collection", "format", "system"}
 
 	for i, expected := range expectedOrder {
 		if i < len(order) && order[i] != expected {
@@ -114,8 +111,7 @@ func TestConsolidatedPipelineComprehensiveMetrics(t *testing.T) {
 	// Create a new Golem instance
 	g := New(true)
 
-	// Enable consolidated pipeline
-	g.EnableConsolidatedPipeline()
+	// Consolidated pipeline is now always enabled
 
 	// Process a few templates to generate metrics
 	template := "Test <star/> with <date/>"
@@ -157,8 +153,7 @@ func TestConsolidatedPipelineVsOriginal(t *testing.T) {
 	gConsolidated := New(true)
 	gOriginal := New(true)
 
-	// Enable consolidated pipeline for one
-	gConsolidated.EnableConsolidatedPipeline()
+	// Both instances now use the consolidated pipeline
 
 	// Test template
 	template := "Hello <star/>, today is <date/>"

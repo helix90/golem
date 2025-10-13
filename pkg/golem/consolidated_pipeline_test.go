@@ -9,13 +9,7 @@ func TestConsolidatedPipeline(t *testing.T) {
 	// Create a new Golem instance
 	g := New(true)
 
-	// Enable consolidated pipeline
-	g.EnableConsolidatedPipeline()
-
-	// Verify consolidated pipeline is enabled
-	if !g.IsConsolidatedPipelineEnabled() {
-		t.Error("Consolidated pipeline should be enabled")
-	}
+	// Consolidated pipeline is now always enabled
 
 	// Test basic template processing
 	template := "Hello <star/>"
@@ -53,21 +47,14 @@ func TestConsolidatedPipeline(t *testing.T) {
 		t.Error("Processing order should not be empty")
 	}
 
-	// Disable consolidated pipeline
-	g.DisableConsolidatedPipeline()
-
-	// Verify consolidated pipeline is disabled
-	if g.IsConsolidatedPipelineEnabled() {
-		t.Error("Consolidated pipeline should be disabled")
-	}
+	// Note: Consolidated pipeline cannot be disabled anymore
 }
 
 func TestConsolidatedPipelineWithComplexTemplate(t *testing.T) {
 	// Create a new Golem instance
 	g := New(true)
 
-	// Enable consolidated pipeline
-	g.EnableConsolidatedPipeline()
+	// Consolidated pipeline is now always enabled
 
 	// Test with a more complex template
 	template := "Hello <star/>, today is <date/>"
@@ -91,8 +78,7 @@ func TestConsolidatedPipelineMetrics(t *testing.T) {
 	// Create a new Golem instance
 	g := New(true)
 
-	// Enable consolidated pipeline
-	g.EnableConsolidatedPipeline()
+	// Consolidated pipeline is now always enabled
 
 	// Process a few templates to generate metrics
 	template := "Test <star/>"

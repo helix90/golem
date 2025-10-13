@@ -17,13 +17,15 @@ func NewConsolidatedTemplateProcessor(g *Golem) *ConsolidatedTemplateProcessor {
 	registry := NewProcessorRegistry()
 
 	// Register comprehensive processors in the correct order
-	// Cast to TemplateProcessor interface since they implement all required methods
-	registry.RegisterProcessor(TemplateProcessor(&ComprehensiveWildcardProcessor{golem: g}))
-	registry.RegisterProcessor(TemplateProcessor(&ComprehensiveVariableProcessor{golem: g}))
-	registry.RegisterProcessor(TemplateProcessor(&ComprehensiveRecursiveProcessor{golem: g}))
-	registry.RegisterProcessor(TemplateProcessor(&ComprehensiveDataProcessor{golem: g}))
-	registry.RegisterProcessor(TemplateProcessor(&ComprehensiveTextProcessor{golem: g}))
-	registry.RegisterProcessor(TemplateProcessor(&ComprehensiveFormatProcessor{golem: g}))
+	// Processing order: wildcard -> variable -> recursive -> data -> text -> format -> collection -> system
+	registry.RegisterProcessor(&ComprehensiveWildcardProcessor{golem: g})
+	registry.RegisterProcessor(&ComprehensiveVariableProcessor{golem: g})
+	registry.RegisterProcessor(&ComprehensiveRecursiveProcessor{golem: g})
+	registry.RegisterProcessor(&ComprehensiveDataProcessor{golem: g})
+	registry.RegisterProcessor(&ComprehensiveTextProcessor{golem: g})
+	registry.RegisterProcessor(&ComprehensiveFormatProcessor{golem: g})
+	registry.RegisterProcessor(&ComprehensiveCollectionProcessor{golem: g})
+	registry.RegisterProcessor(&ComprehensiveSystemProcessor{golem: g})
 
 	return &ConsolidatedTemplateProcessor{
 		registry: registry,
@@ -172,7 +174,7 @@ func (ctp *ConsolidatedTemplateProcessor) GetProcessorStats() map[string]interfa
 	return stats
 }
 
-// ComprehensiveWildcardProcessor handles all wildcard processing
+// ComprehensiveWildcardProcessor handles wildcard processing (star tags and that wildcards)
 type ComprehensiveWildcardProcessor struct {
 	*BaseProcessor
 	golem *Golem
@@ -247,15 +249,18 @@ func (p *ComprehensiveWildcardProcessor) Process(template string, wildcards map[
 		starIndex++
 	}
 
+	// Process that wildcard tags (that context wildcards)
+	response = p.golem.processThatWildcardTagsWithContext(response, ctx)
+
 	return response, nil
 }
 func (p *ComprehensiveWildcardProcessor) ShouldProcess(template string, ctx *VariableContext) bool {
-	return strings.Contains(template, "<star")
+	return strings.Contains(template, "<star") || strings.Contains(template, "<that_")
 }
 func (p *ComprehensiveWildcardProcessor) GetMetrics() *ProcessorMetrics { return &ProcessorMetrics{} }
 func (p *ComprehensiveWildcardProcessor) ResetMetrics()                 {}
 
-// ComprehensiveVariableProcessor handles all variable-related processing
+// ComprehensiveVariableProcessor handles variable processing (property, bot, think, topic, set, condition tags)
 type ComprehensiveVariableProcessor struct {
 	*BaseProcessor
 	golem *Golem
@@ -289,6 +294,9 @@ func (p *ComprehensiveVariableProcessor) Process(template string, wildcards map[
 	// Replace session variable tags using context
 	response = p.golem.replaceSessionVariableTagsWithContext(response, ctx)
 
+	// Process condition tags
+	response = p.golem.processConditionTagsWithContext(response, ctx)
+
 	return response, nil
 }
 func (p *ComprehensiveVariableProcessor) ShouldProcess(template string, ctx *VariableContext) bool {
@@ -301,6 +309,7 @@ func (p *ComprehensiveVariableProcessor) ShouldProcess(template string, ctx *Var
 		"<topic", "</topic>",
 		"<name", "</name>",
 		"<value", "</value>",
+		"<condition", "</condition>",
 	}
 
 	for _, tag := range variableTags {
@@ -314,7 +323,7 @@ func (p *ComprehensiveVariableProcessor) ShouldProcess(template string, ctx *Var
 func (p *ComprehensiveVariableProcessor) GetMetrics() *ProcessorMetrics { return &ProcessorMetrics{} }
 func (p *ComprehensiveVariableProcessor) ResetMetrics()                 {}
 
-// ComprehensiveRecursiveProcessor handles all recursive processing (SRAI, SRAIX)
+// ComprehensiveRecursiveProcessor handles recursive processing (SR, SRAI, SRAIX, learn, unlearn tags)
 type ComprehensiveRecursiveProcessor struct {
 	*BaseProcessor
 	golem *Golem
@@ -338,6 +347,12 @@ func (p *ComprehensiveRecursiveProcessor) Process(template string, wildcards map
 	// Process SRAIX tags (external services)
 	response = p.golem.processSRAIXTagsWithContext(response, ctx)
 
+	// Process learn tags (dynamic learning)
+	response = p.golem.processLearnTagsWithContext(response, ctx)
+
+	// Process unlearn tags (remove learned categories)
+	response = p.golem.processUnlearnTagsWithContext(response, ctx)
+
 	return response, nil
 }
 func (p *ComprehensiveRecursiveProcessor) ShouldProcess(template string, ctx *VariableContext) bool {
@@ -346,6 +361,8 @@ func (p *ComprehensiveRecursiveProcessor) ShouldProcess(template string, ctx *Va
 		"<srai", "</srai>",
 		"<sraix", "</sraix>",
 		"<sr", "</sr>",
+		"<learn", "</learn>",
+		"<unlearn", "</unlearn>",
 	}
 
 	for _, tag := range recursiveTags {
@@ -359,7 +376,7 @@ func (p *ComprehensiveRecursiveProcessor) ShouldProcess(template string, ctx *Va
 func (p *ComprehensiveRecursiveProcessor) GetMetrics() *ProcessorMetrics { return &ProcessorMetrics{} }
 func (p *ComprehensiveRecursiveProcessor) ResetMetrics()                 {}
 
-// ComprehensiveTextProcessor handles all text processing
+// ComprehensiveTextProcessor handles text processing (person, gender, sentence, word tags)
 type ComprehensiveTextProcessor struct {
 	*BaseProcessor
 	golem *Golem
@@ -412,7 +429,7 @@ func (p *ComprehensiveTextProcessor) ShouldProcess(template string, ctx *Variabl
 func (p *ComprehensiveTextProcessor) GetMetrics() *ProcessorMetrics { return &ProcessorMetrics{} }
 func (p *ComprehensiveTextProcessor) ResetMetrics()                 {}
 
-// ComprehensiveDataProcessor handles all data processing (date, time, random, etc.)
+// ComprehensiveDataProcessor handles data processing (date, time, random tags)
 type ComprehensiveDataProcessor struct {
 	*BaseProcessor
 	golem *Golem
@@ -455,7 +472,7 @@ func (p *ComprehensiveDataProcessor) ShouldProcess(template string, ctx *Variabl
 func (p *ComprehensiveDataProcessor) GetMetrics() *ProcessorMetrics { return &ProcessorMetrics{} }
 func (p *ComprehensiveDataProcessor) ResetMetrics()                 {}
 
-// ComprehensiveFormatProcessor handles all text formatting operations
+// ComprehensiveFormatProcessor handles text formatting (uppercase, lowercase, formal, etc.)
 type ComprehensiveFormatProcessor struct {
 	*BaseProcessor
 	golem *Golem
@@ -543,3 +560,95 @@ func (p *ComprehensiveFormatProcessor) ShouldProcess(template string, ctx *Varia
 }
 func (p *ComprehensiveFormatProcessor) GetMetrics() *ProcessorMetrics { return &ProcessorMetrics{} }
 func (p *ComprehensiveFormatProcessor) ResetMetrics()                 {}
+
+// ComprehensiveSystemProcessor handles system processing (size, version, id, that, request, response tags)
+type ComprehensiveSystemProcessor struct {
+	*BaseProcessor
+	golem *Golem
+}
+
+func (p *ComprehensiveSystemProcessor) Name() string                { return "system" }
+func (p *ComprehensiveSystemProcessor) Type() ProcessorType         { return ProcessorTypeSystem }
+func (p *ComprehensiveSystemProcessor) Priority() ProcessorPriority { return PriorityLate }
+func (p *ComprehensiveSystemProcessor) Condition() ProcessorCondition {
+	return ProcessorCondition{SkipIfEmpty: true}
+}
+func (p *ComprehensiveSystemProcessor) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
+	response := template
+
+	// Process system tags (size, version, id, that, etc.)
+	response = p.golem.processSizeTagsWithContext(response, ctx)
+	response = p.golem.processVersionTagsWithContext(response, ctx)
+	response = p.golem.processIdTagsWithContext(response, ctx)
+	response = p.golem.processThatTagsWithContext(response, ctx)
+	response = p.golem.processRequestTags(response, ctx)
+	response = p.golem.processResponseTags(response, ctx)
+
+	return response, nil
+}
+func (p *ComprehensiveSystemProcessor) ShouldProcess(template string, ctx *VariableContext) bool {
+	// Check if template contains any system tags
+	systemTags := []string{
+		"<size", "</size>",
+		"<version", "</version>",
+		"<id", "</id>",
+		"<that", "</that>",
+		"<request", "</request>",
+		"<response", "</response>",
+	}
+
+	for _, tag := range systemTags {
+		if strings.Contains(template, tag) {
+			return true
+		}
+	}
+
+	return false
+}
+func (p *ComprehensiveSystemProcessor) GetMetrics() *ProcessorMetrics { return &ProcessorMetrics{} }
+func (p *ComprehensiveSystemProcessor) ResetMetrics()                 {}
+
+// ComprehensiveCollectionProcessor handles collection processing (map, list, array tags)
+type ComprehensiveCollectionProcessor struct {
+	*BaseProcessor
+	golem *Golem
+}
+
+func (p *ComprehensiveCollectionProcessor) Name() string                { return "collection" }
+func (p *ComprehensiveCollectionProcessor) Type() ProcessorType         { return ProcessorTypeCollection }
+func (p *ComprehensiveCollectionProcessor) Priority() ProcessorPriority { return PriorityNormal }
+func (p *ComprehensiveCollectionProcessor) Condition() ProcessorCondition {
+	return ProcessorCondition{SkipIfEmpty: true}
+}
+func (p *ComprehensiveCollectionProcessor) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
+	response := template
+
+	// Process map tags
+	response = p.golem.processMapTagsWithContext(response, ctx)
+
+	// Process list tags
+	response = p.golem.processListTagsWithContext(response, ctx)
+
+	// Process array tags
+	response = p.golem.processArrayTagsWithContext(response, ctx)
+
+	return response, nil
+}
+func (p *ComprehensiveCollectionProcessor) ShouldProcess(template string, ctx *VariableContext) bool {
+	// Check if template contains any collection tags
+	collectionTags := []string{
+		"<map", "</map>",
+		"<list", "</list>",
+		"<array", "</array>",
+	}
+
+	for _, tag := range collectionTags {
+		if strings.Contains(template, tag) {
+			return true
+		}
+	}
+
+	return false
+}
+func (p *ComprehensiveCollectionProcessor) GetMetrics() *ProcessorMetrics { return &ProcessorMetrics{} }
+func (p *ComprehensiveCollectionProcessor) ResetMetrics()                 {}

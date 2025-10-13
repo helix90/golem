@@ -260,8 +260,6 @@ type Golem struct {
 	normalizationCache *RegexCache
 	// Consolidated template processor
 	consolidatedProcessor *ConsolidatedTemplateProcessor
-	// Use consolidated processing pipeline
-	useConsolidatedPipeline bool
 	// Text normalization result cache
 	textNormalizationCache *TextNormalizationCache
 	// Variable resolution cache
