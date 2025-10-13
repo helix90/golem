@@ -1521,6 +1521,25 @@ func (g *Golem) getCachedRegex(pattern string, cacheType string) *regexp.Regexp 
 
 // processTemplateWithContext processes a template with variable context
 func (g *Golem) processTemplateWithContext(template string, wildcards map[string]string, ctx *VariableContext) string {
+	// Use consolidated pipeline if enabled
+	if g.useConsolidatedPipeline {
+		if g.consolidatedProcessor == nil {
+			g.consolidatedProcessor = NewConsolidatedTemplateProcessor(g)
+		}
+		response, err := g.consolidatedProcessor.ProcessTemplate(template, wildcards, ctx)
+		if err != nil {
+			g.LogError("Error in consolidated template processing: %v", err)
+			return template // Return original template on error
+		}
+		return response
+	}
+
+	// Use original pipeline
+	return g.processTemplateWithContextOriginal(template, wildcards, ctx)
+}
+
+// processTemplateWithContextOriginal processes a template with variable context (original implementation)
+func (g *Golem) processTemplateWithContextOriginal(template string, wildcards map[string]string, ctx *VariableContext) string {
 	startTime := time.Now()
 
 	// Check cache first if enabled
