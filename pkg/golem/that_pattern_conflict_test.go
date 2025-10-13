@@ -5,6 +5,8 @@ import (
 )
 
 func TestThatPatternConflictDetector(t *testing.T) {
+	golem := New(false)
+
 	patterns := []string{
 		"HELLO",
 		"HELLO WORLD",
@@ -17,7 +19,7 @@ func TestThatPatternConflictDetector(t *testing.T) {
 	}
 
 	detector := NewThatPatternConflictDetector(patterns)
-	conflicts := detector.DetectConflicts()
+	conflicts := detector.DetectConflicts(golem)
 
 	if len(conflicts) == 0 {
 		t.Error("Expected to find conflicts in test patterns")
@@ -67,8 +69,10 @@ func TestDetectOverlapConflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			golem := New(false)
 			detector := NewThatPatternConflictDetector(tt.patterns)
-			detector.detectOverlapConflicts()
+			conflictDetection := NewConflictDetection(golem)
+			conflictDetection.detectOverlapConflicts(detector)
 
 			overlapConflicts := 0
 			for _, conflict := range detector.Conflicts {
@@ -109,8 +113,10 @@ func TestDetectAmbiguityConflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			golem := New(false)
 			detector := NewThatPatternConflictDetector(tt.patterns)
-			detector.detectAmbiguityConflicts()
+			conflictDetection := NewConflictDetection(golem)
+			conflictDetection.detectAmbiguityConflicts(detector)
 
 			ambiguityConflicts := 0
 			for _, conflict := range detector.Conflicts {
@@ -151,8 +157,10 @@ func TestDetectPriorityConflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			golem := New(false)
 			detector := NewThatPatternConflictDetector(tt.patterns)
-			detector.detectPriorityConflicts()
+			conflictDetection := NewConflictDetection(golem)
+			conflictDetection.detectPriorityConflicts(detector)
 
 			priorityConflicts := 0
 			for _, conflict := range detector.Conflicts {
@@ -193,8 +201,10 @@ func TestDetectWildcardConflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			golem := New(false)
 			detector := NewThatPatternConflictDetector(tt.patterns)
-			detector.detectWildcardConflicts()
+			conflictDetection := NewConflictDetection(golem)
+			conflictDetection.detectWildcardConflicts(detector)
 
 			wildcardConflicts := 0
 			for _, conflict := range detector.Conflicts {
@@ -235,8 +245,10 @@ func TestDetectSpecificityConflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			golem := New(false)
 			detector := NewThatPatternConflictDetector(tt.patterns)
-			detector.detectSpecificityConflicts()
+			conflictDetection := NewConflictDetection(golem)
+			conflictDetection.detectSpecificityConflicts(detector)
 
 			specificityConflicts := 0
 			for _, conflict := range detector.Conflicts {
@@ -595,6 +607,8 @@ func TestGenerateExamples(t *testing.T) {
 }
 
 func TestThatPatternConflictIntegration(t *testing.T) {
+	golem := New(false)
+
 	// Test comprehensive conflict detection
 	patterns := []string{
 		"HELLO",
@@ -610,7 +624,7 @@ func TestThatPatternConflictIntegration(t *testing.T) {
 	}
 
 	detector := NewThatPatternConflictDetector(patterns)
-	conflicts := detector.DetectConflicts()
+	conflicts := detector.DetectConflicts(golem)
 
 	// Verify we have conflicts
 	if len(conflicts) == 0 {

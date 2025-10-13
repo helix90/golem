@@ -9,6 +9,9 @@ import (
 func DemonstrateThatPatternConflictDetection() {
 	fmt.Println("=== That Pattern Conflict Detection Demo ===")
 
+	// Create a golem instance
+	golem := New(false)
+
 	// Example patterns that are likely to have conflicts
 	patterns := []string{
 		"HELLO",
@@ -39,7 +42,7 @@ func DemonstrateThatPatternConflictDetection() {
 	detector := NewThatPatternConflictDetector(patterns)
 
 	// Detect conflicts
-	conflicts := detector.DetectConflicts()
+	conflicts := detector.DetectConflicts(golem)
 
 	fmt.Printf("Found %d conflicts:\n", len(conflicts))
 	fmt.Println()
@@ -145,6 +148,9 @@ func DemonstrateThatPatternConflictDetection() {
 func DemonstrateConflictDetectionWithRealPatterns() {
 	fmt.Println("=== Realistic Pattern Conflict Detection Demo ===")
 
+	// Create a golem instance
+	golem := New(false)
+
 	// Realistic AIML patterns that might have conflicts
 	patterns := []string{
 		"HELLO",
@@ -209,7 +215,7 @@ func DemonstrateConflictDetectionWithRealPatterns() {
 	detector := NewThatPatternConflictDetector(patterns)
 
 	// Detect conflicts
-	conflicts := detector.DetectConflicts()
+	conflicts := detector.DetectConflicts(golem)
 
 	fmt.Printf("Found %d conflicts in realistic patterns\n", len(conflicts))
 

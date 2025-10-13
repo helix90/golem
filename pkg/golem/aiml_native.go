@@ -695,11 +695,8 @@ func (g *Golem) validatePattern(pattern string) error {
 	}
 
 	// Check for balanced wildcards (count all wildcard types)
-	starCount := strings.Count(pattern, "*")
-	underscoreCount := strings.Count(pattern, "_")
-	caretCount := strings.Count(pattern, "^")
-	hashCount := strings.Count(pattern, "#")
-	totalWildcards := starCount + underscoreCount + caretCount + hashCount
+	wildcardCounts := CountWildcardsByType(pattern)
+	totalWildcards := wildcardCounts["star"] + wildcardCounts["underscore"] + wildcardCounts["caret"] + wildcardCounts["hash"]
 
 	if totalWildcards > 9 {
 		return fmt.Errorf("pattern contains too many wildcards (max 9)")
@@ -3003,27 +3000,10 @@ func (g *Golem) processLengthTagsWithContext(template string, ctx *VariableConte
 
 // calculateLength calculates the length of text based on the specified type
 func (g *Golem) calculateLength(content, lengthType string) string {
+	// Use the utility function for most cases
 	switch strings.ToLower(lengthType) {
-	case "words":
-		// Count words
-		words := strings.Fields(content)
-		return strconv.Itoa(len(words))
-	case "sentences":
-		// Count sentences (split by sentence-ending punctuation)
-		sentences := g.splitSentences(content)
-		return strconv.Itoa(len(sentences))
-	case "characters", "chars":
-		// Count characters (including spaces)
-		return strconv.Itoa(len(content))
-	case "letters":
-		// Count only letters
-		letterCount := 0
-		for _, r := range content {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				letterCount++
-			}
-		}
-		return strconv.Itoa(letterCount)
+	case "words", "sentences", "characters", "chars", "letters", "words_no_punctuation":
+		return CalculateLength(content, lengthType)
 	case "digits":
 		// Count only digits
 		digitCount := 0
@@ -5564,11 +5544,7 @@ func (session *ChatSession) GetThatHistoryStats() map[string]interface{} {
 
 // calculateThatHistoryMemoryUsage estimates memory usage of that history
 func (session *ChatSession) calculateThatHistoryMemoryUsage() int {
-	totalBytes := 0
-	for _, item := range session.ThatHistory {
-		totalBytes += len(item) + 24 // 24 bytes overhead per string
-	}
-	return totalBytes
+	return CalculateMemoryUsage(session.ThatHistory)
 }
 
 // CompressThatHistory compresses the that history using smart compression
@@ -9214,21 +9190,11 @@ func ValidateThatPatternDetailed(pattern string) *ThatPatternValidationResult {
 	result.Stats["wildcard_types"] = make(map[string]int)
 
 	// Check for balanced wildcards (all types) with detailed reporting
-	starCount := strings.Count(pattern, "*")
-	underscoreCount := strings.Count(pattern, "_")
-	caretCount := strings.Count(pattern, "^")
-	hashCount := strings.Count(pattern, "#")
-	dollarCount := strings.Count(pattern, "$")
-	totalWildcards := starCount + underscoreCount + caretCount + hashCount + dollarCount
+	wildcardCounts := CountWildcardsByType(pattern)
+	totalWildcards := CountWildcards(pattern)
 
 	result.Stats["wildcard_count"] = totalWildcards
-	result.Stats["wildcard_types"] = map[string]int{
-		"star":       starCount,
-		"underscore": underscoreCount,
-		"caret":      caretCount,
-		"hash":       hashCount,
-		"dollar":     dollarCount,
-	}
+	result.Stats["wildcard_types"] = wildcardCounts
 
 	if totalWildcards > 9 {
 		result.Errors = append(result.Errors, fmt.Sprintf("Too many wildcards: %d (maximum 9 allowed). Consider simplifying the pattern.", totalWildcards))
@@ -9344,8 +9310,7 @@ func validatePatternPerformance(pattern string) []string {
 	warnings := []string{}
 
 	// Check for complex wildcard combinations
-	wildcardCount := strings.Count(pattern, "*") + strings.Count(pattern, "_") +
-		strings.Count(pattern, "^") + strings.Count(pattern, "#")
+	wildcardCount := CountWildcards(pattern)
 
 	if wildcardCount > 5 {
 		warnings = append(warnings, "High wildcard count may impact matching performance.")
@@ -9974,142 +9939,9 @@ func NewThatPatternConflictDetector(patterns []string) *ThatPatternConflictDetec
 }
 
 // DetectConflicts analyzes patterns for conflicts
-func (detector *ThatPatternConflictDetector) DetectConflicts() []ThatPatternConflict {
-	detector.Conflicts = []ThatPatternConflict{}
-
-	// Check for various types of conflicts
-	detector.detectOverlapConflicts()
-	detector.detectAmbiguityConflicts()
-	detector.detectPriorityConflicts()
-	detector.detectWildcardConflicts()
-	detector.detectSpecificityConflicts()
-
-	return detector.Conflicts
-}
-
-// detectOverlapConflicts detects patterns that overlap in matching scope
-func (detector *ThatPatternConflictDetector) detectOverlapConflicts() {
-	for i, pattern1 := range detector.Patterns {
-		for j, pattern2 := range detector.Patterns {
-			if i >= j {
-				continue // Skip same pattern and avoid duplicates
-			}
-
-			// Check if patterns overlap
-			if detector.patternsOverlap(pattern1, pattern2) {
-				conflict := ThatPatternConflict{
-					Type:        "overlap",
-					Pattern1:    pattern1,
-					Pattern2:    pattern2,
-					Severity:    detector.calculateOverlapSeverity(pattern1, pattern2),
-					Description: fmt.Sprintf("Patterns '%s' and '%s' have overlapping matching scope", pattern1, pattern2),
-					Suggestions: detector.generateOverlapSuggestions(pattern1, pattern2),
-					Examples:    detector.generateOverlapExamples(pattern1, pattern2),
-				}
-				detector.Conflicts = append(detector.Conflicts, conflict)
-			}
-		}
-	}
-}
-
-// detectAmbiguityConflicts detects patterns that create ambiguous matching
-func (detector *ThatPatternConflictDetector) detectAmbiguityConflicts() {
-	for i, pattern1 := range detector.Patterns {
-		for j, pattern2 := range detector.Patterns {
-			if i >= j {
-				continue
-			}
-
-			// Check for ambiguity
-			if detector.patternsAreAmbiguous(pattern1, pattern2) {
-				conflict := ThatPatternConflict{
-					Type:        "ambiguity",
-					Pattern1:    pattern1,
-					Pattern2:    pattern2,
-					Severity:    "high",
-					Description: fmt.Sprintf("Patterns '%s' and '%s' create ambiguous matching scenarios", pattern1, pattern2),
-					Suggestions: detector.generateAmbiguitySuggestions(pattern1, pattern2),
-					Examples:    detector.generateAmbiguityExamples(pattern1, pattern2),
-				}
-				detector.Conflicts = append(detector.Conflicts, conflict)
-			}
-		}
-	}
-}
-
-// detectPriorityConflicts detects patterns with unclear priority ordering
-func (detector *ThatPatternConflictDetector) detectPriorityConflicts() {
-	for i, pattern1 := range detector.Patterns {
-		for j, pattern2 := range detector.Patterns {
-			if i >= j {
-				continue
-			}
-
-			// Check for priority conflicts
-			if detector.patternsHavePriorityConflict(pattern1, pattern2) {
-				conflict := ThatPatternConflict{
-					Type:        "priority",
-					Pattern1:    pattern1,
-					Pattern2:    pattern2,
-					Severity:    "medium",
-					Description: fmt.Sprintf("Patterns '%s' and '%s' have unclear priority ordering", pattern1, pattern2),
-					Suggestions: detector.generatePrioritySuggestions(pattern1, pattern2),
-					Examples:    detector.generatePriorityExamples(pattern1, pattern2),
-				}
-				detector.Conflicts = append(detector.Conflicts, conflict)
-			}
-		}
-	}
-}
-
-// detectWildcardConflicts detects wildcard-related conflicts
-func (detector *ThatPatternConflictDetector) detectWildcardConflicts() {
-	for i, pattern1 := range detector.Patterns {
-		for j, pattern2 := range detector.Patterns {
-			if i >= j {
-				continue
-			}
-
-			// Check for wildcard conflicts
-			if detector.patternsHaveWildcardConflict(pattern1, pattern2) {
-				conflict := ThatPatternConflict{
-					Type:        "wildcard",
-					Pattern1:    pattern1,
-					Pattern2:    pattern2,
-					Severity:    "medium",
-					Description: fmt.Sprintf("Patterns '%s' and '%s' have conflicting wildcard usage", pattern1, pattern2),
-					Suggestions: detector.generateWildcardSuggestions(pattern1, pattern2),
-					Examples:    detector.generateWildcardExamples(pattern1, pattern2),
-				}
-				detector.Conflicts = append(detector.Conflicts, conflict)
-			}
-		}
-	}
-}
-
-// detectSpecificityConflicts detects specificity-related conflicts
-func (detector *ThatPatternConflictDetector) detectSpecificityConflicts() {
-	for i, pattern1 := range detector.Patterns {
-		for j, pattern2 := range detector.Patterns {
-			if i >= j {
-				continue
-			}
-
-			// Check for specificity conflicts
-			if detector.patternsHaveSpecificityConflict(pattern1, pattern2) {
-				conflict := ThatPatternConflict{
-					Type:        "specificity",
-					Pattern1:    pattern1,
-					Pattern2:    pattern2,
-					Severity:    "low",
-					Description: fmt.Sprintf("Patterns '%s' and '%s' have conflicting specificity levels", pattern1, pattern2),
-					Suggestions: detector.generateSpecificitySuggestions(pattern1, pattern2),
-					Examples:    detector.generateSpecificityExamples(pattern1, pattern2),
-				}
-				detector.Conflicts = append(detector.Conflicts, conflict)
-			}
-		}
-	}
+func (detector *ThatPatternConflictDetector) DetectConflicts(golem *Golem) []ThatPatternConflict {
+	conflictDetection := NewConflictDetection(golem)
+	return conflictDetection.DetectConflicts(detector)
 }
 
 // patternsOverlap checks if two patterns have overlapping matching scope
@@ -10296,43 +10128,11 @@ func (detector *ThatPatternConflictDetector) testPatternMatch(pattern, input str
 }
 
 func (detector *ThatPatternConflictDetector) calculatePatternSpecificity(pattern string) float64 {
-	// Calculate pattern specificity (0.0 = very general, 1.0 = very specific)
-
-	// Count wildcards
-	wildcardCount := detector.countWildcards(pattern)
-
-	// Count words
-	words := strings.Fields(pattern)
-	wordCount := len(words)
-
-	// Calculate specificity
-	if wordCount == 0 {
-		return 0.0
-	}
-
-	// More words = more specific
-	// Fewer wildcards = more specific
-	specificity := float64(wordCount-wildcardCount) / float64(wordCount)
-
-	// Ensure it's between 0 and 1
-	if specificity < 0 {
-		specificity = 0
-	}
-	if specificity > 1 {
-		specificity = 1
-	}
-
-	return specificity
+	return CalculatePatternSpecificity(pattern)
 }
 
 func (detector *ThatPatternConflictDetector) countWildcards(pattern string) int {
-	count := 0
-	count += strings.Count(pattern, "*")
-	count += strings.Count(pattern, "_")
-	count += strings.Count(pattern, "^")
-	count += strings.Count(pattern, "#")
-	count += strings.Count(pattern, "$")
-	return count
+	return CountWildcards(pattern)
 }
 
 func (detector *ThatPatternConflictDetector) calculateOverlapSeverity(pattern1, pattern2 string) string {
@@ -10463,20 +10263,4 @@ func (detector *ThatPatternConflictDetector) generateSpecificityExamples(pattern
 		"HELLO WORLD",
 		"GOOD MORNING",
 	}
-}
-
-// abs returns absolute value of an integer
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
-// absFloat returns absolute value of a float64
-func absFloat(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
