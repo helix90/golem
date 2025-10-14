@@ -246,7 +246,7 @@ func TestPerson2Integration(t *testing.T) {
 		{
 			name:     "Nested person2 tags",
 			template: "<person2>I think <person2>we should go</person2></person2>",
-			expected: "they think <person2>we should go</person2>",
+			expected: "they think they should go",
 		},
 	}
 

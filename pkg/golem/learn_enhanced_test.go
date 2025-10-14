@@ -517,7 +517,10 @@ func TestEnhancedLearnWithTopic(t *testing.T) {
 		</category>
 	</learn>`
 
-	ctx := &VariableContext{Session: session}
+	ctx := &VariableContext{
+		Session:       session,
+		KnowledgeBase: g.aimlKB,
+	}
 	result := g.processTemplateWithContext(template, make(map[string]string), ctx)
 
 	// The learn tag should be removed after processing

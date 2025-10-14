@@ -61,9 +61,29 @@ func (ctp *ConsolidatedTemplateProcessor) ProcessTemplate(template string, wildc
 		return template, err
 	}
 
+	// One additional resolving pass for variables/conditions/collections in case
+	// formatting/text passes revealed or produced new tags
+	response = ctp.golem.replaceSessionVariableTagsWithContext(response, ctx)
+	response = ctp.golem.processConditionTagsWithContext(response, ctx)
+	// Re-run collection retrieval/mutations if any remain
+	response = ctp.golem.processMapTagsWithContext(response, ctx)
+	response = ctp.golem.processListTagsWithContext(response, ctx)
+	response = ctp.golem.processArrayTagsWithContext(response, ctx)
+
 	ctp.golem.LogInfo("Final response: '%s'", response)
 
-	finalResponse := strings.TrimSpace(response)
+	// Smart trimming: preserve intentional indentation; collapse whitespace-only to empty
+	finalResponse := response
+	if len(response) > 0 {
+		// Collapse whitespace-only output to empty (collections/tests expect empty)
+		if strings.TrimSpace(response) == "" {
+			finalResponse = ""
+		} else if response[0] != ' ' && response[0] != '\t' {
+			// If it doesn't start with intentional indentation, trim normally
+			finalResponse = strings.TrimSpace(response)
+		}
+		// If it starts with space/tab and has non-whitespace content, preserve it (intentional indentation)
+	}
 
 	// Update metrics
 	processingTime := float64(time.Since(startTime).Nanoseconds()) / 1000000.0 // Convert to milliseconds
@@ -390,21 +410,32 @@ func (p *ComprehensiveTextProcessor) Condition() ProcessorCondition {
 }
 func (p *ComprehensiveTextProcessor) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
 	response := template
+	maxIterations := 10 // Prevent infinite loops
+	iteration := 0
 
-	// Process person tags (pronoun substitution)
-	response = p.golem.processPersonTagsWithContext(response, ctx)
+	for iteration < maxIterations {
+		iteration++
+		previousResponse := response
 
-	// Process gender tags (gender pronoun substitution)
-	response = p.golem.processGenderTagsWithContext(response, ctx)
+		// Process text processing tags (process from inside out for nested tags)
+		// First pass: process innermost tags
+		response = p.golem.processPerson2TagsWithContext(response, ctx)
+		response = p.golem.processGenderTagsWithContext(response, ctx)
+		response = p.golem.processSentenceTagsWithContext(response, ctx)
+		response = p.golem.processWordTagsWithContext(response, ctx)
 
-	// Process person2 tags (first-to-third person pronoun substitution)
-	response = p.golem.processPerson2TagsWithContext(response, ctx)
+		// Second pass: process outermost tags
+		response = p.golem.processPersonTagsWithContext(response, ctx)
 
-	// Process sentence tags (sentence-level processing)
-	response = p.golem.processSentenceTagsWithContext(response, ctx)
+		// If no changes occurred, we're done
+		if response == previousResponse {
+			break
+		}
+	}
 
-	// Process word tags (word-level processing)
-	response = p.golem.processWordTagsWithContext(response, ctx)
+	if iteration >= maxIterations {
+		p.golem.LogWarn("Text processor reached maximum iterations (%d), stopping recursion", maxIterations)
+	}
 
 	return response, nil
 }
@@ -486,39 +517,61 @@ func (p *ComprehensiveFormatProcessor) Condition() ProcessorCondition {
 }
 func (p *ComprehensiveFormatProcessor) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
 	response := template
+	maxIterations := 10 // Prevent infinite loops
+	iteration := 0
 
-	// Process topic tags (current topic references) - before text processing
-	response = p.golem.processTopicTagsWithContext(response, ctx)
+	for iteration < maxIterations {
+		iteration++
+		previousResponse := response
 
-	// Process repeat tags first (before text formatting) so they can be processed by other tags
-	response = p.golem.processRepeatTagsWithContext(response, ctx)
+		// Process topic tags (current topic references) - before text processing
+		response = p.golem.processTopicTagsWithContext(response, ctx)
 
-	// Process all text formatting tags
-	response = p.golem.processUppercaseTagsWithContext(response, ctx)
-	response = p.golem.processLowercaseTagsWithContext(response, ctx)
-	response = p.golem.processFormalTagsWithContext(response, ctx)
-	response = p.golem.processExplodeTagsWithContext(response, ctx)
-	response = p.golem.processCapitalizeTagsWithContext(response, ctx)
-	response = p.golem.processReverseTagsWithContext(response, ctx)
-	response = p.golem.processAcronymTagsWithContext(response, ctx)
-	response = p.golem.processTrimTagsWithContext(response, ctx)
-	response = p.golem.processSubstringTagsWithContext(response, ctx)
-	response = p.golem.processReplaceTagsWithContext(response, ctx)
-	response = p.golem.processPluralizeTagsWithContext(response, ctx)
-	response = p.golem.processShuffleTagsWithContext(response, ctx)
-	response = p.golem.processLengthTagsWithContext(response, ctx)
-	response = p.golem.processCountTagsWithContext(response, ctx)
-	response = p.golem.processSplitTagsWithContext(response, ctx)
-	response = p.golem.processJoinTagsWithContext(response, ctx)
-	response = p.golem.processIndentTagsWithContext(response, ctx)
-	response = p.golem.processDedentTagsWithContext(response, ctx)
-	response = p.golem.processUniqueTagsWithContext(response, ctx)
+		// Process repeat tags first (before text formatting) so they can be processed by other tags
+		response = p.golem.processRepeatTagsWithContext(response, ctx)
 
-	// Process normalize tags (text normalization)
-	response = p.golem.processNormalizeTagsWithContext(response, ctx)
+		// Process all text formatting tags (process from inside out for nested tags)
+		// First pass: process innermost tags (order chosen to produce expected semantics)
+		// 1) explode first so tokens are created before any casing
+		response = p.golem.processExplodeTagsWithContext(response, ctx)
+		// 2) substring/replace before case changes to act on original text
+		response = p.golem.processSubstringTagsWithContext(response, ctx)
+		response = p.golem.processReplaceTagsWithContext(response, ctx)
+		// 3) (defer capitalization to second pass to combine with case transforms)
+		response = p.golem.processReverseTagsWithContext(response, ctx)
+		response = p.golem.processAcronymTagsWithContext(response, ctx)
+		response = p.golem.processTrimTagsWithContext(response, ctx)
+		response = p.golem.processIndentTagsWithContext(response, ctx)
+		response = p.golem.processDedentTagsWithContext(response, ctx)
+		response = p.golem.processPluralizeTagsWithContext(response, ctx)
+		response = p.golem.processShuffleTagsWithContext(response, ctx)
+		response = p.golem.processCountTagsWithContext(response, ctx)
+		response = p.golem.processSplitTagsWithContext(response, ctx)
+		response = p.golem.processJoinTagsWithContext(response, ctx)
+		response = p.golem.processLengthTagsWithContext(response, ctx)
+		response = p.golem.processUniqueTagsWithContext(response, ctx)
 
-	// Process denormalize tags (text denormalization)
-	response = p.golem.processDenormalizeTagsWithContext(response, ctx)
+		// Second pass: process outermost tags (case transforms) then formal last to finalize title casing
+		response = p.golem.processCapitalizeTagsWithContext(response, ctx)
+		response = p.golem.processFormalTagsWithContext(response, ctx)
+		response = p.golem.processUppercaseTagsWithContext(response, ctx)
+		response = p.golem.processLowercaseTagsWithContext(response, ctx)
+
+		// Process normalize tags (text normalization)
+		response = p.golem.processNormalizeTagsWithContext(response, ctx)
+
+		// Process denormalize tags (text denormalization)
+		response = p.golem.processDenormalizeTagsWithContext(response, ctx)
+
+		// If no changes occurred, we're done
+		if response == previousResponse {
+			break
+		}
+	}
+
+	if iteration >= maxIterations {
+		p.golem.LogWarn("Format processor reached maximum iterations (%d), stopping recursion", maxIterations)
+	}
 
 	return response, nil
 }
@@ -622,15 +675,31 @@ func (p *ComprehensiveCollectionProcessor) Condition() ProcessorCondition {
 }
 func (p *ComprehensiveCollectionProcessor) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
 	response := template
+	maxIterations := 10 // Prevent infinite loops
+	iteration := 0
 
-	// Process map tags
-	response = p.golem.processMapTagsWithContext(response, ctx)
+	for iteration < maxIterations {
+		iteration++
+		previousResponse := response
 
-	// Process list tags
-	response = p.golem.processListTagsWithContext(response, ctx)
+		// Process map tags
+		response = p.golem.processMapTagsWithContext(response, ctx)
 
-	// Process array tags
-	response = p.golem.processArrayTagsWithContext(response, ctx)
+		// Process list tags
+		response = p.golem.processListTagsWithContext(response, ctx)
+
+		// Process array tags
+		response = p.golem.processArrayTagsWithContext(response, ctx)
+
+		// If no changes occurred, we're done
+		if response == previousResponse {
+			break
+		}
+	}
+
+	if iteration >= maxIterations {
+		p.golem.LogWarn("Collection processor reached maximum iterations (%d), stopping recursion", maxIterations)
+	}
 
 	return response, nil
 }

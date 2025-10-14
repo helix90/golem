@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 )
@@ -1481,11 +1482,16 @@ func (g *Golem) ProcessTemplate(template string, wildcards map[string]string) st
 // ProcessTemplateWithContext processes an AIML template with full context support
 func (g *Golem) ProcessTemplateWithContext(template string, wildcards map[string]string, session *ChatSession) string {
 	// Create variable context for template processing
+	// Ensure knowledge base is initialized for variable/collection operations
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
 	ctx := &VariableContext{
-		LocalVars:     make(map[string]string),
-		Session:       session,
-		Topic:         session.GetSessionTopic(),
-		KnowledgeBase: g.aimlKB,
+		LocalVars:      make(map[string]string),
+		Session:        session,
+		Topic:          session.GetSessionTopic(),
+		KnowledgeBase:  g.aimlKB,
+		RecursionDepth: 0,
 	}
 
 	return g.processTemplateWithContext(template, wildcards, ctx)
@@ -1740,6 +1746,8 @@ func (g *Golem) fixVerbAgreement(text string) string {
 	// Common verb agreement fixes
 	verbFixes := map[string]string{
 		"you am":  "you are",
+		"You Am":  "You Are",
+		"you Am":  "you Are",
 		"I are":   "I am",
 		"you is":  "you are",
 		"I is":    "I am",
@@ -1947,6 +1955,12 @@ func (g *Golem) fixGenderVerbAgreement(text string) string {
 
 // processSRAITagsWithContext processes <srai> tags with variable context
 func (g *Golem) processSRAITagsWithContext(template string, ctx *VariableContext) string {
+	// Check recursion depth to prevent infinite recursion
+	if ctx.RecursionDepth >= MaxSRAIRecursionDepth {
+		g.LogWarn("SRAI recursion depth limit reached (%d), stopping recursion", MaxSRAIRecursionDepth)
+		return template
+	}
+
 	// Find all <srai> tags
 	sraiRegex := regexp.MustCompile(`<srai>(.*?)</srai>`)
 	matches := sraiRegex.FindAllStringSubmatch(template, -1)
@@ -1955,7 +1969,7 @@ func (g *Golem) processSRAITagsWithContext(template string, ctx *VariableContext
 		if len(match) > 1 {
 			sraiContent := strings.TrimSpace(match[1])
 
-			g.LogInfo("Processing SRAI: '%s'", sraiContent)
+			g.LogInfo("Processing SRAI: '%s' (depth: %d)", sraiContent, ctx.RecursionDepth)
 
 			// Process the SRAI content as a new pattern
 			if g.aimlKB != nil {
@@ -1963,8 +1977,17 @@ func (g *Golem) processSRAITagsWithContext(template string, ctx *VariableContext
 				category, wildcards, err := g.aimlKB.MatchPattern(sraiContent)
 				g.LogInfo("SRAI pattern match: content='%s', err=%v, category=%v, wildcards=%v", sraiContent, err, category != nil, wildcards)
 				if err == nil && category != nil {
-					// Process the matched template with context
-					response := g.processTemplateWithContext(category.Template, wildcards, ctx)
+					// Create a new context with incremented recursion depth
+					newCtx := &VariableContext{
+						LocalVars:      ctx.LocalVars,
+						Session:        ctx.Session,
+						Topic:          ctx.Topic,
+						KnowledgeBase:  ctx.KnowledgeBase,
+						RecursionDepth: ctx.RecursionDepth + 1,
+					}
+
+					// Process the matched template with the new context
+					response := g.processTemplateWithContext(category.Template, wildcards, newCtx)
 					template = strings.ReplaceAll(template, match[0], response)
 				} else {
 					// No match found, leave the SRAI tag unchanged
@@ -2050,14 +2073,16 @@ func (g *Golem) processUppercaseTagsWithContext(template string, ctx *VariableCo
 
 	for _, match := range matches {
 		if len(match) > 1 {
-			content := strings.TrimSpace(match[1])
-			// Replace empty content with empty string
-			if content == "" {
-				template = strings.ReplaceAll(template, match[0], "")
+			raw := match[1]
+			trimmed := strings.TrimSpace(raw)
+			// Preserve whitespace-only content unchanged
+			if trimmed == "" && len(raw) > 0 {
+				template = strings.ReplaceAll(template, match[0], raw)
 				continue
 			}
 
-			// Normalize whitespace before uppercasing
+			// For non-whitespace content, trim edges then normalize internal whitespace
+			content := strings.TrimSpace(raw)
 			content = regexp.MustCompile(`\s+`).ReplaceAllString(content, " ")
 
 			// Check cache first
@@ -2125,14 +2150,16 @@ func (g *Golem) processFormalTagsWithContext(template string, ctx *VariableConte
 
 	for _, match := range matches {
 		if len(match) > 1 {
-			content := strings.TrimSpace(match[1])
-			// Replace empty content with empty string
-			if content == "" {
-				template = strings.ReplaceAll(template, match[0], "")
+			raw := match[1]
+			trimmed := strings.TrimSpace(raw)
+			// Preserve whitespace-only content unchanged
+			if trimmed == "" && len(raw) > 0 {
+				template = strings.ReplaceAll(template, match[0], raw)
 				continue
 			}
 
-			// Normalize whitespace before formal formatting
+			// For non-whitespace content, trim edges then normalize internal whitespace
+			content := strings.TrimSpace(raw)
 			content = regexp.MustCompile(`\s+`).ReplaceAllString(content, " ")
 
 			// Check cache first
@@ -2316,6 +2343,24 @@ func (g *Golem) capitalizeText(input string) string {
 	runes := []rune(input)
 	if len(runes) == 0 {
 		return ""
+	}
+
+	// Special case: if input consists of single-character tokens separated by spaces
+	tokens := strings.Fields(input)
+	if len(tokens) > 1 {
+		allSingle := true
+		for _, t := range tokens {
+			if len([]rune(t)) != 1 {
+				allSingle = false
+				break
+			}
+		}
+		if allSingle {
+			for i := range tokens {
+				tokens[i] = strings.ToUpper(tokens[i])
+			}
+			return strings.Join(tokens, " ")
+		}
 	}
 
 	// Capitalize first character, lowercase the rest
@@ -2697,6 +2742,11 @@ func (g *Golem) pluralizeWord(word string) string {
 	// Convert to lowercase for processing
 	lowerWord := strings.ToLower(word)
 
+	// Check if word is already plural
+	if g.isAlreadyPlural(lowerWord) {
+		return word // Return original word with preserved case
+	}
+
 	// Handle irregular plurals
 	irregularPlurals := map[string]string{
 		"child":       "children",
@@ -2887,6 +2937,61 @@ func isVowel(r rune) bool {
 	case 'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U':
 		return true
 	}
+	return false
+}
+
+// isAlreadyPlural checks if a word is already in plural form
+func (g *Golem) isAlreadyPlural(word string) bool {
+	if len(word) < 2 {
+		return false
+	}
+
+	// Check for common plural endings
+	runes := []rune(word)
+	lastChar := runes[len(runes)-1]
+	lastTwoChars := ""
+	lastThreeChars := ""
+
+	if len(runes) >= 2 {
+		lastTwoChars = string(runes[len(runes)-2:])
+	}
+	if len(runes) >= 3 {
+		lastThreeChars = string(runes[len(runes)-3:])
+	}
+
+	// Words ending in -es (but not -ses, -ches, -shes, -xes, -zes which are singular)
+	if lastTwoChars == "es" && lastThreeChars != "ses" && lastThreeChars != "ches" &&
+		lastThreeChars != "shes" && lastThreeChars != "xes" && lastThreeChars != "zes" {
+		return true
+	}
+
+	// Words ending in -ies (but not -sies, -chies, -shies, -xies, -zies which are singular)
+	if lastThreeChars == "ies" && len(runes) > 3 {
+		// Check if the character before "ies" is a consonant
+		beforeIes := runes[len(runes)-4]
+		if !isVowel(beforeIes) {
+			return true
+		}
+	}
+
+	// Words ending in -ves (but not -fves, -ffes which are singular)
+	if lastThreeChars == "ves" && len(runes) > 3 {
+		// Check if the character before "ves" is not 'f'
+		beforeVes := runes[len(runes)-4]
+		if beforeVes != 'f' {
+			return true
+		}
+	}
+
+	// Words ending in -s (but not -ss, -sh, -ch, -x, -z which are singular)
+	// Only consider it plural if it's not a word that would normally get -es
+	if lastChar == 's' && lastTwoChars != "ss" && lastTwoChars != "sh" && lastTwoChars != "ch" {
+		// Check if it's not a word that would normally get -es (like bus -> buses)
+		if lastChar == 's' && lastTwoChars != "us" && lastTwoChars != "is" && lastTwoChars != "as" {
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -3191,7 +3296,7 @@ func (g *Golem) processJoinTagsWithContext(template string, ctx *VariableContext
 
 	for _, match := range matches {
 		if len(match) > 2 {
-			delimiter := strings.TrimSpace(match[1])
+			delimiter := match[1]
 			content := strings.TrimSpace(match[2])
 
 			// Default delimiter is space if not specified
@@ -3266,6 +3371,11 @@ func (g *Golem) processIndentTagsWithContext(template string, ctx *VariableConte
 			// Default character is space if not specified
 			if char == "" {
 				char = " "
+			} else {
+				// Convert escape sequences
+				char = strings.ReplaceAll(char, "\\t", "\t")
+				char = strings.ReplaceAll(char, "\\n", "\n")
+				char = strings.ReplaceAll(char, "\\r", "\r")
 			}
 
 			// Replace empty content with empty string
@@ -3303,6 +3413,9 @@ func (g *Golem) indentText(content string, level int, char string) string {
 	if content == "" {
 		return ""
 	}
+
+	// Convert literal \n to actual newlines
+	content = strings.ReplaceAll(content, "\\n", "\n")
 
 	// Create the indentation string
 	indent := strings.Repeat(char, level)
@@ -3351,6 +3464,11 @@ func (g *Golem) processDedentTagsWithContext(template string, ctx *VariableConte
 			// Default character is space if not specified
 			if char == "" {
 				char = " "
+			} else {
+				// Convert escape sequences
+				char = strings.ReplaceAll(char, "\\t", "\t")
+				char = strings.ReplaceAll(char, "\\n", "\n")
+				char = strings.ReplaceAll(char, "\\r", "\r")
 			}
 
 			// Replace empty content with empty string
@@ -3388,6 +3506,11 @@ func (g *Golem) dedentText(content string, level int, char string) string {
 	if content == "" {
 		return ""
 	}
+
+	// Convert literal \n to actual newlines
+	content = strings.ReplaceAll(content, "\\n", "\n")
+	// Convert literal \t to actual tabs
+	content = strings.ReplaceAll(content, "\\t", "\t")
 
 	// Create the dedentation string
 	dedent := strings.Repeat(char, level)
@@ -4059,17 +4182,33 @@ func (g *Golem) processConditionListItemsWithContext(content string, actualValue
 	return "" // No match found
 }
 
-// replaceSessionVariableTagsWithContext replaces <get name="var"/> tags with variables using context
+// replaceSessionVariableTagsWithContext replaces <get name="var"/> and <get name="var"></get> tags with variables using context
 func (g *Golem) replaceSessionVariableTagsWithContext(template string, ctx *VariableContext) string {
-	// Find all <get name="var"/> tags
-	getTagRegex := regexp.MustCompile(`<get name="([^"]+)"/>`)
+	// Find all <get name="var"/> tags (self-closing) - case-insensitive attribute
+	getTagRegex := regexp.MustCompile(`(?i)<get\s+name="([^"]+)"\s*/>`)
 	matches := getTagRegex.FindAllStringSubmatch(template, -1)
 
 	for _, match := range matches {
 		if len(match) > 1 {
 			varName := match[1]
-			varValue := g.resolveVariable(varName, ctx)
-			if varValue != "" {
+			varValue, found := g.resolveVariableWithPresence(varName, ctx)
+			if found {
+				// Replace even if empty string
+				template = strings.ReplaceAll(template, match[0], varValue)
+			}
+		}
+	}
+
+	// Find all <get name="var"></get> tags (with closing tag) - case insensitive for attribute name
+	getTagWithClosing := regexp.MustCompile(`(?i)<get\s+name="([^"]+)"\s*></get>`)
+	matches2 := getTagWithClosing.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches2 {
+		if len(match) > 1 {
+			varName := match[1]
+			varValue, found := g.resolveVariableWithPresence(varName, ctx)
+			if found {
+				// Replace even if empty string
 				template = strings.ReplaceAll(template, match[0], varValue)
 			}
 		}
@@ -4080,9 +4219,7 @@ func (g *Golem) replaceSessionVariableTagsWithContext(template string, ctx *Vari
 
 // processSetTagsWithContext processes <set> tags with enhanced AIML2 set operations
 func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext) string {
-	if ctx.KnowledgeBase == nil {
-		return template
-	}
+	// Allow variable setting even if knowledge base is nil (handled above to ensure non-nil)
 
 	// Find all <set> tags with various operations
 	// Support both variable assignment and set operations
@@ -4097,12 +4234,16 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 	} else {
 		setRegex = regexp.MustCompile(`(?s)<set\s+name=["']([^"']+)["'](?:\s+operation=["']([^"']+)["'])?>(.*?)</set>`)
 	}
-	matches := setRegex.FindAllStringSubmatch(template, -1)
-
-	g.LogInfo("Set processing: found %d matches in template: '%s'", len(matches), template)
+	g.LogInfo("Set processing: template before processing: '%s'", template)
 	g.LogInfo("Current sets state: %v", ctx.KnowledgeBase.Sets)
 
-	for _, match := range matches {
+	// Process set tags one at a time to maintain order and avoid conflicts
+	for {
+		matches := setRegex.FindStringSubmatch(template)
+		if matches == nil || len(matches) < 4 {
+			break
+		}
+		match := matches
 		if len(match) >= 4 {
 			setName := match[1]
 			operation := match[2]
@@ -4123,25 +4264,29 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 				if content != "" {
 					// Use content directly (no template processing to avoid recursion)
 					processedContent := strings.TrimSpace(content)
+					g.LogInfo("Add operation - original content: '%s', trimmed: '%s'", content, processedContent)
 
-					// Check if item already exists
-					exists := false
-					for _, item := range ctx.KnowledgeBase.Sets[setName] {
-						if strings.EqualFold(item, processedContent) {
-							exists = true
-							break
+					// Only add if content is not empty after trimming
+					if processedContent != "" {
+						// Check if item already exists
+						exists := false
+						for _, item := range ctx.KnowledgeBase.Sets[setName] {
+							if strings.EqualFold(item, processedContent) {
+								exists = true
+								break
+							}
+						}
+						if !exists {
+							ctx.KnowledgeBase.Sets[setName] = append(ctx.KnowledgeBase.Sets[setName], processedContent)
+							g.LogInfo("Added '%s' to set '%s'", processedContent, setName)
+							g.LogInfo("After add: set '%s' = %v", setName, ctx.KnowledgeBase.Sets[setName])
+						} else {
+							g.LogInfo("Item '%s' already exists in set '%s'", processedContent, setName)
 						}
 					}
-					if !exists {
-						ctx.KnowledgeBase.Sets[setName] = append(ctx.KnowledgeBase.Sets[setName], processedContent)
-						g.LogInfo("Added '%s' to set '%s'", processedContent, setName)
-						g.LogInfo("After add: set '%s' = %v", setName, ctx.KnowledgeBase.Sets[setName])
-					} else {
-						g.LogInfo("Item '%s' already exists in set '%s'", processedContent, setName)
-					}
-					// Remove the set tag from the template (don't replace with value)
-					template = strings.ReplaceAll(template, match[0], "")
 				}
+				// Remove the first occurrence of the set tag from the template
+				template = strings.Replace(template, match[0], "", 1)
 
 			case "remove", "delete":
 				// Remove item from set
@@ -4152,25 +4297,26 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 					for i, item := range ctx.KnowledgeBase.Sets[setName] {
 						if strings.EqualFold(item, processedContent) {
 							ctx.KnowledgeBase.Sets[setName] = append(ctx.KnowledgeBase.Sets[setName][:i], ctx.KnowledgeBase.Sets[setName][i+1:]...)
-							template = strings.ReplaceAll(template, match[0], "")
 							g.LogInfo("Removed '%s' from set '%s'", processedContent, setName)
 							g.LogInfo("After remove: set '%s' = %v", setName, ctx.KnowledgeBase.Sets[setName])
 							break
 						}
 					}
 				}
+				// Remove the first occurrence of the set tag from the template
+				template = strings.Replace(template, match[0], "", 1)
 
 			case "clear":
 				// Clear the set
 				ctx.KnowledgeBase.Sets[setName] = make([]string, 0)
-				template = strings.ReplaceAll(template, match[0], "")
+				template = strings.Replace(template, match[0], "", 1)
 				g.LogInfo("Cleared set '%s'", setName)
 				g.LogInfo("After clear: set '%s' = %v", setName, ctx.KnowledgeBase.Sets[setName])
 
 			case "size", "length":
 				// Return the size of the set
 				size := strconv.Itoa(len(ctx.KnowledgeBase.Sets[setName]))
-				template = strings.ReplaceAll(template, match[0], size)
+				template = strings.Replace(template, match[0], size, 1)
 				g.LogInfo("Set '%s' size: %s", setName, size)
 
 			case "contains", "has":
@@ -4191,16 +4337,16 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 				if contains {
 					result = "true"
 				}
-				template = strings.ReplaceAll(template, match[0], result)
+				template = strings.Replace(template, match[0], result, 1)
 				g.LogInfo("Set '%s' contains '%s': %s", setName, content, result)
 
 			case "get", "list":
 				// Get all items in the set or return the set as a string
 				if len(ctx.KnowledgeBase.Sets[setName]) == 0 {
-					template = strings.ReplaceAll(template, match[0], "")
+					template = strings.Replace(template, match[0], "", 1)
 				} else {
 					setString := strings.Join(ctx.KnowledgeBase.Sets[setName], " ")
-					template = strings.ReplaceAll(template, match[0], setString)
+					template = strings.Replace(template, match[0], setString, 1)
 					g.LogInfo("Set '%s' contents: %s", setName, setString)
 				}
 
@@ -4215,7 +4361,7 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 					g.LogInfo("Set variable '%s' to '%s'", setName, processedValue)
 
 					// Remove the set tag from the template (don't replace with value)
-					template = strings.ReplaceAll(template, match[0], "")
+					template = strings.Replace(template, match[0], "", 1)
 				}
 
 			default:
@@ -4230,14 +4376,14 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 					g.LogInfo("Set variable '%s' to '%s' (default operation)", setName, processedValue)
 
 					// Remove the set tag from the template (don't replace with value)
-					template = strings.ReplaceAll(template, match[0], "")
+					template = strings.Replace(template, match[0], "", 1)
 				} else {
 					// Content is empty, treat as get operation (return set contents)
 					if len(ctx.KnowledgeBase.Sets[setName]) == 0 {
-						template = strings.ReplaceAll(template, match[0], "")
+						template = strings.Replace(template, match[0], "", 1)
 					} else {
 						setString := strings.Join(ctx.KnowledgeBase.Sets[setName], " ")
-						template = strings.ReplaceAll(template, match[0], setString)
+						template = strings.Replace(template, match[0], setString, 1)
 						g.LogInfo("Set '%s' contents: %s", setName, setString)
 					}
 				}
@@ -4641,10 +4787,11 @@ func (g *Golem) processConditionListItems(content string, actualValue string, se
 func (g *Golem) processConditionTemplate(content string, session *ChatSession) string {
 	// Create variable context for condition processing
 	ctx := &VariableContext{
-		LocalVars:     make(map[string]string),
-		Session:       session,
-		Topic:         "", // Topic tracking will be implemented in future version
-		KnowledgeBase: g.aimlKB,
+		LocalVars:      make(map[string]string),
+		Session:        session,
+		Topic:          "", // Topic tracking will be implemented in future version
+		KnowledgeBase:  g.aimlKB,
+		RecursionDepth: 0,
 	}
 
 	return g.processTemplateWithContext(content, make(map[string]string), ctx)
@@ -4661,22 +4808,28 @@ const (
 	ScopeProperties                      // Properties scope (bot properties, read-only)
 )
 
+const (
+	MaxSRAIRecursionDepth = 10 // Maximum recursion depth for SRAI processing
+)
+
 // VariableContext holds the context for variable resolution
 type VariableContext struct {
-	LocalVars     map[string]string  // Local variables (highest priority)
-	Session       *ChatSession       // Session context
-	Topic         string             // Current topic
-	KnowledgeBase *AIMLKnowledgeBase // Knowledge base context
+	LocalVars      map[string]string  // Local variables (highest priority)
+	Session        *ChatSession       // Session context
+	Topic          string             // Current topic
+	KnowledgeBase  *AIMLKnowledgeBase // Knowledge base context
+	RecursionDepth int                // Current recursion depth for SRAI processing
 }
 
 // getVariableValue retrieves a variable value from the appropriate context with proper scope resolution
 func (g *Golem) getVariableValue(varName string, session *ChatSession) string {
 	// Create variable context
 	ctx := &VariableContext{
-		LocalVars:     make(map[string]string),
-		Session:       session,
-		Topic:         "", // Topic tracking will be implemented in future version
-		KnowledgeBase: g.aimlKB,
+		LocalVars:      make(map[string]string),
+		Session:        session,
+		Topic:          "", // Topic tracking will be implemented in future version
+		KnowledgeBase:  g.aimlKB,
+		RecursionDepth: 0,
 	}
 
 	return g.resolveVariable(varName, ctx)
@@ -4770,6 +4923,53 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 
 	g.LogInfo("Variable '%s' not found", varName)
 	return "" // Variable not found
+}
+
+// resolveVariableWithPresence resolves a variable and reports whether it was found in any scope.
+// This differs from resolveVariable by distinguishing between an unset variable and a variable
+// that is explicitly set to an empty string.
+func (g *Golem) resolveVariableWithPresence(varName string, ctx *VariableContext) (string, bool) {
+	// 1. Check local scope
+	if ctx.LocalVars != nil {
+		if value, exists := ctx.LocalVars[varName]; exists {
+			return value, true
+		}
+	}
+
+	// 2. Check session scope
+	if ctx.Session != nil && ctx.Session.Variables != nil {
+		if value, exists := ctx.Session.Variables[varName]; exists {
+			return value, true
+		}
+	}
+
+	// 3. Check topic scope
+	if ctx.KnowledgeBase != nil && ctx.Topic != "" {
+		if ctx.KnowledgeBase.TopicVars != nil {
+			if topicVars, ok := ctx.KnowledgeBase.TopicVars[ctx.Topic]; ok {
+				if value, exists := topicVars[varName]; exists {
+					return value, true
+				}
+			}
+		}
+	}
+
+	// 4. Check global scope (Variables)
+	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Variables != nil {
+		if value, exists := ctx.KnowledgeBase.Variables[varName]; exists {
+			return value, true
+		}
+	}
+
+	// 5. Check properties as fallback
+	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Properties != nil {
+		if value, exists := ctx.KnowledgeBase.Properties[varName]; exists {
+			return value, true
+		}
+	}
+
+	// Not found
+	return "", false
 }
 
 // setVariable sets a variable in the appropriate scope
@@ -8994,6 +9194,8 @@ type ThatPatternCache struct {
 	// Pattern matching results cache
 	MatchResults map[string]bool `json:"match_results"` // Caches match results
 	ResultHits   map[string]int  `json:"result_hits"`
+	// Mutex for thread safety
+	mutex sync.RWMutex
 }
 
 // NewThatPatternCache creates a new enhanced that pattern cache
@@ -9014,23 +9216,38 @@ func NewThatPatternCache(maxSize int) *ThatPatternCache {
 
 // GetCompiledPattern returns a compiled regex pattern for a that pattern with TTL and LRU
 func (cache *ThatPatternCache) GetCompiledPattern(pattern string) (*regexp.Regexp, bool) {
+	cache.mutex.RLock()
 	if compiled, exists := cache.Patterns[pattern]; exists {
 		// Check TTL
 		if time.Since(cache.Timestamps[pattern]).Seconds() < float64(cache.TTL) {
-			// Update access order for LRU
+			cache.mutex.RUnlock()
+			// Update access order for LRU (requires write lock)
+			cache.mutex.Lock()
 			cache.updateAccessOrder(pattern)
 			cache.Hits[pattern]++
+			cache.mutex.Unlock()
 			return compiled, true
 		}
-		// TTL expired, remove from cache
+		cache.mutex.RUnlock()
+		// TTL expired, remove from cache (requires write lock)
+		cache.mutex.Lock()
 		cache.removePattern(pattern)
+		cache.mutex.Unlock()
+	} else {
+		cache.mutex.RUnlock()
 	}
+
+	cache.mutex.Lock()
 	cache.Misses++
+	cache.mutex.Unlock()
 	return nil, false
 }
 
 // SetCompiledPattern stores a compiled regex pattern with LRU eviction
 func (cache *ThatPatternCache) SetCompiledPattern(pattern string, compiled *regexp.Regexp) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	// Evict if cache is full
 	if len(cache.Patterns) >= cache.MaxSize {
 		cache.evictLRU()
@@ -9044,20 +9261,29 @@ func (cache *ThatPatternCache) SetCompiledPattern(pattern string, compiled *rege
 // GetMatchResult returns a cached match result for a pattern-context combination
 func (cache *ThatPatternCache) GetMatchResult(pattern, context string) (bool, bool) {
 	cacheKey := fmt.Sprintf("%s|%s", pattern, context)
+	cache.mutex.RLock()
 	if result, exists := cache.MatchResults[cacheKey]; exists {
+		cache.mutex.RUnlock()
+		cache.mutex.Lock()
 		cache.ResultHits[cacheKey]++
+		cache.mutex.Unlock()
 		return result, true
 	}
+	cache.mutex.RUnlock()
 	return false, false
 }
 
 // SetMatchResult caches a match result for a pattern-context combination
 func (cache *ThatPatternCache) SetMatchResult(pattern, context string, result bool) {
 	cacheKey := fmt.Sprintf("%s|%s", pattern, context)
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	cache.MatchResults[cacheKey] = result
 }
 
 // updateAccessOrder updates the LRU access order
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *ThatPatternCache) updateAccessOrder(pattern string) {
 	// Remove from current position
 	for i, p := range cache.AccessOrder {
@@ -9071,6 +9297,7 @@ func (cache *ThatPatternCache) updateAccessOrder(pattern string) {
 }
 
 // removePattern removes a pattern from the cache
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *ThatPatternCache) removePattern(pattern string) {
 	delete(cache.Patterns, pattern)
 	delete(cache.Timestamps, pattern)
@@ -9087,6 +9314,7 @@ func (cache *ThatPatternCache) removePattern(pattern string) {
 }
 
 // evictLRU removes the least recently used pattern
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *ThatPatternCache) evictLRU() {
 	if len(cache.AccessOrder) == 0 {
 		return
@@ -9099,6 +9327,9 @@ func (cache *ThatPatternCache) evictLRU() {
 
 // GetCacheStats returns enhanced cache statistics
 func (cache *ThatPatternCache) GetCacheStats() map[string]interface{} {
+	cache.mutex.RLock()
+	defer cache.mutex.RUnlock()
+
 	totalRequests := cache.Misses
 	for _, hits := range cache.Hits {
 		totalRequests += hits
@@ -9137,6 +9368,9 @@ func (cache *ThatPatternCache) GetCacheStats() map[string]interface{} {
 
 // ClearCache clears the that pattern cache
 func (cache *ThatPatternCache) ClearCache() {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	cache.Patterns = make(map[string]*regexp.Regexp)
 	cache.Hits = make(map[string]int)
 	cache.Misses = 0
@@ -9149,6 +9383,9 @@ func (cache *ThatPatternCache) ClearCache() {
 
 // InvalidateContext invalidates cache entries for a specific context
 func (cache *ThatPatternCache) InvalidateContext(context string) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	// Remove all patterns that have this context hash
 	for pattern, contextHash := range cache.ContextHashes {
 		if contextHash == context {

@@ -1,0 +1,33 @@
+{
+  "categories": [
+    {
+      "category": {
+        "Pattern": "SAVED *",
+        "Template": "I remember: SOMETHING",
+        "That": "",
+        "ThatIndex": 0,
+        "Topic": ""
+      },
+      "learned_at": "2025-10-14T13:04:32.997752726-07:00",
+      "source": "learnf",
+      "version": "1.3.0",
+      "checksum": "3114cbd94c6b4fe5"
+    },
+    {
+      "category": {
+        "Pattern": "PERSISTENT PATTERN",
+        "Template": "This was learned persistently",
+        "That": "",
+        "ThatIndex": 0,
+        "Topic": ""
+      },
+      "learned_at": "2025-10-14T13:04:32.997752726-07:00",
+      "source": "learnf",
+      "version": "1.3.0",
+      "checksum": "-270c2e50460b24db"
+    }
+  ],
+  "last_updated": "2025-10-14T13:04:32.997752726-07:00",
+  "version": "1.3.0",
+  "total_learned": 2
+}

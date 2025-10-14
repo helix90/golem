@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -87,6 +88,8 @@ type TemplateCache struct {
 	Hits       map[string]int    `json:"hits"`
 	MaxSize    int               `json:"max_size"`
 	TTL        int64             `json:"ttl_seconds"`
+	// Mutex for thread safety
+	mutex sync.RWMutex
 }
 
 // RegexCache represents a cache for compiled regex patterns
@@ -98,6 +101,7 @@ type RegexCache struct {
 	TTL         int64                     `json:"ttl_seconds"`
 	Timestamps  map[string]time.Time      `json:"timestamps"`
 	AccessOrder []string                  `json:"access_order"` // For LRU eviction
+	mutex       sync.RWMutex              // Mutex for thread-safe access
 }
 
 // TextNormalizationCache represents a cache for text normalization results
@@ -109,6 +113,8 @@ type TextNormalizationCache struct {
 	TTL         int64                `json:"ttl_seconds"`
 	Timestamps  map[string]time.Time `json:"timestamps"`
 	AccessOrder []string             `json:"access_order"` // For LRU eviction
+	// Mutex for thread safety
+	mutex sync.RWMutex
 }
 
 // VariableResolutionCache represents a cache for variable resolution results
@@ -122,6 +128,8 @@ type VariableResolutionCache struct {
 	AccessOrder []string             `json:"access_order"` // For LRU eviction
 	// Scope tracking for cache invalidation
 	ScopeHashes map[string]string `json:"scope_hashes"` // Maps cache key to scope hash
+	// Mutex for thread safety
+	mutex sync.RWMutex
 }
 
 // TemplateTagProcessingCache represents a cache for template tag processing results
@@ -137,6 +145,8 @@ type TemplateTagProcessingCache struct {
 	TagTypes map[string]string `json:"tag_types"` // Maps cache key to tag type
 	// Context tracking for cache invalidation
 	ContextHashes map[string]string `json:"context_hashes"` // Maps cache key to context hash
+	// Mutex for thread safety
+	mutex sync.RWMutex
 }
 
 // PatternMatchingCache represents a cache for pattern matching results
@@ -160,6 +170,8 @@ type PatternMatchingCache struct {
 	KnowledgeBaseHash string `json:"knowledge_base_hash"`
 	// Set state tracking for invalidation
 	SetHashes map[string]string `json:"set_hashes"` // Maps set name to content hash
+	// Mutex for thread safety
+	mutex sync.RWMutex
 }
 
 // WildcardMatchResult represents the result of a wildcard pattern match
@@ -247,6 +259,8 @@ type Golem struct {
 	sessionID int
 	oobMgr    *OOBManager
 	sraixMgr  *SRAIXManager
+	// Mutex for thread-safe session management
+	sessionMutex sync.RWMutex
 	// Text processing components
 	sentenceSplitter     *SentenceSplitter
 	wordBoundaryDetector *WordBoundaryDetector
@@ -295,32 +309,46 @@ func NewRegexCache(maxSize int, ttlSeconds int64) *RegexCache {
 // GetCompiledRegex returns a compiled regex pattern from cache or compiles and caches it
 func (cache *RegexCache) GetCompiledRegex(pattern string) (*regexp.Regexp, error) {
 	// Check if pattern exists in cache
+	cache.mutex.RLock()
 	if compiled, exists := cache.Patterns[pattern]; exists {
 		// Check TTL
 		if time.Since(cache.Timestamps[pattern]).Seconds() < float64(cache.TTL) {
-			// Update access order for LRU
+			cache.mutex.RUnlock()
+			// Update access order for LRU (requires write lock)
+			cache.mutex.Lock()
 			cache.updateAccessOrder(pattern)
 			cache.Hits[pattern]++
+			cache.mutex.Unlock()
 			return compiled, nil
 		}
-		// TTL expired, remove from cache
+		cache.mutex.RUnlock()
+		// TTL expired, remove from cache (requires write lock)
+		cache.mutex.Lock()
 		cache.removePattern(pattern)
+		cache.mutex.Unlock()
+	} else {
+		cache.mutex.RUnlock()
 	}
 
 	// Compile the pattern
 	compiled, err := regexp.Compile(pattern)
 	if err != nil {
+		cache.mutex.Lock()
 		cache.Misses++
+		cache.mutex.Unlock()
 		return nil, err
 	}
 
 	// Cache the compiled pattern
+	cache.mutex.Lock()
 	cache.setPattern(pattern, compiled)
 	cache.Misses++
+	cache.mutex.Unlock()
 	return compiled, nil
 }
 
 // updateAccessOrder updates the LRU access order
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *RegexCache) updateAccessOrder(pattern string) {
 	// Remove from current position
 	for i, p := range cache.AccessOrder {
@@ -334,6 +362,7 @@ func (cache *RegexCache) updateAccessOrder(pattern string) {
 }
 
 // setPattern adds a pattern to the cache with LRU eviction
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *RegexCache) setPattern(pattern string, compiled *regexp.Regexp) {
 	// Evict if cache is full
 	if len(cache.Patterns) >= cache.MaxSize {
@@ -346,6 +375,7 @@ func (cache *RegexCache) setPattern(pattern string, compiled *regexp.Regexp) {
 }
 
 // removePattern removes a pattern from the cache
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *RegexCache) removePattern(pattern string) {
 	delete(cache.Patterns, pattern)
 	delete(cache.Timestamps, pattern)
@@ -361,6 +391,7 @@ func (cache *RegexCache) removePattern(pattern string) {
 }
 
 // evictLRU removes the least recently used pattern
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *RegexCache) evictLRU() {
 	if len(cache.AccessOrder) == 0 {
 		return
@@ -421,17 +452,25 @@ func (cache *TextNormalizationCache) GetNormalizedText(input string, normalizati
 	// Create cache key with normalization type
 	cacheKey := normalizationType + ":" + input
 
-	// Check if result exists in cache
+	cache.mutex.RLock()
 	if result, exists := cache.Results[cacheKey]; exists {
 		// Check TTL
 		if time.Since(cache.Timestamps[cacheKey]).Seconds() < float64(cache.TTL) {
-			// Update access order for LRU
+			cache.mutex.RUnlock()
+			// Need write lock to update access order
+			cache.mutex.Lock()
 			cache.updateAccessOrder(cacheKey)
 			cache.Hits[cacheKey]++
+			cache.mutex.Unlock()
 			return result, nil
 		}
 		// TTL expired, remove from cache
+		cache.mutex.RUnlock()
+		cache.mutex.Lock()
 		cache.removeResult(cacheKey)
+		cache.mutex.Unlock()
+	} else {
+		cache.mutex.RUnlock()
 	}
 
 	// Normalize the text based on type
@@ -453,8 +492,10 @@ func (cache *TextNormalizationCache) GetNormalizedText(input string, normalizati
 	}
 
 	// Cache the result
+	cache.mutex.Lock()
 	cache.setResult(cacheKey, result)
 	cache.Misses++
+	cache.mutex.Unlock()
 	return result, nil
 }
 
@@ -472,6 +513,7 @@ func (cache *TextNormalizationCache) updateAccessOrder(key string) {
 }
 
 // setResult adds a result to the cache with LRU eviction
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *TextNormalizationCache) setResult(key string, result string) {
 	// Evict if cache is full
 	if len(cache.Results) >= cache.MaxSize {
@@ -757,27 +799,41 @@ func (cache *TemplateTagProcessingCache) GetProcessedTag(tagType, content string
 	cacheKey := cache.generateCacheKey(tagType, content, ctx)
 
 	// Check if result exists in cache
+	cache.mutex.RLock()
 	if result, exists := cache.Results[cacheKey]; exists {
 		// Check TTL
 		if time.Since(cache.Timestamps[cacheKey]).Seconds() < float64(cache.TTL) {
 			// Check if context has changed (cache invalidation)
 			currentContextHash := cache.generateContextHash(ctx)
 			if cache.ContextHashes[cacheKey] == currentContextHash {
-				// Update access order for LRU
+				cache.mutex.RUnlock()
+				// Update access order for LRU (requires write lock)
+				cache.mutex.Lock()
 				cache.updateAccessOrder(cacheKey)
 				cache.Hits[cacheKey]++
+				cache.mutex.Unlock()
 				return result, true
 			}
-			// Context changed, remove from cache
+			cache.mutex.RUnlock()
+			// Context changed, remove from cache (requires write lock)
+			cache.mutex.Lock()
 			cache.removeResult(cacheKey)
+			cache.mutex.Unlock()
 		} else {
-			// TTL expired, remove from cache
+			cache.mutex.RUnlock()
+			// TTL expired, remove from cache (requires write lock)
+			cache.mutex.Lock()
 			cache.removeResult(cacheKey)
+			cache.mutex.Unlock()
 		}
+	} else {
+		cache.mutex.RUnlock()
 	}
 
 	// Tag not found in cache
+	cache.mutex.Lock()
 	cache.Misses++
+	cache.mutex.Unlock()
 	return "", false
 }
 
@@ -787,7 +843,9 @@ func (cache *TemplateTagProcessingCache) SetProcessedTag(tagType, content, resul
 	contextHash := cache.generateContextHash(ctx)
 
 	// Cache the result
+	cache.mutex.Lock()
 	cache.setResult(cacheKey, result, tagType, contextHash)
+	cache.mutex.Unlock()
 }
 
 // generateCacheKey creates a cache key for template tag processing
@@ -862,6 +920,7 @@ func (cache *TemplateTagProcessingCache) generateContextHash(ctx *VariableContex
 }
 
 // updateAccessOrder updates the LRU access order
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *TemplateTagProcessingCache) updateAccessOrder(key string) {
 	// Remove from current position
 	for i, k := range cache.AccessOrder {
@@ -875,6 +934,7 @@ func (cache *TemplateTagProcessingCache) updateAccessOrder(key string) {
 }
 
 // setResult adds a result to the cache with LRU eviction
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *TemplateTagProcessingCache) setResult(key string, result string, tagType string, contextHash string) {
 	// Evict if cache is full
 	if len(cache.Results) >= cache.MaxSize {
@@ -889,6 +949,7 @@ func (cache *TemplateTagProcessingCache) setResult(key string, result string, ta
 }
 
 // removeResult removes a result from the cache
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *TemplateTagProcessingCache) removeResult(key string) {
 	delete(cache.Results, key)
 	delete(cache.Timestamps, key)
@@ -906,6 +967,7 @@ func (cache *TemplateTagProcessingCache) removeResult(key string) {
 }
 
 // evictLRU removes the least recently used result
+// Note: This method assumes the caller holds the appropriate lock
 func (cache *TemplateTagProcessingCache) evictLRU() {
 	if len(cache.AccessOrder) == 0 {
 		return
@@ -918,6 +980,9 @@ func (cache *TemplateTagProcessingCache) evictLRU() {
 
 // GetCacheStats returns cache statistics
 func (cache *TemplateTagProcessingCache) GetCacheStats() map[string]interface{} {
+	cache.mutex.RLock()
+	defer cache.mutex.RUnlock()
+
 	totalRequests := cache.Misses
 	for _, hits := range cache.Hits {
 		totalRequests += hits
@@ -943,6 +1008,9 @@ func (cache *TemplateTagProcessingCache) GetCacheStats() map[string]interface{} 
 
 // ClearCache clears the template tag processing cache
 func (cache *TemplateTagProcessingCache) ClearCache() {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	cache.Results = make(map[string]string)
 	cache.Hits = make(map[string]int)
 	cache.Misses = 0
@@ -954,6 +1022,9 @@ func (cache *TemplateTagProcessingCache) ClearCache() {
 
 // InvalidateTagType invalidates cache entries for a specific tag type
 func (cache *TemplateTagProcessingCache) InvalidateTagType(tagType string) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	// Remove all results that have this tag type
 	for key, cachedTagType := range cache.TagTypes {
 		if cachedTagType == tagType {
@@ -964,6 +1035,9 @@ func (cache *TemplateTagProcessingCache) InvalidateTagType(tagType string) {
 
 // InvalidateContext invalidates cache entries for a specific context
 func (cache *TemplateTagProcessingCache) InvalidateContext(context string) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	// Remove all results that have this context hash
 	for key, contextHash := range cache.ContextHashes {
 		if contextHash == context {
@@ -1183,7 +1257,10 @@ func (g *Golem) SavePersistentCategories(source string) error {
 
 // GetSessionLearningStats returns learning statistics for a session
 func (g *Golem) GetSessionLearningStats(sessionID string) (*SessionLearningStats, error) {
+	g.sessionMutex.RLock()
 	session, exists := g.sessions[sessionID]
+	g.sessionMutex.RUnlock()
+
 	if !exists {
 		return nil, fmt.Errorf("session not found: %s", sessionID)
 	}
@@ -1197,7 +1274,10 @@ func (g *Golem) GetSessionLearningStats(sessionID string) (*SessionLearningStats
 
 // GetSessionLearnedCategories returns categories learned in a session
 func (g *Golem) GetSessionLearnedCategories(sessionID string) ([]Category, error) {
+	g.sessionMutex.RLock()
 	session, exists := g.sessions[sessionID]
+	g.sessionMutex.RUnlock()
+
 	if !exists {
 		return nil, fmt.Errorf("session not found: %s", sessionID)
 	}
@@ -1207,7 +1287,10 @@ func (g *Golem) GetSessionLearnedCategories(sessionID string) ([]Category, error
 
 // ClearSessionLearning clears all learned categories from a session
 func (g *Golem) ClearSessionLearning(sessionID string) error {
+	g.sessionMutex.RLock()
 	session, exists := g.sessions[sessionID]
+	g.sessionMutex.RUnlock()
+
 	if !exists {
 		return fmt.Errorf("session not found: %s", sessionID)
 	}
@@ -1891,6 +1974,9 @@ func (g *Golem) createSessionCommand(args []string) error {
 
 // listSessionsCommand lists all active sessions
 func (g *Golem) listSessionsCommand() error {
+	g.sessionMutex.RLock()
+	defer g.sessionMutex.RUnlock()
+
 	if len(g.sessions) == 0 {
 		fmt.Println("No active sessions")
 		return nil
@@ -1916,11 +2002,17 @@ func (g *Golem) switchSessionCommand(args []string) error {
 	}
 
 	sessionID := args[0]
-	if _, exists := g.sessions[sessionID]; !exists {
+	g.sessionMutex.RLock()
+	_, exists := g.sessions[sessionID]
+	g.sessionMutex.RUnlock()
+
+	if !exists {
 		return fmt.Errorf("session %s not found", sessionID)
 	}
 
+	g.sessionMutex.Lock()
 	g.currentID = sessionID
+	g.sessionMutex.Unlock()
 	fmt.Printf("Switched to session: %s\n", sessionID)
 	return nil
 }
@@ -1932,6 +2024,9 @@ func (g *Golem) deleteSessionCommand(args []string) error {
 	}
 
 	sessionID := args[0]
+	g.sessionMutex.Lock()
+	defer g.sessionMutex.Unlock()
+
 	if _, exists := g.sessions[sessionID]; !exists {
 		return fmt.Errorf("session %s not found", sessionID)
 	}
@@ -1946,6 +2041,9 @@ func (g *Golem) deleteSessionCommand(args []string) error {
 
 // currentSessionCommand shows current session info
 func (g *Golem) currentSessionCommand() error {
+	g.sessionMutex.RLock()
+	defer g.sessionMutex.RUnlock()
+
 	if g.currentID == "" {
 		fmt.Println("No current session")
 		return nil
@@ -1995,13 +2093,18 @@ func (g *Golem) createSession(sessionID string) *ChatSession {
 	// Initialize enhanced context management
 	session.InitializeContextConfig()
 
+	g.sessionMutex.Lock()
 	g.sessions[sessionID] = session
 	g.currentID = sessionID
+	g.sessionMutex.Unlock()
 	return session
 }
 
 // getCurrentSession returns the current session
 func (g *Golem) getCurrentSession() *ChatSession {
+	g.sessionMutex.RLock()
+	defer g.sessionMutex.RUnlock()
+
 	if g.currentID == "" {
 		return nil
 	}
@@ -2010,12 +2113,18 @@ func (g *Golem) getCurrentSession() *ChatSession {
 
 // ProcessTemplateWithSession processes a template with session context
 func (g *Golem) ProcessTemplateWithSession(template string, wildcards map[string]string, session *ChatSession) string {
+	// Ensure knowledge base is initialized for variable/collection operations
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+
 	// Create variable context for template processing with session
 	ctx := &VariableContext{
-		LocalVars:     make(map[string]string),
-		Session:       session,
-		Topic:         "", // Topic tracking will be implemented in future version
-		KnowledgeBase: g.aimlKB,
+		LocalVars:      make(map[string]string),
+		Session:        session,
+		Topic:          "", // Topic tracking will be implemented in future version
+		KnowledgeBase:  g.aimlKB,
+		RecursionDepth: 0,
 	}
 
 	return g.processTemplateWithContext(template, wildcards, ctx)
@@ -2544,25 +2653,38 @@ func NewPatternMatchingCache(maxSize int, ttlSeconds int64) *PatternMatchingCach
 
 // GetPatternPriority returns a cached pattern priority or calculates and caches it
 func (cache *PatternMatchingCache) GetPatternPriority(pattern string) (PatternPriorityInfo, bool) {
-	// Check if pattern priority is cached
+	cache.mutex.RLock()
 	if priority, exists := cache.PatternPriorities[pattern]; exists {
 		// Check TTL
 		if time.Since(cache.Timestamps[pattern]).Seconds() < float64(cache.TTL) {
-			// Update access order for LRU
+			cache.mutex.RUnlock()
+			// Need write lock to update access order
+			cache.mutex.Lock()
 			cache.updateAccessOrder(pattern)
 			cache.Hits[pattern]++
+			cache.mutex.Unlock()
 			return priority, true
 		}
 		// TTL expired, remove from cache
+		cache.mutex.RUnlock()
+		cache.mutex.Lock()
 		cache.removePatternPriority(pattern)
+		cache.mutex.Unlock()
+	} else {
+		cache.mutex.RUnlock()
 	}
 
+	cache.mutex.Lock()
 	cache.Misses++
+	cache.mutex.Unlock()
 	return PatternPriorityInfo{}, false
 }
 
 // SetPatternPriority caches a pattern priority
 func (cache *PatternMatchingCache) SetPatternPriority(pattern string, priority PatternPriorityInfo) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	// Evict if cache is full
 	if len(cache.PatternPriorities) >= cache.MaxSize {
 		cache.evictLRU()
@@ -2577,24 +2699,38 @@ func (cache *PatternMatchingCache) SetPatternPriority(pattern string, priority P
 func (cache *PatternMatchingCache) GetWildcardMatch(input, pattern string) (WildcardMatchResult, bool) {
 	cacheKey := fmt.Sprintf("%s|%s", input, pattern)
 
+	cache.mutex.RLock()
 	if result, exists := cache.WildcardMatches[cacheKey]; exists {
 		// Check TTL
 		if time.Since(cache.Timestamps[cacheKey]).Seconds() < float64(cache.TTL) {
-			// Update access order for LRU
+			cache.mutex.RUnlock()
+			// Need write lock to update access order
+			cache.mutex.Lock()
 			cache.updateAccessOrder(cacheKey)
 			cache.Hits[cacheKey]++
+			cache.mutex.Unlock()
 			return result, true
 		}
 		// TTL expired, remove from cache
+		cache.mutex.RUnlock()
+		cache.mutex.Lock()
 		cache.removeWildcardMatch(cacheKey)
+		cache.mutex.Unlock()
+	} else {
+		cache.mutex.RUnlock()
 	}
 
+	cache.mutex.Lock()
 	cache.Misses++
+	cache.mutex.Unlock()
 	return WildcardMatchResult{}, false
 }
 
 // SetWildcardMatch caches a wildcard match result
 func (cache *PatternMatchingCache) SetWildcardMatch(input, pattern string, result WildcardMatchResult) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	cacheKey := fmt.Sprintf("%s|%s", input, pattern)
 
 	// Evict if cache is full
@@ -3039,9 +3175,17 @@ func (g *Golem) getFromTemplateCache(key string) (string, bool) {
 	if g.templateCache == nil {
 		return "", false
 	}
+
+	g.templateCache.mutex.RLock()
 	v, ok := g.templateCache.Cache[key]
 	if ok {
+		g.templateCache.mutex.RUnlock()
+		// Need write lock to update hits
+		g.templateCache.mutex.Lock()
 		g.templateCache.Hits[key] = g.templateCache.Hits[key] + 1
+		g.templateCache.mutex.Unlock()
+	} else {
+		g.templateCache.mutex.RUnlock()
 	}
 	return v, ok
 }
@@ -3051,6 +3195,10 @@ func (g *Golem) storeInTemplateCache(key, value string) {
 	if g.templateCache == nil {
 		return
 	}
+
+	g.templateCache.mutex.Lock()
+	defer g.templateCache.mutex.Unlock()
+
 	// Evict if over capacity (simple FIFO by timestamps if needed)
 	if len(g.templateCache.Cache) >= g.templateCache.MaxSize {
 		// naive eviction: remove an arbitrary oldest by timestamp string comparison

@@ -173,7 +173,7 @@ func TestNormalizeDenormalizeIntegration(t *testing.T) {
 		{
 			name:     "Denormalize then normalize",
 			template: "<normalize><denormalize>HELLO WORLD</denormalize></normalize>",
-			expected: "<normalize>Hello world.</normalize>",
+			expected: "HELLO WORLD",
 		},
 		{
 			name:     "Mixed processing order",
