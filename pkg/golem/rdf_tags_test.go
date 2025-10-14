@@ -39,19 +39,19 @@ func TestRDFTagsProcessing(t *testing.T) {
 		{
 			name:     "Uniq with subj/pred/obj",
 			template: "<uniq><subj>cat</subj><pred>hasPlural</pred><obj>cats</obj></uniq>",
-			expected: "cathasPluralcats",
+			expected: "cat hasPlural cats",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
 			name:     "Uniq with wildcard",
 			template: "<uniq><subj><star/></subj><pred>sound</pred><obj>meow</obj></uniq>",
-			expected: "test inputsoundmeow",
+			expected: "test input sound meow",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
 			name:     "Uniq with variable",
 			template: "<uniq><subj><get name=\"animal\"></get></subj><pred>hasPlural</pred><obj><get name=\"plural\"></get></obj></uniq>",
-			expected: "doghasPluraldogs",
+			expected: "dog hasPlural dogs",
 			setup: func(g *Golem, ctx *ChatSession) {
 				g.ProcessTemplateWithContext(`<set name="animal">dog</set>`, map[string]string{}, ctx)
 				g.ProcessTemplateWithContext(`<set name="plural">dogs</set>`, map[string]string{}, ctx)
@@ -60,25 +60,25 @@ func TestRDFTagsProcessing(t *testing.T) {
 		{
 			name:     "Uniq with formatting",
 			template: "<uniq><subj><uppercase>cat</uppercase></subj><pred>hasPlural</pred><obj><formal>cats</formal></obj></uniq>",
-			expected: "CAThasPluralCats",
+			expected: "CAT hasPlural Cats",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
 			name:     "Uniq with person tag",
 			template: "<uniq><subj><person>I</person></subj><pred>am</pred><obj><person>a cat</person></obj></uniq>",
-			expected: "youama cat",
+			expected: "you am a cat",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
 			name:     "Multiple uniq tags",
 			template: "<uniq><subj>cat</subj><pred>hasPlural</pred><obj>cats</obj></uniq> <uniq><subj>dog</subj><pred>hasPlural</pred><obj>dogs</obj></uniq>",
-			expected: "cathasPluralcats doghasPluraldogs",
+			expected: "cat hasPlural cats dog hasPlural dogs",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
 			name:     "Nested uniq tags",
 			template: "<uniq><subj><uniq><subj>cat</subj><pred>is</pred><obj>animal</obj></uniq></subj><pred>hasPlural</pred><obj>cats</obj></uniq>",
-			expected: "catisanimalhasPluralcats",
+			expected: "cat is animal hasPlural cats",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{

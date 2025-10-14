@@ -907,12 +907,34 @@ func (p *ComprehensiveDataProcessor) processUniqTags(template string, ctx *Varia
 		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
 		processedContent = strings.TrimSpace(processedContent)
 
-		// For now, we'll return the processed content
-		// In a more sophisticated implementation, this could store/retrieve RDF triples
+		// Add proper spacing between RDF elements for human readability
+		// Split by common RDF patterns and add spaces
+		processedContent = p.formatRDFContent(processedContent)
+
 		template = strings.ReplaceAll(template, match[0], processedContent)
 	}
 
 	return template
+}
+
+// formatRDFContent formats RDF content with proper spacing for human readability
+func (p *ComprehensiveDataProcessor) formatRDFContent(content string) string {
+	// If content is empty, return as-is
+	if strings.TrimSpace(content) == "" {
+		return content
+	}
+
+	// Clean up multiple spaces and trim
+	content = strings.TrimSpace(content)
+
+	// Split content into words and join with single spaces
+	words := strings.Fields(content)
+	if len(words) == 0 {
+		return content
+	}
+
+	// Join words with single spaces for human readability
+	return strings.Join(words, " ")
 }
 
 // processSubjTags processes <subj> tags for subject of RDF triples
@@ -931,6 +953,9 @@ func (p *ComprehensiveDataProcessor) processSubjTags(template string, ctx *Varia
 		// Process the content through the full template pipeline
 		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
 		processedContent = strings.TrimSpace(processedContent)
+
+		// Add trailing space for RDF readability (will be trimmed if not needed)
+		processedContent = processedContent + " "
 
 		// Return the processed content as the subject
 		template = strings.ReplaceAll(template, match[0], processedContent)
@@ -956,6 +981,9 @@ func (p *ComprehensiveDataProcessor) processPredTags(template string, ctx *Varia
 		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
 		processedContent = strings.TrimSpace(processedContent)
 
+		// Add trailing space for RDF readability (will be trimmed if not needed)
+		processedContent = processedContent + " "
+
 		// Return the processed content as the predicate
 		template = strings.ReplaceAll(template, match[0], processedContent)
 	}
@@ -980,6 +1008,7 @@ func (p *ComprehensiveDataProcessor) processObjTags(template string, ctx *Variab
 		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
 		processedContent = strings.TrimSpace(processedContent)
 
+		// Don't add trailing space for object (it's the last element)
 		// Return the processed content as the object
 		template = strings.ReplaceAll(template, match[0], processedContent)
 	}
