@@ -506,6 +506,12 @@ func (p *ComprehensiveDataProcessor) Process(template string, wildcards map[stri
 		// Process eval tags
 		response = p.processEvalTags(response, ctx)
 
+		// Process RDF-style tags (process individual tags first, then uniq)
+		response = p.processSubjTags(response, ctx)
+		response = p.processPredTags(response, ctx)
+		response = p.processObjTags(response, ctx)
+		response = p.processUniqTags(response, ctx)
+
 		// If no changes were made, we're done
 		if response == originalResponse {
 			break
@@ -526,6 +532,10 @@ func (p *ComprehensiveDataProcessor) ShouldProcess(template string, ctx *Variabl
 		"<loop",
 		"<input",
 		"<eval", "</eval>",
+		"<uniq", "</uniq>",
+		"<subj", "</subj>",
+		"<pred", "</pred>",
+		"<obj", "</obj>",
 	}
 
 	for _, tag := range dataTags {
@@ -873,6 +883,104 @@ func (p *ComprehensiveDataProcessor) processEvalTags(template string, ctx *Varia
 		processedContent = strings.TrimSpace(processedContent)
 
 		// Replace the entire <eval> tag with the processed content
+		template = strings.ReplaceAll(template, match[0], processedContent)
+	}
+
+	return template
+}
+
+// processUniqTags processes <uniq> tags for RDF-like predicate relationships
+func (p *ComprehensiveDataProcessor) processUniqTags(template string, ctx *VariableContext) string {
+	// Find all <uniq> tags
+	uniqRegex := regexp.MustCompile(`<uniq>(.*?)</uniq>`)
+	matches := uniqRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		content := strings.TrimSpace(match[1])
+		if content == "" {
+			template = strings.ReplaceAll(template, match[0], "")
+			continue
+		}
+
+		// Process the content through the full template pipeline
+		// This ensures any subj/pred/obj tags are resolved
+		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
+		processedContent = strings.TrimSpace(processedContent)
+
+		// For now, we'll return the processed content
+		// In a more sophisticated implementation, this could store/retrieve RDF triples
+		template = strings.ReplaceAll(template, match[0], processedContent)
+	}
+
+	return template
+}
+
+// processSubjTags processes <subj> tags for subject of RDF triples
+func (p *ComprehensiveDataProcessor) processSubjTags(template string, ctx *VariableContext) string {
+	// Find all <subj> tags
+	subjRegex := regexp.MustCompile(`<subj>(.*?)</subj>`)
+	matches := subjRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		content := strings.TrimSpace(match[1])
+		if content == "" {
+			template = strings.ReplaceAll(template, match[0], "")
+			continue
+		}
+
+		// Process the content through the full template pipeline
+		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
+		processedContent = strings.TrimSpace(processedContent)
+
+		// Return the processed content as the subject
+		template = strings.ReplaceAll(template, match[0], processedContent)
+	}
+
+	return template
+}
+
+// processPredTags processes <pred> tags for predicate of RDF triples
+func (p *ComprehensiveDataProcessor) processPredTags(template string, ctx *VariableContext) string {
+	// Find all <pred> tags
+	predRegex := regexp.MustCompile(`<pred>(.*?)</pred>`)
+	matches := predRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		content := strings.TrimSpace(match[1])
+		if content == "" {
+			template = strings.ReplaceAll(template, match[0], "")
+			continue
+		}
+
+		// Process the content through the full template pipeline
+		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
+		processedContent = strings.TrimSpace(processedContent)
+
+		// Return the processed content as the predicate
+		template = strings.ReplaceAll(template, match[0], processedContent)
+	}
+
+	return template
+}
+
+// processObjTags processes <obj> tags for object of RDF triples
+func (p *ComprehensiveDataProcessor) processObjTags(template string, ctx *VariableContext) string {
+	// Find all <obj> tags
+	objRegex := regexp.MustCompile(`<obj>(.*?)</obj>`)
+	matches := objRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		content := strings.TrimSpace(match[1])
+		if content == "" {
+			template = strings.ReplaceAll(template, match[0], "")
+			continue
+		}
+
+		// Process the content through the full template pipeline
+		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
+		processedContent = strings.TrimSpace(processedContent)
+
+		// Return the processed content as the object
 		template = strings.ReplaceAll(template, match[0], processedContent)
 	}
 
