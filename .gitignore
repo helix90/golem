@@ -164,6 +164,11 @@ api-docs/
 # testdata/private/
 # testdata/sensitive/
 
+# Learned categories and learning data
+pkg/golem/learned_categories/
+**/learned_categories.json
+**/learned_categories_*.json
+
 # Backup files
 *.bak
 *.backup
@@ -233,3 +238,6 @@ prometheus_data/
 # Grafana data
 grafana_data/
 examples/
+
+# Pandora
+pandorabots
