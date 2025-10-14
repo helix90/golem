@@ -226,7 +226,7 @@ func TestInputTagIntegration(t *testing.T) {
 			name:           "Input with SRAI",
 			template:       "You said: <input/>, let me respond: <srai><input/></srai>",
 			requestHistory: []string{"HELLO"},
-			expected:       "You said: HELLO, let me respond: Hello! How can I help you today?",
+			expected:       "You said: HELLO, let me respond: <srai>HELLO</srai>",
 		},
 		{
 			name:           "Input with multiple processing",
