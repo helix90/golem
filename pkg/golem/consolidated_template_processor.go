@@ -70,6 +70,8 @@ func (ctp *ConsolidatedTemplateProcessor) ProcessTemplate(template string, wildc
 	response = ctp.golem.processMapTagsWithContext(response, ctx)
 	response = ctp.golem.processListTagsWithContext(response, ctx)
 	response = ctp.golem.processArrayTagsWithContext(response, ctx)
+	// Re-run SRAI processing in case input tags produced new SRAI tags
+	response = ctp.golem.processSRAITagsWithContext(response, ctx)
 
 	ctp.golem.LogInfo("Final response: '%s'", response)
 
