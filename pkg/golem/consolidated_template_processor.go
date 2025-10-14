@@ -503,6 +503,9 @@ func (p *ComprehensiveDataProcessor) Process(template string, wildcards map[stri
 		// Process input tags
 		response = p.processInputTags(response, ctx)
 
+		// Process eval tags
+		response = p.processEvalTags(response, ctx)
+
 		// If no changes were made, we're done
 		if response == originalResponse {
 			break
@@ -522,6 +525,7 @@ func (p *ComprehensiveDataProcessor) ShouldProcess(template string, ctx *Variabl
 		"<rest", "</rest>",
 		"<loop",
 		"<input",
+		"<eval", "</eval>",
 	}
 
 	for _, tag := range dataTags {
@@ -845,6 +849,31 @@ func (p *ComprehensiveDataProcessor) processInputTags(template string, ctx *Vari
 
 		// Replace the <input/> tag with the current user input
 		template = strings.ReplaceAll(template, match[0], currentInput)
+	}
+
+	return template
+}
+
+// processEvalTags processes <eval> tags to evaluate content as AIML code
+func (p *ComprehensiveDataProcessor) processEvalTags(template string, ctx *VariableContext) string {
+	// Find all <eval> tags
+	evalRegex := regexp.MustCompile(`<eval>(.*?)</eval>`)
+	matches := evalRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		content := strings.TrimSpace(match[1])
+		if content == "" {
+			template = strings.ReplaceAll(template, match[0], "")
+			continue
+		}
+
+		// Process the content through the full template pipeline
+		// This ensures any variables or other tags are resolved
+		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
+		processedContent = strings.TrimSpace(processedContent)
+
+		// Replace the entire <eval> tag with the processed content
+		template = strings.ReplaceAll(template, match[0], processedContent)
 	}
 
 	return template
