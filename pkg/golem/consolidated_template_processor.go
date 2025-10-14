@@ -495,6 +495,9 @@ func (p *ComprehensiveDataProcessor) Process(template string, wildcards map[stri
 		// Process rest tags
 		response = p.processRestTags(response, ctx)
 
+		// Process loop tags
+		response = p.processLoopTags(response, ctx)
+
 		// If no changes were made, we're done
 		if response == originalResponse {
 			break
@@ -512,6 +515,7 @@ func (p *ComprehensiveDataProcessor) ShouldProcess(template string, ctx *Variabl
 		"<li", "</li>",
 		"<first", "</first>",
 		"<rest", "</rest>",
+		"<loop",
 	}
 
 	for _, tag := range dataTags {
@@ -798,6 +802,22 @@ func (p *ComprehensiveDataProcessor) processRestTags(template string, ctx *Varia
 			rest := strings.Join(elements[1:], " ")
 			template = strings.ReplaceAll(template, match[0], rest)
 		}
+	}
+
+	return template
+}
+
+// processLoopTags processes <loop/> tags for loop control
+func (p *ComprehensiveDataProcessor) processLoopTags(template string, ctx *VariableContext) string {
+	// Find all <loop/> tags (self-closing)
+	loopRegex := regexp.MustCompile(`<loop\s*/>`)
+	matches := loopRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		// For now, <loop/> tags are simply removed as they are used for control flow
+		// In a more sophisticated implementation, they could be used to control
+		// iteration in conditionals or other loop constructs
+		template = strings.ReplaceAll(template, match[0], "")
 	}
 
 	return template
