@@ -164,7 +164,7 @@ func TestRDFTagsWithOtherTags(t *testing.T) {
 		{
 			name:     "RDF with person",
 			template: "<person><uniq><subj>I</subj><pred>am</pred><obj>a cat</obj></uniq></person>",
-			expected: "you am you a cat",
+			expected: "you are a cat",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
@@ -184,7 +184,7 @@ func TestRDFTagsWithOtherTags(t *testing.T) {
 		{
 			name:     "RDF with multiple processing",
 			template: "<uppercase><formal><person><uniq><subj>I</subj><pred>am</pred><obj>a cat</obj></uniq></person></formal></uppercase>",
-			expected: "YOU AM YOU A CAT",
+			expected: "YOU ARE A CAT",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 	}
@@ -237,7 +237,7 @@ func TestRDFTagsIntegration(t *testing.T) {
 		{
 			name:     "RDF with list operations",
 			template: "Facts: <uniq><subj><list name=\"animals\" operation=\"get\"></list></subj><pred>are</pred><obj>pets</obj></uniq>",
-			expected: "Facts:  are pets",
+			expected: "Facts: cat are pets",
 			setup: func(g *Golem, ctx *ChatSession) {
 				g.ProcessTemplateWithContext(`<list name="animals" operation="add">cat</list>`, map[string]string{}, ctx)
 			},
@@ -245,7 +245,7 @@ func TestRDFTagsIntegration(t *testing.T) {
 		{
 			name:     "RDF with map operations",
 			template: "Data: <uniq><subj><map name=\"data\" key=\"subject\"></map></subj><pred>is</pred><obj><map name=\"data\" key=\"object\"></map></obj></uniq>",
-			expected: "Data:  is ",
+			expected: "Data: cat is animal",
 			setup: func(g *Golem, ctx *ChatSession) {
 				g.ProcessTemplateWithContext(`<map name="data" key="subject" operation="set">cat</map>`, map[string]string{}, ctx)
 				g.ProcessTemplateWithContext(`<map name="data" key="object" operation="set">animal</map>`, map[string]string{}, ctx)
@@ -372,13 +372,13 @@ func TestRDFTagsEdgeCases(t *testing.T) {
 		{
 			name:     "RDF with empty string",
 			template: "<uniq><subj></subj><pred></pred><obj></obj></uniq>",
-			expected: "  ",
+			expected: "",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
 			name:     "RDF with whitespace only",
 			template: "<uniq><subj>   </subj><pred>   </pred><obj>   </obj></uniq>",
-			expected: "   ",
+			expected: "",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 	}
@@ -463,7 +463,7 @@ func TestRDFTagsWithConditionals(t *testing.T) {
 		{
 			name:     "RDF with multiple conditions",
 			template: "<condition name=\"test1\" value=\"true\"><uniq><subj>cat</subj><pred>hasPlural</pred><obj>cats</obj></uniq></condition> <condition name=\"test2\" value=\"true\"><uniq><subj>dog</subj><pred>hasPlural</pred><obj>dogs</obj></uniq></condition>",
-			expected: "cat hasPlural cats ",
+			expected: "cat hasPlural cats",
 			setup: func(g *Golem, ctx *ChatSession) {
 				g.ProcessTemplateWithContext(`<set name="test1">true</set>`, map[string]string{}, ctx)
 			},

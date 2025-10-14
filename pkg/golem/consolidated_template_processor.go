@@ -891,8 +891,8 @@ func (p *ComprehensiveDataProcessor) processEvalTags(template string, ctx *Varia
 
 // processUniqTags processes <uniq> tags for RDF-like predicate relationships
 func (p *ComprehensiveDataProcessor) processUniqTags(template string, ctx *VariableContext) string {
-	// Find all <uniq> tags
-	uniqRegex := regexp.MustCompile(`<uniq>(.*?)</uniq>`)
+	// Find all <uniq> tags (with optional attributes)
+	uniqRegex := regexp.MustCompile(`<uniq[^>]*>(.*?)</uniq>`)
 	matches := uniqRegex.FindAllStringSubmatch(template, -1)
 
 	for _, match := range matches {
