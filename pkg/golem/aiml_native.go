@@ -5412,17 +5412,24 @@ func (g *Golem) processRandomTags(template string) string {
 				continue
 			}
 
-			// Select a random <li> element
+			// Select a random <li> element using proper randomness
 			selectedIndex := 0
 			if len(liMatches) > 1 {
-				// Use a simple random selection (in a real implementation, you'd use crypto/rand)
-				selectedIndex = len(liMatches) % 2 // Simple pseudo-random for testing
+				// Use proper random selection
+				selectedIndex = int(time.Now().UnixNano()) % len(liMatches)
 			}
 
 			selectedContent := strings.TrimSpace(liMatches[selectedIndex][1])
 
-			// Process date/time tags in the selected content
-			selectedContent = g.processDateTimeTags(selectedContent)
+			// Process the selected content through the full template pipeline
+			// This ensures all nested tags are processed recursively
+			selectedContent = g.processTemplateWithContext(selectedContent, map[string]string{}, &VariableContext{
+				LocalVars:      make(map[string]string),
+				Session:        nil, // Will be set by the calling context
+				Topic:          "",
+				KnowledgeBase:  g.aimlKB,
+				RecursionDepth: 0,
+			})
 
 			g.LogInfo("Selected random option %d: '%s'", selectedIndex+1, selectedContent)
 
