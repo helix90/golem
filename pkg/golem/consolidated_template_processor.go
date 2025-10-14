@@ -2,6 +2,7 @@ package golem
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -474,12 +475,31 @@ func (p *ComprehensiveDataProcessor) Condition() ProcessorCondition {
 }
 func (p *ComprehensiveDataProcessor) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
 	response := template
+	maxIterations := 10
+	iteration := 0
 
-	// Process date and time tags
-	response = p.golem.processDateTimeTags(response)
+	// Process tags iteratively to handle nested tags
+	for iteration < maxIterations {
+		iteration++
+		originalResponse := response
 
-	// Process random tags
-	response = p.golem.processRandomTags(response)
+		// Process date and time tags
+		response = p.golem.processDateTimeTags(response)
+
+		// Process random tags
+		response = p.golem.processRandomTags(response)
+
+		// Process first tags
+		response = p.processFirstTags(response, ctx)
+
+		// Process rest tags
+		response = p.processRestTags(response, ctx)
+
+		// If no changes were made, we're done
+		if response == originalResponse {
+			break
+		}
+	}
 
 	return response, nil
 }
@@ -490,6 +510,8 @@ func (p *ComprehensiveDataProcessor) ShouldProcess(template string, ctx *Variabl
 		"<time", "</time>",
 		"<random", "</random>",
 		"<li", "</li>",
+		"<first", "</first>",
+		"<rest", "</rest>",
 	}
 
 	for _, tag := range dataTags {
@@ -721,3 +743,62 @@ func (p *ComprehensiveCollectionProcessor) ShouldProcess(template string, ctx *V
 }
 func (p *ComprehensiveCollectionProcessor) GetMetrics() *ProcessorMetrics { return &ProcessorMetrics{} }
 func (p *ComprehensiveCollectionProcessor) ResetMetrics()                 {}
+
+// processFirstTags processes <first> tags to get the first element of a list
+func (p *ComprehensiveDataProcessor) processFirstTags(template string, ctx *VariableContext) string {
+	re := regexp.MustCompile(`<first>(.*?)</first>`)
+	matches := re.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		content := strings.TrimSpace(match[1])
+		if content == "" {
+			template = strings.ReplaceAll(template, match[0], "")
+			continue
+		}
+
+		// Process the content through the full template pipeline
+		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
+		processedContent = strings.TrimSpace(processedContent)
+
+		// Split by spaces to get list elements
+		elements := strings.Fields(processedContent)
+		if len(elements) == 0 {
+			template = strings.ReplaceAll(template, match[0], "")
+		} else {
+			// Return the first element
+			template = strings.ReplaceAll(template, match[0], elements[0])
+		}
+	}
+
+	return template
+}
+
+// processRestTags processes <rest> tags to get all elements except the first from a list
+func (p *ComprehensiveDataProcessor) processRestTags(template string, ctx *VariableContext) string {
+	re := regexp.MustCompile(`<rest>(.*?)</rest>`)
+	matches := re.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		content := strings.TrimSpace(match[1])
+		if content == "" {
+			template = strings.ReplaceAll(template, match[0], "")
+			continue
+		}
+
+		// Process the content through the full template pipeline
+		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
+		processedContent = strings.TrimSpace(processedContent)
+
+		// Split by spaces to get list elements
+		elements := strings.Fields(processedContent)
+		if len(elements) <= 1 {
+			template = strings.ReplaceAll(template, match[0], "")
+		} else {
+			// Return all elements except the first
+			rest := strings.Join(elements[1:], " ")
+			template = strings.ReplaceAll(template, match[0], rest)
+		}
+	}
+
+	return template
+}
