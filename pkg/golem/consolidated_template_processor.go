@@ -498,6 +498,9 @@ func (p *ComprehensiveDataProcessor) Process(template string, wildcards map[stri
 		// Process loop tags
 		response = p.processLoopTags(response, ctx)
 
+		// Process input tags
+		response = p.processInputTags(response, ctx)
+
 		// If no changes were made, we're done
 		if response == originalResponse {
 			break
@@ -516,6 +519,7 @@ func (p *ComprehensiveDataProcessor) ShouldProcess(template string, ctx *Variabl
 		"<first", "</first>",
 		"<rest", "</rest>",
 		"<loop",
+		"<input",
 	}
 
 	for _, tag := range dataTags {
@@ -818,6 +822,27 @@ func (p *ComprehensiveDataProcessor) processLoopTags(template string, ctx *Varia
 		// In a more sophisticated implementation, they could be used to control
 		// iteration in conditionals or other loop constructs
 		template = strings.ReplaceAll(template, match[0], "")
+	}
+
+	return template
+}
+
+// processInputTags processes <input/> tags to reference the current user input
+func (p *ComprehensiveDataProcessor) processInputTags(template string, ctx *VariableContext) string {
+	// Find all <input/> tags (self-closing)
+	inputRegex := regexp.MustCompile(`<input\s*/>`)
+	matches := inputRegex.FindAllStringSubmatch(template, -1)
+
+	for _, match := range matches {
+		// Get the current user input from the session's request history
+		var currentInput string
+		if ctx.Session != nil && len(ctx.Session.RequestHistory) > 0 {
+			// Get the most recent user input (last item in RequestHistory)
+			currentInput = ctx.Session.RequestHistory[len(ctx.Session.RequestHistory)-1]
+		}
+
+		// Replace the <input/> tag with the current user input
+		template = strings.ReplaceAll(template, match[0], currentInput)
 	}
 
 	return template
