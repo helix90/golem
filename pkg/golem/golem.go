@@ -446,7 +446,7 @@ func NewTextNormalizationCache(maxSize int, ttlSeconds int64) *TextNormalization
 }
 
 // GetNormalizedText returns a normalized text result from cache or normalizes and caches it
-func (cache *TextNormalizationCache) GetNormalizedText(input string, normalizationType string) (string, error) {
+func (cache *TextNormalizationCache) GetNormalizedText(golem *Golem, input string, normalizationType string) (string, error) {
 	// Create cache key with normalization type
 	cacheKey := normalizationType + ":" + input
 
@@ -477,12 +477,20 @@ func (cache *TextNormalizationCache) GetNormalizedText(input string, normalizati
 	switch normalizationType {
 	case "NormalizePattern":
 		result = NormalizePattern(input)
+		// Apply loaded substitutions for pattern normalization
+		if golem != nil && golem.aimlKB != nil && len(golem.aimlKB.Substitutions) > 0 {
+			result = golem.applyLoadedSubstitutions(result)
+		}
 	case "NormalizeForMatchingCasePreserving":
 		result = NormalizeForMatchingCasePreserving(input)
 	case "NormalizeThatPattern":
 		result = NormalizeThatPattern(input)
 	case "normalizeForMatching":
-		result = normalizeForMatching(input)
+		if golem != nil {
+			result = golem.normalizeForMatchingWithSubstitutions(input)
+		} else {
+			result = normalizeForMatching(input)
+		}
 	case "expandContractions":
 		result = expandContractions(input)
 	default:
@@ -3005,18 +3013,19 @@ func (cache *PatternMatchingCache) InvalidateSet(setName string) {
 // CachedNormalizePattern normalizes AIML patterns with caching
 func (g *Golem) CachedNormalizePattern(pattern string) string {
 	if g.textNormalizationCache != nil {
-		if result, err := g.textNormalizationCache.GetNormalizedText(pattern, "NormalizePattern"); err == nil {
+		if result, err := g.textNormalizationCache.GetNormalizedText(g, pattern, "NormalizePattern"); err == nil {
 			return result
 		}
 	}
-	// Fallback to direct normalization
-	return NormalizePattern(pattern)
+	// Fallback to direct normalization with loaded substitutions
+	normalized := NormalizePattern(pattern)
+	return g.applyLoadedSubstitutions(normalized)
 }
 
 // CachedNormalizeForMatchingCasePreserving normalizes text for pattern matching with case preservation and caching
 func (g *Golem) CachedNormalizeForMatchingCasePreserving(input string) string {
 	if g.textNormalizationCache != nil {
-		if result, err := g.textNormalizationCache.GetNormalizedText(input, "NormalizeForMatchingCasePreserving"); err == nil {
+		if result, err := g.textNormalizationCache.GetNormalizedText(g, input, "NormalizeForMatchingCasePreserving"); err == nil {
 			return result
 		}
 	}
@@ -3027,7 +3036,7 @@ func (g *Golem) CachedNormalizeForMatchingCasePreserving(input string) string {
 // CachedNormalizeThatPattern normalizes that patterns with caching
 func (g *Golem) CachedNormalizeThatPattern(pattern string) string {
 	if g.textNormalizationCache != nil {
-		if result, err := g.textNormalizationCache.GetNormalizedText(pattern, "NormalizeThatPattern"); err == nil {
+		if result, err := g.textNormalizationCache.GetNormalizedText(g, pattern, "NormalizeThatPattern"); err == nil {
 			return result
 		}
 	}
@@ -3038,18 +3047,18 @@ func (g *Golem) CachedNormalizeThatPattern(pattern string) string {
 // CachedNormalizeForMatching normalizes text for matching with caching
 func (g *Golem) CachedNormalizeForMatching(input string) string {
 	if g.textNormalizationCache != nil {
-		if result, err := g.textNormalizationCache.GetNormalizedText(input, "normalizeForMatching"); err == nil {
+		if result, err := g.textNormalizationCache.GetNormalizedText(g, input, "normalizeForMatching"); err == nil {
 			return result
 		}
 	}
-	// Fallback to direct normalization
-	return normalizeForMatching(input)
+	// Fallback to direct normalization with loaded substitutions
+	return g.normalizeForMatchingWithSubstitutions(input)
 }
 
 // CachedExpandContractions expands contractions with caching
 func (g *Golem) CachedExpandContractions(text string) string {
 	if g.textNormalizationCache != nil {
-		if result, err := g.textNormalizationCache.GetNormalizedText(text, "expandContractions"); err == nil {
+		if result, err := g.textNormalizationCache.GetNormalizedText(g, text, "expandContractions"); err == nil {
 			return result
 		}
 	}

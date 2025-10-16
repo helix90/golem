@@ -10,7 +10,7 @@ func TestTextNormalizationCacheBasicOperations(t *testing.T) {
 	cache := NewTextNormalizationCache(10, 60) // 10 results, 1 minute TTL
 
 	// Test getting a non-existent result
-	result, err := cache.GetNormalizedText("hello world", "NormalizePattern")
+	result, err := cache.GetNormalizedText(nil, "hello world", "NormalizePattern")
 	if err != nil {
 		t.Fatalf("Failed to normalize text: %v", err)
 	}
@@ -19,7 +19,7 @@ func TestTextNormalizationCacheBasicOperations(t *testing.T) {
 	}
 
 	// Test getting the same input again (should hit cache)
-	result2, err := cache.GetNormalizedText("hello world", "NormalizePattern")
+	result2, err := cache.GetNormalizedText(nil, "hello world", "NormalizePattern")
 	if err != nil {
 		t.Fatalf("Failed to get cached result: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestTextNormalizationCacheDifferentTypes(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		result, err := cache.GetNormalizedText(tc.input, tc.funcType)
+		result, err := cache.GetNormalizedText(nil, tc.input, tc.funcType)
 		if err != nil {
 			t.Fatalf("Failed to normalize %s with %s: %v", tc.input, tc.funcType, err)
 		}
@@ -76,17 +76,17 @@ func TestTextNormalizationCacheLRUEviction(t *testing.T) {
 	cache := NewTextNormalizationCache(2, 60)
 
 	// Add results to fill the cache
-	_, err := cache.GetNormalizedText("pattern1", "NormalizePattern")
+	_, err := cache.GetNormalizedText(nil, "pattern1", "NormalizePattern")
 	if err != nil {
 		t.Fatalf("Failed to normalize pattern1: %v", err)
 	}
-	_, err = cache.GetNormalizedText("pattern2", "NormalizePattern")
+	_, err = cache.GetNormalizedText(nil, "pattern2", "NormalizePattern")
 	if err != nil {
 		t.Fatalf("Failed to normalize pattern2: %v", err)
 	}
 
 	// Add a third result to trigger eviction
-	_, err = cache.GetNormalizedText("pattern3", "NormalizePattern")
+	_, err = cache.GetNormalizedText(nil, "pattern3", "NormalizePattern")
 	if err != nil {
 		t.Fatalf("Failed to normalize pattern3: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestTextNormalizationCacheTTL(t *testing.T) {
 	cache := NewTextNormalizationCache(10, 1) // 1 second TTL
 
 	// Add a result
-	_, err := cache.GetNormalizedText("test pattern", "NormalizePattern")
+	_, err := cache.GetNormalizedText(nil, "test pattern", "NormalizePattern")
 	if err != nil {
 		t.Fatalf("Failed to normalize text: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestTextNormalizationCacheTTL(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Try to get the result again - should renormalize due to TTL expiry
-	_, err = cache.GetNormalizedText("test pattern", "NormalizePattern")
+	_, err = cache.GetNormalizedText(nil, "test pattern", "NormalizePattern")
 	if err != nil {
 		t.Fatalf("Failed to renormalize text after TTL: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestTextNormalizationCacheInvalidType(t *testing.T) {
 	cache := NewTextNormalizationCache(10, 60)
 
 	// Try to normalize with invalid type
-	_, err := cache.GetNormalizedText("test", "InvalidType")
+	_, err := cache.GetNormalizedText(nil, "test", "InvalidType")
 	if err == nil {
 		t.Error("Expected error for invalid normalization type")
 	}

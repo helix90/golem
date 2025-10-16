@@ -7831,6 +7831,166 @@ func normalizeForMatching(input string) string {
 	return text
 }
 
+// normalizeForMatchingWithSubstitutions normalizes text with loaded substitutions applied first
+func (g *Golem) normalizeForMatchingWithSubstitutions(input string) string {
+	// For pattern matching, we need more aggressive normalization
+	// but still preserve set/topic tags and wildcards
+
+	g.LogDebug("normalizeForMatchingWithSubstitutions: input = '%s'", input)
+
+	// First, preserve set and topic tags before case conversion
+	tempSetTags := make(map[string]string)
+	tempTopicTags := make(map[string]string)
+
+	// Replace set tags temporarily
+	setPattern := regexp.MustCompile(`<set>([^<]+)</set>`)
+	setMatches := setPattern.FindAllString(input, -1)
+	for i, match := range setMatches {
+		placeholder := fmt.Sprintf("__TEMP_SET_%d__", i)
+		tempSetTags[placeholder] = match
+		input = strings.Replace(input, match, placeholder, 1)
+	}
+
+	// Replace topic tags temporarily
+	topicPattern := regexp.MustCompile(`<topic>([^<]+)</topic>`)
+	topicMatches := topicPattern.FindAllString(input, -1)
+	for i, match := range topicMatches {
+		placeholder := fmt.Sprintf("__TEMP_TOPIC_%d__", i)
+		tempTopicTags[placeholder] = match
+		input = strings.Replace(input, match, placeholder, 1)
+	}
+
+	text := strings.ToUpper(strings.TrimSpace(input))
+	g.LogDebug("normalizeForMatchingWithSubstitutions: after uppercase = '%s'", text)
+
+	// Restore set and topic tags with preserved case
+	for placeholder, original := range tempSetTags {
+		text = strings.ReplaceAll(text, strings.ToUpper(placeholder), original)
+	}
+	for placeholder, original := range tempTopicTags {
+		text = strings.ReplaceAll(text, strings.ToUpper(placeholder), original)
+	}
+
+	g.LogDebug("normalizeForMatchingWithSubstitutions: after tag restoration = '%s'", text)
+
+	// Apply loaded substitutions BEFORE other normalization
+	text = g.applyLoadedSubstitutions(text)
+	g.LogDebug("normalizeForMatchingWithSubstitutions: after substitutions = '%s'", text)
+
+	// Normalize whitespace
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+
+	// Remove most punctuation for matching (but keep wildcards)
+	text = strings.ReplaceAll(text, ".", "")
+	text = strings.ReplaceAll(text, ",", "")
+	text = strings.ReplaceAll(text, "!", "")
+	text = strings.ReplaceAll(text, "?", "")
+	text = strings.ReplaceAll(text, ";", "")
+	text = strings.ReplaceAll(text, ":", "")
+	text = strings.ReplaceAll(text, "-", " ")
+	text = strings.ReplaceAll(text, "_", " ")
+
+	g.LogDebug("normalizeForMatchingWithSubstitutions: after punctuation removal = '%s'", text)
+
+	// Expand contractions for better pattern matching (before removing apostrophes)
+	text = expandContractions(text)
+	g.LogDebug("normalizeForMatchingWithSubstitutions: after contractions = '%s'", text)
+
+	// Remove apostrophes after contraction expansion
+	text = strings.ReplaceAll(text, "'", "")
+
+	// Clean up whitespace
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+	text = strings.TrimSpace(text)
+
+	g.LogDebug("normalizeForMatchingWithSubstitutions: final result = '%s'", text)
+
+	return text
+}
+
+// applyLoadedSubstitutions applies loaded substitution rules to text
+// Substitutions are applied iteratively until no more changes occur, with longer patterns taking precedence
+func (g *Golem) applyLoadedSubstitutions(text string) string {
+	if g.aimlKB == nil || len(g.aimlKB.Substitutions) == 0 {
+		return text
+	}
+
+	originalText := text
+
+	// Collect all substitution patterns and sort by length (longest first)
+	type substitution struct {
+		pattern     string
+		replacement string
+	}
+	var allSubstitutions []substitution
+
+	for _, substitutionMap := range g.aimlKB.Substitutions {
+		for pattern, replacement := range substitutionMap {
+			allSubstitutions = append(allSubstitutions, substitution{
+				pattern:     strings.ToUpper(pattern),
+				replacement: strings.ToUpper(replacement),
+			})
+		}
+	}
+
+	// Sort by pattern length (longest first)
+	for i := 0; i < len(allSubstitutions)-1; i++ {
+		for j := i + 1; j < len(allSubstitutions); j++ {
+			if len(allSubstitutions[i].pattern) < len(allSubstitutions[j].pattern) {
+				allSubstitutions[i], allSubstitutions[j] = allSubstitutions[j], allSubstitutions[i]
+			}
+		}
+	}
+
+	// Apply substitutions iteratively until no more changes occur
+	maxIterations := 10 // Prevent infinite loops
+	iteration := 0
+
+	for iteration < maxIterations {
+		iteration++
+		prevText := text
+		result := strings.Builder{}
+		result.Grow(len(text))
+
+		// Apply substitutions in a single pass
+		i := 0
+		for i < len(text) {
+			matched := false
+
+			// Try to match the longest pattern first
+			for _, sub := range allSubstitutions {
+				if i+len(sub.pattern) <= len(text) && text[i:i+len(sub.pattern)] == sub.pattern {
+					// Found a match, apply substitution
+					result.WriteString(sub.replacement)
+					i += len(sub.pattern)
+					matched = true
+					g.LogDebug("Applied substitution: '%s' -> '%s'", sub.pattern, sub.replacement)
+					break
+				}
+			}
+
+			if !matched {
+				// No match, copy the character as-is
+				result.WriteByte(text[i])
+				i++
+			}
+		}
+
+		text = result.String()
+
+		// If no changes were made, we're done
+		if text == prevText {
+			break
+		}
+	}
+
+	if originalText != text {
+		g.LogDebug("Substitutions applied: '%s' -> '%s'", originalText, text)
+	}
+
+	return text
+}
+
 // NormalizePattern normalizes AIML patterns for matching
 func NormalizePattern(pattern string) string {
 	// Patterns need special handling for set and topic tags
