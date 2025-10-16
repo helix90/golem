@@ -3853,25 +3853,74 @@ func (g *Golem) processSRAIXTagsWithContext(template string, ctx *VariableContex
 		return template
 	}
 
-	// Find all <sraix> tags with service attribute
-	sraixRegex := regexp.MustCompile(`<sraix\s+service="([^"]+)">(.*?)</sraix>`)
+	// Enhanced regex to match SRAIX tags with multiple attributes
+	// Supports: service, bot, botid, host, default, hint attributes
+	sraixRegex := regexp.MustCompile(`<sraix\s+(?:service="([^"]*)"\s*)?(?:bot="([^"]*)"\s*)?(?:botid="([^"]*)"\s*)?(?:host="([^"]*)"\s*)?(?:default="([^"]*)"\s*)?(?:hint="([^"]*)"\s*)?>(.*?)</sraix>`)
 	matches := sraixRegex.FindAllStringSubmatch(template, -1)
 
 	for _, match := range matches {
-		if len(match) > 2 {
+		if len(match) > 7 {
 			serviceName := strings.TrimSpace(match[1])
-			sraixContent := strings.TrimSpace(match[2])
+			botName := strings.TrimSpace(match[2])
+			botID := strings.TrimSpace(match[3])
+			hostName := strings.TrimSpace(match[4])
+			defaultResponse := strings.TrimSpace(match[5])
+			hintText := strings.TrimSpace(match[6])
+			sraixContent := strings.TrimSpace(match[7])
 
-			g.LogInfo("Processing SRAIX: service='%s', content='%s'", serviceName, sraixContent)
+			g.LogInfo("Processing SRAIX: service='%s', bot='%s', botid='%s', host='%s', default='%s', hint='%s', content='%s'",
+				serviceName, botName, botID, hostName, defaultResponse, hintText, sraixContent)
 
 			// Process the SRAIX content (replace wildcards, variables, etc.)
 			processedContent := g.processTemplateWithContext(sraixContent, make(map[string]string), ctx)
 
-			// Make external request
-			response, err := g.sraixMgr.ProcessSRAIX(serviceName, processedContent, make(map[string]string))
+			// Process default response if provided
+			var processedDefault string
+			if defaultResponse != "" {
+				processedDefault = g.processTemplateWithContext(defaultResponse, make(map[string]string), ctx)
+			}
+
+			// Process hint text if provided
+			var processedHint string
+			if hintText != "" {
+				processedHint = g.processTemplateWithContext(hintText, make(map[string]string), ctx)
+			}
+
+			// Determine which service to use based on available attributes
+			var targetService string
+			if serviceName != "" {
+				targetService = serviceName
+			} else if botName != "" {
+				// Use bot name as service identifier
+				targetService = botName
+			} else {
+				g.LogInfo("SRAIX tag missing service or bot attribute")
+				// Use default response if available
+				if processedDefault != "" {
+					template = strings.ReplaceAll(template, match[0], processedDefault)
+				}
+				continue
+			}
+
+			// Make external request with enhanced parameters
+			requestParams := make(map[string]string)
+			if botID != "" {
+				requestParams["botid"] = botID
+			}
+			if hostName != "" {
+				requestParams["host"] = hostName
+			}
+			if processedHint != "" {
+				requestParams["hint"] = processedHint
+			}
+
+			response, err := g.sraixMgr.ProcessSRAIX(targetService, processedContent, requestParams)
 			if err != nil {
 				g.LogInfo("SRAIX request failed: %v", err)
-				// Leave the SRAIX tag unchanged on error
+				// Use default response if available, otherwise leave tag unchanged
+				if processedDefault != "" {
+					template = strings.ReplaceAll(template, match[0], processedDefault)
+				}
 				continue
 			}
 
@@ -3899,8 +3948,8 @@ func (g *Golem) processLearnTagsWithContext(template string, ctx *VariableContex
 
 			g.LogInfo("Processing learn: '%s'", learnContent)
 
-			// Parse the AIML content within the learn tag
-			categories, err := g.parseLearnContent(learnContent)
+			// Parse the AIML content within the learn tag with dynamic evaluation
+			categories, err := g.parseLearnContentWithContext(learnContent, ctx)
 			if err != nil {
 				g.LogInfo("Failed to parse learn content: %v", err)
 				// Remove the learn tag on error
@@ -3931,8 +3980,8 @@ func (g *Golem) processLearnTagsWithContext(template string, ctx *VariableContex
 
 			g.LogInfo("Processing learnf: '%s'", learnfContent)
 
-			// Parse the AIML content within the learnf tag
-			categories, err := g.parseLearnContent(learnfContent)
+			// Parse the AIML content within the learnf tag with dynamic evaluation
+			categories, err := g.parseLearnContentWithContext(learnfContent, ctx)
 			if err != nil {
 				g.LogError("Failed to parse learnf content: %v", err)
 				// Remove the learnf tag on error
@@ -4240,7 +4289,7 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 	// Process set tags one at a time to maintain order and avoid conflicts
 	for {
 		matches := setRegex.FindStringSubmatch(template)
-		if matches == nil || len(matches) < 4 {
+		if len(matches) < 4 {
 			break
 		}
 		match := matches
@@ -4397,13 +4446,12 @@ func (g *Golem) processSetTagsWithContext(template string, ctx *VariableContext)
 // processTemplateContentForVariable processes template content for variable assignment without outputting
 // This function now uses the same processing pipeline as processTemplateWithContext to ensure consistency
 func (g *Golem) processTemplateContentForVariable(template string, wildcards map[string]string, ctx *VariableContext) string {
-	g.LogInfo("Processing variable content: '%s'", template)
+	g.LogInfo("processTemplateContentForVariable called with: '%s'", template)
 	g.LogInfo("Wildcards: %v", wildcards)
 
-	// Use the main template processing function to ensure consistent processing order
-	// This ensures that variable content is processed with the same tag processing pipeline
-	// as regular templates, maintaining consistency across the codebase
-	result := g.processTemplateWithContext(template, wildcards, ctx)
+	// Use the wildcard-preserving processing function to avoid processing <star/> tags
+	// during variable assignment, as they should be preserved for later pattern matching
+	result := g.processTemplateWithContextPreservingWildcards(template, wildcards, ctx)
 
 	g.LogInfo("Variable content result: '%s'", result)
 
@@ -4809,7 +4857,7 @@ const (
 )
 
 const (
-	MaxSRAIRecursionDepth = 10 // Maximum recursion depth for SRAI processing
+	MaxSRAIRecursionDepth = 9 // Maximum recursion depth for SRAI processing
 )
 
 // VariableContext holds the context for variable resolution
@@ -5043,22 +5091,82 @@ func (g *Golem) processDateTimeTags(template string) string {
 
 // processDateTags processes <date> tags with various formats
 func (g *Golem) processDateTags(template string) string {
-	// Find all <date> tags
-	dateRegex := regexp.MustCompile(`<date(?: format="([^"]*)"| format=\\"([^"]*)\\")?/>`)
+	// Enhanced regex to match <date> tags with format and jformat attributes
+	// Supports: <date format="..." jformat="..."/>
+	dateRegex := regexp.MustCompile(`<date(?:\s+format="([^"]*)"|\s+format=\\"([^"]*)\\"|\s+jformat="([^"]*)"|\s+jformat=\\"([^"]*)\\")*/>`)
 	matches := dateRegex.FindAllStringSubmatch(template, -1)
 
 	for _, match := range matches {
 		format := ""
+		jformat := ""
+
+		// Extract format attribute
 		if len(match) > 1 && match[1] != "" {
 			format = match[1]
 		} else if len(match) > 2 && match[2] != "" {
 			format = match[2]
 		}
 
-		g.LogInfo("Processing date tag with format: '%s'", format)
+		// Extract jformat attribute
+		if len(match) > 3 && match[3] != "" {
+			jformat = match[3]
+		} else if len(match) > 4 && match[4] != "" {
+			jformat = match[4]
+		}
 
-		// Get current date and format it
-		dateStr := g.formatDate(format)
+		g.LogInfo("Processing date tag with format: '%s', jformat: '%s'", format, jformat)
+
+		// Handle special cases that need direct calculation
+		var dateStr string
+		now := time.Now()
+
+		if format != "" {
+			switch format {
+			case "quarter":
+				month := int(now.Month())
+				quarter := ((month - 1) / 3) + 1
+				dateStr = fmt.Sprintf("Q%d", quarter)
+			case "leapyear":
+				year := now.Year()
+				if (year%4 == 0 && year%100 != 0) || (year%400 == 0) {
+					dateStr = "yes"
+				} else {
+					dateStr = "no"
+				}
+			case "daysinmonth":
+				year := now.Year()
+				month := now.Month()
+				daysInMonth := time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
+				dateStr = fmt.Sprintf("%d", daysInMonth)
+			case "daysinyear":
+				year := now.Year()
+				if (year%4 == 0 && year%100 != 0) || (year%400 == 0) {
+					dateStr = "366"
+				} else {
+					dateStr = "365"
+				}
+			case "unix":
+				dateStr = fmt.Sprintf("%d", now.Unix())
+			case "unixmilli":
+				dateStr = fmt.Sprintf("%d", now.UnixMilli())
+			case "unixnano":
+				dateStr = fmt.Sprintf("%d", now.UnixNano())
+			default:
+				// Determine which format to use (jformat takes precedence)
+				var finalFormat string
+				if jformat != "" {
+					// Convert Java SimpleDateFormat to Go time format
+					finalFormat = g.convertJavaToGoTimeFormat(jformat)
+				} else {
+					// Use the format attribute as-is (already supports C-style formats)
+					finalFormat = g.convertToGoTimeFormat(format)
+				}
+				dateStr = now.Format(finalFormat)
+			}
+		} else {
+			// Default format
+			dateStr = now.Format("January 2, 2006")
+		}
 
 		// Replace the date tag with the formatted date
 		template = strings.ReplaceAll(template, match[0], dateStr)
@@ -5310,6 +5418,52 @@ func (g *Golem) isCustomTimeFormat(format string) bool {
 
 // convertToGoTimeFormat converts C-style time format strings to Go time format strings
 func (g *Golem) convertToGoTimeFormat(format string) string {
+	// Predefined format names (these take precedence)
+	predefinedFormats := map[string]string{
+		// Date formats
+		"short":       "01/02/06",        // MM/DD/YY
+		"long":        "January 2, 2006", // Full month name, day, year
+		"iso":         "2006-01-02",      // YYYY-MM-DD
+		"us":          "01/02/2006",      // MM/DD/YYYY
+		"european":    "02/01/2006",      // DD/MM/YYYY
+		"day":         "02",              // Day of month (01-31)
+		"month":       "01",              // Month (01-12)
+		"year":        "2006",            // 4-digit year
+		"dayofyear":   "002",             // Day of year (001-366)
+		"weekday":     "0",               // Weekday (0-6, Sunday=0)
+		"week":        "01",              // Week number (00-53)
+		"quarter":     "Q1",              // Quarter (Q1-Q4) - special handling needed
+		"leapyear":    "yes",             // Leap year (yes/no) - special handling needed
+		"daysinmonth": "31",              // Days in month (28-31) - special handling needed
+		"daysinyear":  "365",             // Days in year (365/366) - special handling needed
+
+		// Time formats
+		"12":          "3:04 PM",                   // 12-hour format with AM/PM
+		"24":          "15:04",                     // 24-hour format
+		"time_iso":    "15:04:05",                  // ISO time format
+		"hour":        "15",                        // Hour (00-23)
+		"minute":      "04",                        // Minute (00-59)
+		"second":      "05",                        // Second (00-59)
+		"millisecond": "000",                       // Millisecond (000-999)
+		"timezone":    "MST",                       // Timezone abbreviation
+		"offset":      "-0700",                     // Timezone offset
+		"unix":        "1136239445",                // Unix timestamp - special handling needed
+		"unixmilli":   "1136239445000",             // Unix timestamp in milliseconds - special handling needed
+		"unixnano":    "1136239445000000000",       // Unix timestamp in nanoseconds - special handling needed
+		"rfc3339":     "2006-01-02T15:04:05Z07:00", // RFC3339 format
+		"rfc822":      "02 Jan 06 15:04 MST",       // RFC822 format
+		"kitchen":     "3:04PM",                    // Kitchen time format
+		"stamp":       "Jan _2 15:04:05",           // Timestamp format
+		"stampmilli":  "Jan _2 15:04:05.000",       // Timestamp with milliseconds
+		"stampmicro":  "Jan _2 15:04:05.000000",    // Timestamp with microseconds
+		"stampnano":   "Jan _2 15:04:05.000000000", // Timestamp with nanoseconds
+	}
+
+	// Check for predefined formats first
+	if goFormat, exists := predefinedFormats[format]; exists {
+		return goFormat
+	}
+
 	// Common C-style to Go time format conversions
 	conversions := map[string]string{
 		// Hours
@@ -5374,6 +5528,108 @@ func (g *Golem) convertToGoTimeFormat(format string) string {
 	return result
 }
 
+// convertJavaToGoTimeFormat converts Java SimpleDateFormat patterns to Go time format
+func (g *Golem) convertJavaToGoTimeFormat(javaFormat string) string {
+	// Handle literal text in single quotes first
+	literalRegex := regexp.MustCompile(`'([^']*)'`)
+	result := literalRegex.ReplaceAllStringFunc(javaFormat, func(match string) string {
+		// Remove quotes and return the literal text
+		return match[1 : len(match)-1]
+	})
+
+	// Java SimpleDateFormat to Go time format conversions
+	// Order matters - longer patterns must be processed first
+	conversions := []struct {
+		java  string
+		gofmt string
+	}{
+		// Era
+		{"G", "AD"}, // Era designator (AD/BC)
+
+		// Year - longest first
+		{"yyyy", "2006"}, // Year (4 digits)
+		{"yyy", "2006"},  // Year (3+ digits)
+		{"yy", "06"},     // Year (2 digits)
+		{"y", "2006"},    // Year (4 digits)
+
+		// Month - longest first
+		{"MMMMM", "J"},      // Month (first letter)
+		{"MMMM", "January"}, // Month (full name)
+		{"MMM", "Jan"},      // Month (abbreviated)
+		{"MM", "01"},        // Month (01-12)
+		{"M", "1"},          // Month (1-12)
+
+		// Day - longest first
+		{"ddd", "002"}, // Day of year (001-366)
+		{"dd", "02"},   // Day (01-31)
+		{"d", "2"},     // Day (1-31)
+
+		// Hour - longest first
+		{"HH", "15"}, // Hour (00-23)
+		{"H", "15"},  // Hour (0-23)
+		{"kk", "15"}, // Hour (01-24)
+		{"k", "15"},  // Hour (1-24)
+		{"KK", "03"}, // Hour (00-11)
+		{"K", "3"},   // Hour (0-11)
+		{"hh", "03"}, // Hour (01-12)
+		{"h", "3"},   // Hour (1-12)
+
+		// Minute - longest first
+		{"mm", "04"}, // Minute (00-59)
+		{"m", "4"},   // Minute (0-59)
+
+		// Second - longest first
+		{"SSS", "000"}, // Millisecond (3 digits)
+		{"SS", "00"},   // Millisecond (2 digits)
+		{"S", "0"},     // Millisecond
+		{"ss", "05"},   // Second (00-59)
+		{"s", "5"},     // Second (0-59)
+
+		// Week - longest first
+		{"ww", "02"}, // Week of year (2 digits)
+		{"w", "2"},   // Week of year
+		{"W", "1"},   // Week of month
+
+		// Day of week - longest first
+		{"EEEEE", "M"},     // Day of week (first letter)
+		{"EEEE", "Monday"}, // Day of week (full name)
+		{"EEE", "Mon"},     // Day of week (abbreviated)
+		{"EE", "Mon"},      // Day of week (abbreviated)
+		{"E", "Mon"},       // Day of week (abbreviated)
+		{"u", "1"},         // Day of week (1-7, Monday=1)
+		{"F", "1"},         // Day of week in month
+
+		// AM/PM
+		{"a", "PM"}, // AM/PM marker
+
+		// Timezone - longest first
+		{"XXXXX", "-07:00"}, // Timezone offset (hours:minutes)
+		{"XXXX", "-0700"},   // Timezone offset (hours:minutes)
+		{"XXX", "-07:00"},   // Timezone offset (hours:minutes)
+		{"XX", "-0700"},     // Timezone offset (hours:minutes)
+		{"X", "-07"},        // Timezone offset (hours)
+		{"Z", "-0700"},      // Timezone offset
+		{"zzzz", "MST"},     // Timezone (full name)
+		{"zzz", "MST"},      // Timezone (abbreviated)
+		{"zz", "MST"},       // Timezone (abbreviated)
+		{"z", "MST"},        // Timezone (abbreviated)
+	}
+
+	// Apply conversions in order (longest patterns first)
+	// This ensures that "MMMM" is processed before "M" to avoid partial matches
+	for _, conv := range conversions {
+		// Replace all occurrences of the Java pattern with the Go pattern
+		result = strings.ReplaceAll(result, conv.java, conv.gofmt)
+	}
+
+	// If no conversions were made and it looks like a Go format, return as-is
+	if result == javaFormat && g.looksLikeGoTimeFormat(javaFormat) {
+		return javaFormat
+	}
+
+	return result
+}
+
 // looksLikeGoTimeFormat checks if the format string looks like a Go time format
 func (g *Golem) looksLikeGoTimeFormat(format string) bool {
 	goTimeVerbs := []string{
@@ -5423,9 +5679,10 @@ func (g *Golem) processRandomTags(template string) string {
 
 			// Process the selected content through the full template pipeline
 			// This ensures all nested tags are processed recursively
+			// Use a context without session to rely on knowledge base variables
 			selectedContent = g.processTemplateWithContext(selectedContent, map[string]string{}, &VariableContext{
 				LocalVars:      make(map[string]string),
-				Session:        nil, // Will be set by the calling context
+				Session:        nil, // Use nil session to rely on knowledge base variables
 				Topic:          "",
 				KnowledgeBase:  g.aimlKB,
 				RecursionDepth: 0,
@@ -8618,6 +8875,193 @@ func (g *Golem) parseLearnContent(content string) ([]Category, error) {
 	return aiml.Categories, nil
 }
 
+// parseLearnContentWithContext parses AIML content within learn/learnf tags with dynamic evaluation
+func (g *Golem) parseLearnContentWithContext(content string, ctx *VariableContext) ([]Category, error) {
+	// First, process any dynamic evaluation tags within the content
+	processedContent := g.processDynamicLearnContent(content, ctx)
+
+	// Wrap content in a minimal AIML structure for parsing
+	wrappedContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+%s
+</aiml>`, processedContent)
+
+	// Parse the wrapped content
+	aiml, err := g.parseAIML(wrappedContent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse learn content: %v", err)
+	}
+
+	return aiml.Categories, nil
+}
+
+// processDynamicLearnContent processes dynamic evaluation tags within learn content
+func (g *Golem) processDynamicLearnContent(content string, ctx *VariableContext) string {
+	// Process <eval> tags within patterns and templates
+	processed := content
+
+	// Find all <category> blocks
+	categoryRegex := regexp.MustCompile(`(?s)<category>(.*?)</category>`)
+	categoryMatches := categoryRegex.FindAllStringSubmatch(processed, -1)
+
+	for _, match := range categoryMatches {
+		if len(match) > 1 {
+			categoryContent := match[1]
+			processedCategory := g.processCategoryDynamicContent(categoryContent, ctx)
+			processed = strings.ReplaceAll(processed, match[0], "<category>"+processedCategory+"</category>")
+		}
+	}
+
+	return processed
+}
+
+// processCategoryDynamicContent processes dynamic evaluation within a single category
+func (g *Golem) processCategoryDynamicContent(categoryContent string, ctx *VariableContext) string {
+	processed := categoryContent
+
+	// Process <pattern> tags with dynamic evaluation
+	patternRegex := regexp.MustCompile(`(?s)<pattern>(.*?)</pattern>`)
+	patternMatches := patternRegex.FindAllStringSubmatch(processed, -1)
+
+	for _, match := range patternMatches {
+		if len(match) > 1 {
+			patternContent := match[1]
+			processedPattern := g.processDynamicPattern(patternContent, ctx)
+			processed = strings.ReplaceAll(processed, match[0], "<pattern>"+processedPattern+"</pattern>")
+		}
+	}
+
+	// Process <template> tags with dynamic evaluation
+	templateRegex := regexp.MustCompile(`(?s)<template>(.*?)</template>`)
+	templateMatches := templateRegex.FindAllStringSubmatch(processed, -1)
+
+	for _, match := range templateMatches {
+		if len(match) > 1 {
+			templateContent := match[1]
+			processedTemplate := g.processDynamicTemplate(templateContent, ctx)
+			processed = strings.ReplaceAll(processed, match[0], "<template>"+processedTemplate+"</template>")
+		}
+	}
+
+	return processed
+}
+
+// processDynamicPattern processes dynamic evaluation within a pattern
+func (g *Golem) processDynamicPattern(patternContent string, ctx *VariableContext) string {
+	// Process <eval> tags within the pattern
+	evalRegex := regexp.MustCompile(`(?s)<eval>(.*?)</eval>`)
+	evalMatches := evalRegex.FindAllStringSubmatch(patternContent, -1)
+
+	processed := patternContent
+	for _, match := range evalMatches {
+		if len(match) > 1 {
+			evalContent := strings.TrimSpace(match[1])
+			// Process the eval content through the template pipeline
+			evaluated := g.processTemplateWithContext(evalContent, map[string]string{}, ctx)
+			processed = strings.ReplaceAll(processed, match[0], evaluated)
+		}
+	}
+
+	return processed
+}
+
+// processDynamicTemplate processes dynamic evaluation within a template
+func (g *Golem) processDynamicTemplate(templateContent string, ctx *VariableContext) string {
+	// Process <eval> tags within the template
+	evalRegex := regexp.MustCompile(`(?s)<eval>(.*?)</eval>`)
+	evalMatches := evalRegex.FindAllStringSubmatch(templateContent, -1)
+
+	processed := templateContent
+	for _, match := range evalMatches {
+		if len(match) > 1 {
+			evalContent := strings.TrimSpace(match[1])
+			// Process the eval content through the template pipeline
+			// But preserve <star/> tags for later pattern matching
+			evaluated := g.processTemplateWithContextPreservingWildcards(evalContent, map[string]string{}, ctx)
+			processed = strings.ReplaceAll(processed, match[0], evaluated)
+		}
+	}
+
+	return processed
+}
+
+// processTemplateWithContextPreservingWildcards processes template content while preserving wildcard tags
+func (g *Golem) processTemplateWithContextPreservingWildcards(template string, wildcards map[string]string, ctx *VariableContext) string {
+	g.LogInfo("processTemplateWithContextPreservingWildcards called with: '%s'", template)
+
+	// First, temporarily replace wildcard tags with placeholders
+	wildcardPlaceholders := make(map[string]string)
+	wildcardCounter := 0
+
+	// Replace <star/> tags (including various forms)
+	starRegex := regexp.MustCompile(`<star\s*(?:index="[^"]*")?\s*/>`)
+	starMatches := starRegex.FindAllString(template, -1)
+	g.LogInfo("Found %d <star/> tags: %v", len(starMatches), starMatches)
+
+	for _, match := range starMatches {
+		placeholder := fmt.Sprintf("__WILDCARD_PLACEHOLDER_%d__", wildcardCounter)
+		wildcardPlaceholders[placeholder] = match
+		template = strings.ReplaceAll(template, match, placeholder)
+		wildcardCounter++
+		g.LogInfo("Replaced '%s' with '%s'", match, placeholder)
+	}
+
+	// Also replace <star> tags (non-self-closing)
+	starOpenRegex := regexp.MustCompile(`<star\s*(?:index="[^"]*")?\s*>`)
+	starOpenMatches := starOpenRegex.FindAllString(template, -1)
+	g.LogInfo("Found %d <star> tags: %v", len(starOpenMatches), starOpenMatches)
+
+	for _, match := range starOpenMatches {
+		placeholder := fmt.Sprintf("__WILDCARD_PLACEHOLDER_%d__", wildcardCounter)
+		wildcardPlaceholders[placeholder] = match
+		template = strings.ReplaceAll(template, match, placeholder)
+		wildcardCounter++
+		g.LogInfo("Replaced '%s' with '%s'", match, placeholder)
+	}
+
+	g.LogInfo("Template after wildcard replacement: '%s'", template)
+	g.LogInfo("Wildcard placeholders: %v", wildcardPlaceholders)
+
+	// Process the template normally
+	processed := g.processTemplateWithContext(template, wildcards, ctx)
+	g.LogInfo("Template after processing: '%s'", processed)
+
+	// Restore wildcard tags (case-insensitive)
+	for placeholder, original := range wildcardPlaceholders {
+		// Try to restore with the original placeholder first
+		if strings.Contains(processed, placeholder) {
+			processed = strings.ReplaceAll(processed, placeholder, original)
+			g.LogInfo("Restored '%s' to '%s'", placeholder, original)
+		} else {
+			// If not found, try case-insensitive restoration
+			// This handles cases where text transformations (like <formal>) changed the case
+			placeholderLower := strings.ToLower(placeholder)
+			processedLower := strings.ToLower(processed)
+
+			if strings.Contains(processedLower, placeholderLower) {
+				// Find and replace all case variations
+				startIndex := 0
+				for {
+					relativeIndex := strings.Index(processedLower[startIndex:], placeholderLower)
+					if relativeIndex == -1 {
+						break
+					}
+					index := startIndex + relativeIndex
+					// Extract the actual (possibly case-modified) placeholder
+					actualPlaceholder := processed[index : index+len(placeholder)]
+					processed = strings.Replace(processed, actualPlaceholder, original, 1)
+					g.LogInfo("Restored (case-insensitive) '%s' to '%s'", actualPlaceholder, original)
+					startIndex = index + len(original)
+					processedLower = strings.ToLower(processed)
+				}
+			}
+		}
+	}
+
+	g.LogInfo("Final result: '%s'", processed)
+	return processed
+}
+
 // ValidateLearnedCategory performs comprehensive validation on learned categories
 func (g *Golem) ValidateLearnedCategory(category Category) error {
 	// Basic validation
@@ -8891,6 +9335,10 @@ func (g *Golem) validateAIMLTags(template string) error {
 		"length": true, "count": true, "split": true, "join": true, "indent": true, "dedent": true, "unique": true, "repeat": true, "normalize": true, "denormalize": true,
 		"id": true, "size": true, "version": true, "system": true, "javascript": true,
 		"eval": true, "gossip": true, "loop": true, "var": true, "unlearn": true, "unlearnf": true, "topic": true,
+		"uniq": true, "subj": true, "pred": true, "obj": true, // RDF operations
+		"first": true, "rest": true, // List operations
+		"botid": true, "host": true, "default": true, "hint": true, // SRAIX attributes
+		"format": true, "jformat": true, // Date format attributes
 	}
 
 	// Find all tags

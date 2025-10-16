@@ -126,6 +126,17 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 			requestData["wildcards"] = wildcards
 		}
 
+		// Include additional SRAIX parameters
+		if botid, exists := wildcards["botid"]; exists && botid != "" {
+			requestData["botid"] = botid
+		}
+		if host, exists := wildcards["host"]; exists && host != "" {
+			requestData["host"] = host
+		}
+		if hint, exists := wildcards["hint"]; exists && hint != "" {
+			requestData["hint"] = hint
+		}
+
 		jsonData, err := json.Marshal(requestData)
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal request data: %v", err)

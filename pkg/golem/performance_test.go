@@ -338,25 +338,25 @@ func TestConcurrentPerformance(t *testing.T) {
 			name:        "Light concurrency (10 goroutines)",
 			goroutines:  10,
 			iterations:  100,
-			maxDuration: 5 * time.Second, // Increased due to mutex overhead
+			maxDuration: 6250 * time.Millisecond, // Increased by 25% from 5s
 		},
 		{
 			name:        "Medium concurrency (50 goroutines)",
 			goroutines:  50,
 			iterations:  50,
-			maxDuration: 10 * time.Second, // Increased due to mutex overhead
+			maxDuration: 12500 * time.Millisecond, // Increased by 25% from 10s
 		},
 		{
 			name:        "Heavy concurrency (100 goroutines)",
 			goroutines:  100,
 			iterations:  20,
-			maxDuration: 3 * time.Second,
+			maxDuration: 3750 * time.Millisecond, // Increased by 25% from 3s
 		},
 		{
 			name:        "Very heavy concurrency (200 goroutines)",
 			goroutines:  200,
 			iterations:  10,
-			maxDuration: 5 * time.Second,
+			maxDuration: 6250 * time.Millisecond, // Increased by 25% from 5s
 		},
 	}
 

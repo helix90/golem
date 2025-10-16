@@ -3,7 +3,6 @@ package golem
 import (
 	"encoding/xml"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,7 +41,7 @@ func (al *AIMLLoader) LoadAIMLFromString(content string) error {
 
 // LoadAIML loads AIML from a file
 func (al *AIMLLoader) LoadAIML(filename string) (*AIMLKnowledgeBase, error) {
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file %s: %v", filename, err)
 	}
@@ -165,9 +164,7 @@ func (al *AIMLLoader) validateAIML(aiml *AIML) error {
 func (al *AIMLLoader) aimlToKnowledgeBase(aiml *AIML) *AIMLKnowledgeBase {
 	kb := NewAIMLKnowledgeBase()
 
-	for _, category := range aiml.Categories {
-		kb.Categories = append(kb.Categories, category)
-	}
+	kb.Categories = append(kb.Categories, aiml.Categories...)
 
 	return kb
 }

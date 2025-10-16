@@ -152,13 +152,13 @@ func TestEvalTagWithOtherTags(t *testing.T) {
 		},
 		{
 			name:     "Eval with formal",
-			template: "<formal><eval>hello world</formal>",
+			template: "<formal><eval>hello world</eval></formal>",
 			expected: "Hello World",
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
 			name:     "Eval with person",
-			template: "<person><eval>I am going to my house</person>",
+			template: "<person><eval>I am going to my house</eval></person>",
 			expected: "you are going to your house",
 			setup:    func(*Golem, *ChatSession) {},
 		},
@@ -178,7 +178,7 @@ func TestEvalTagWithOtherTags(t *testing.T) {
 		},
 		{
 			name:     "Eval with multiple processing",
-			template: "<uppercase><formal><person><eval>I am going to my house</person></formal></uppercase>",
+			template: "<uppercase><formal><person><eval>I am going to my house</eval></person></formal></uppercase>",
 			expected: "YOU ARE GOING TO YOUR HOUSE",
 			setup:    func(*Golem, *ChatSession) {},
 		},

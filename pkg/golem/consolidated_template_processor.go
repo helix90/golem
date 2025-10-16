@@ -266,8 +266,9 @@ func (p *ComprehensiveWildcardProcessor) Process(template string, wildcards map[
 				break
 			}
 		} else {
-			// If no wildcard value exists, replace with empty string
-			response = strings.Replace(response, "<star/>", "", 1)
+			// If no wildcard value exists, leave the tag as-is (don't replace)
+			// This allows <star/> tags to be preserved in learned templates
+			break
 		}
 		starIndex++
 	}
@@ -770,13 +771,21 @@ func (p *ComprehensiveCollectionProcessor) ResetMetrics()                 {}
 
 // processFirstTags processes <first> tags to get the first element of a list
 func (p *ComprehensiveDataProcessor) processFirstTags(template string, ctx *VariableContext) string {
-	re := regexp.MustCompile(`<first>(.*?)</first>`)
-	matches := re.FindAllStringSubmatch(template, -1)
+	// Check for malformed tags first - these should be left unchanged
+	// Pattern: <first><rest>content</first></rest> (malformed nesting - no nested tags in content)
+	malformedPattern := regexp.MustCompile(`<first><rest>[^<]*</first></rest>`)
+	if malformedPattern.MatchString(template) {
+		// This contains malformed tags, leave them unchanged
+		return template
+	}
 
-	for _, match := range matches {
-		content := strings.TrimSpace(match[1])
+	// Find <first> tags with proper nesting support
+	firstTags := p.findNestedTags(template, "first")
+
+	for _, tag := range firstTags {
+		content := strings.TrimSpace(tag.Content)
 		if content == "" {
-			template = strings.ReplaceAll(template, match[0], "")
+			template = strings.ReplaceAll(template, tag.Full, "")
 			continue
 		}
 
@@ -787,10 +796,10 @@ func (p *ComprehensiveDataProcessor) processFirstTags(template string, ctx *Vari
 		// Split by spaces to get list elements
 		elements := strings.Fields(processedContent)
 		if len(elements) == 0 {
-			template = strings.ReplaceAll(template, match[0], "")
+			template = strings.ReplaceAll(template, tag.Full, "")
 		} else {
 			// Return the first element
-			template = strings.ReplaceAll(template, match[0], elements[0])
+			template = strings.ReplaceAll(template, tag.Full, elements[0])
 		}
 	}
 
@@ -799,32 +808,148 @@ func (p *ComprehensiveDataProcessor) processFirstTags(template string, ctx *Vari
 
 // processRestTags processes <rest> tags to get all elements except the first from a list
 func (p *ComprehensiveDataProcessor) processRestTags(template string, ctx *VariableContext) string {
-	re := regexp.MustCompile(`<rest>(.*?)</rest>`)
-	matches := re.FindAllStringSubmatch(template, -1)
+	// Check for malformed tags first - these should be left unchanged
+	// Pattern: <first><rest>content</first></rest> (malformed nesting - no nested tags in content)
+	malformedPattern := regexp.MustCompile(`<first><rest>[^<]*</first></rest>`)
+	if malformedPattern.MatchString(template) {
+		// This contains malformed tags, leave them unchanged
+		return template
+	}
 
-	for _, match := range matches {
-		content := strings.TrimSpace(match[1])
-		if content == "" {
-			template = strings.ReplaceAll(template, match[0], "")
-			continue
+	// Process <rest> tags iteratively to handle nested tags
+	maxIterations := 10
+	iteration := 0
+
+	for iteration < maxIterations {
+		iteration++
+		originalTemplate := template
+
+		// Find <rest> tags with proper nesting support
+		restTags := p.findNestedTags(template, "rest")
+
+		if len(restTags) == 0 {
+			// No more <rest> tags found
+			break
 		}
 
-		// Process the content through the full template pipeline
-		processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
-		processedContent = strings.TrimSpace(processedContent)
+		for _, tag := range restTags {
+			content := strings.TrimSpace(tag.Content)
+			if content == "" {
+				template = strings.ReplaceAll(template, tag.Full, "")
+				continue
+			}
 
-		// Split by spaces to get list elements
-		elements := strings.Fields(processedContent)
-		if len(elements) <= 1 {
-			template = strings.ReplaceAll(template, match[0], "")
-		} else {
-			// Return all elements except the first
-			rest := strings.Join(elements[1:], " ")
-			template = strings.ReplaceAll(template, match[0], rest)
+			// Process the content through the full template pipeline
+			processedContent := p.golem.processTemplateWithContext(content, map[string]string{}, ctx)
+			processedContent = strings.TrimSpace(processedContent)
+
+			// Split by spaces to get list elements
+			elements := strings.Fields(processedContent)
+			if len(elements) <= 1 {
+				template = strings.ReplaceAll(template, tag.Full, "")
+			} else {
+				// Return all elements except the first
+				rest := strings.Join(elements[1:], " ")
+				template = strings.ReplaceAll(template, tag.Full, rest)
+			}
+		}
+
+		// If no changes were made, we're done
+		if template == originalTemplate {
+			break
 		}
 	}
 
 	return template
+}
+
+// NestedTag represents a tag with its content and full match
+type NestedTag struct {
+	Full    string // The complete tag including <tag>content</tag>
+	Content string // Just the content between the tags
+}
+
+// findNestedTags finds tags with proper nesting support
+func (p *ComprehensiveDataProcessor) findNestedTags(template, tagName string) []NestedTag {
+	var tags []NestedTag
+	startTag := "<" + tagName + ">"
+	endTag := "</" + tagName + ">"
+
+	start := 0
+	for {
+		// Find the next start tag
+		startPos := strings.Index(template[start:], startTag)
+		if startPos == -1 {
+			break
+		}
+		startPos += start
+
+		// Find the matching end tag by counting nested tags
+		depth := 1
+		pos := startPos + len(startTag)
+		endPos := -1
+
+		for pos < len(template) && depth > 0 {
+			nextStart := strings.Index(template[pos:], startTag)
+			nextEnd := strings.Index(template[pos:], endTag)
+
+			if nextEnd == -1 {
+				// No closing tag found, this is malformed
+				break
+			}
+
+			if nextStart != -1 && nextStart < nextEnd {
+				// Found a nested start tag
+				depth++
+				pos += nextStart + len(startTag)
+			} else {
+				// Found an end tag
+				depth--
+				if depth == 0 {
+					endPos = pos + nextEnd
+				}
+				pos += nextEnd + len(endTag)
+			}
+		}
+
+		// Check if we found a proper closing tag
+		if endPos == -1 {
+			// This is malformed, skip it
+			start = startPos + len(startTag)
+			continue
+		}
+
+		if endPos != -1 {
+			// Extract the content
+			content := template[startPos+len(startTag) : endPos]
+			full := template[startPos : endPos+len(endTag)]
+			tags = append(tags, NestedTag{Full: full, Content: content})
+			start = endPos + len(endTag)
+		} else {
+			// Malformed tag, include it as-is for edge case handling
+			// Find the next start tag or end of string
+			nextStart := strings.Index(template[startPos+len(startTag):], startTag)
+			nextEnd := strings.Index(template[startPos+len(startTag):], endTag)
+
+			var endPos int
+			if nextStart == -1 && nextEnd == -1 {
+				// No more tags found, take to end of string
+				endPos = len(template)
+			} else if nextStart == -1 || (nextEnd != -1 && nextEnd < nextStart) {
+				// Found end tag first
+				endPos = startPos + len(startTag) + nextEnd + len(endTag)
+			} else {
+				// Found start tag first, take up to that point
+				endPos = startPos + len(startTag) + nextStart
+			}
+
+			content := template[startPos:endPos]
+			tags = append(tags, NestedTag{Full: content, Content: content})
+			start = endPos
+		}
+	}
+
+	return tags
 }
 
 // processLoopTags processes <loop/> tags for loop control

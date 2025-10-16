@@ -2779,16 +2779,27 @@ func TestConditionWithRandom(t *testing.T) {
 	kb.Variables["weather"] = "sunny"
 	g.SetKnowledgeBase(kb)
 
-	// Test condition with random
+	// Test condition with random using ProcessTemplate (no session context)
+	// This matches how the random tag processing works internally
 	template := `<random>
 		<li><condition name="weather" value="sunny">It's sunny!</condition></li>
 		<li><condition name="weather" value="rainy">It's rainy!</condition></li>
 	</random>`
 	result := g.ProcessTemplate(template, make(map[string]string))
-	expected := "It's sunny!"
 
-	if result != expected {
-		t.Errorf("Expected '%s', got '%s'", expected, result)
+	// Random tag will randomly select between "It's sunny!" and "" (empty string)
+	// since the second condition evaluates to empty when weather is "sunny"
+	validResults := []string{"It's sunny!", ""}
+	found := false
+	for _, expected := range validResults {
+		if result == expected {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("Expected one of %v, got '%s'", validResults, result)
 	}
 }
 

@@ -128,8 +128,6 @@ type VariableResolutionCache struct {
 	AccessOrder []string             `json:"access_order"` // For LRU eviction
 	// Scope tracking for cache invalidation
 	ScopeHashes map[string]string `json:"scope_hashes"` // Maps cache key to scope hash
-	// Mutex for thread safety
-	mutex sync.RWMutex
 }
 
 // TemplateTagProcessingCache represents a cache for template tag processing results
