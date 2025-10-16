@@ -32,30 +32,32 @@ type Category struct {
 
 // AIMLKnowledgeBase stores the parsed AIML data for efficient searching
 type AIMLKnowledgeBase struct {
-	Categories []Category
-	Patterns   map[string]*Category
-	Sets       map[string][]string
-	Topics     map[string][]string
-	TopicVars  map[string]map[string]string // TopicVars: topicName -> varName -> value
-	Variables  map[string]string
-	Properties map[string]string
-	Maps       map[string]map[string]string // Maps: mapName -> key -> value
-	Lists      map[string][]string          // Lists: listName -> []values
-	Arrays     map[string][]string          // Arrays: arrayName -> []values
+	Categories    []Category
+	Patterns      map[string]*Category
+	Sets          map[string][]string
+	Topics        map[string][]string
+	TopicVars     map[string]map[string]string // TopicVars: topicName -> varName -> value
+	Variables     map[string]string
+	Properties    map[string]string
+	Maps          map[string]map[string]string // Maps: mapName -> key -> value
+	Lists         map[string][]string          // Lists: listName -> []values
+	Arrays        map[string][]string          // Arrays: arrayName -> []values
+	Substitutions map[string]map[string]string // Substitutions: substitutionName -> pattern -> replacement
 }
 
 // NewAIMLKnowledgeBase creates a new knowledge base
 func NewAIMLKnowledgeBase() *AIMLKnowledgeBase {
 	return &AIMLKnowledgeBase{
-		Patterns:   make(map[string]*Category),
-		Sets:       make(map[string][]string),
-		Topics:     make(map[string][]string),
-		TopicVars:  make(map[string]map[string]string),
-		Variables:  make(map[string]string),
-		Properties: make(map[string]string),
-		Maps:       make(map[string]map[string]string),
-		Lists:      make(map[string][]string),
-		Arrays:     make(map[string][]string),
+		Patterns:      make(map[string]*Category),
+		Sets:          make(map[string][]string),
+		Topics:        make(map[string][]string),
+		TopicVars:     make(map[string]map[string]string),
+		Variables:     make(map[string]string),
+		Properties:    make(map[string]string),
+		Maps:          make(map[string]map[string]string),
+		Lists:         make(map[string][]string),
+		Arrays:        make(map[string][]string),
+		Substitutions: make(map[string]map[string]string),
 	}
 }
 
@@ -99,15 +101,16 @@ func (g *Golem) LoadAIMLFromString(content string) error {
 // aimlToKnowledgeBase converts AIML to AIMLKnowledgeBase
 func (g *Golem) aimlToKnowledgeBase(aiml *AIML) *AIMLKnowledgeBase {
 	kb := &AIMLKnowledgeBase{
-		Categories: aiml.Categories,
-		Patterns:   make(map[string]*Category),
-		Sets:       make(map[string][]string),
-		Topics:     make(map[string][]string),
-		Variables:  make(map[string]string),
-		Properties: make(map[string]string),
-		Maps:       make(map[string]map[string]string),
-		Lists:      make(map[string][]string),
-		Arrays:     make(map[string][]string),
+		Categories:    aiml.Categories,
+		Patterns:      make(map[string]*Category),
+		Sets:          make(map[string][]string),
+		Topics:        make(map[string][]string),
+		Variables:     make(map[string]string),
+		Properties:    make(map[string]string),
+		Maps:          make(map[string]map[string]string),
+		Lists:         make(map[string][]string),
+		Arrays:        make(map[string][]string),
+		Substitutions: make(map[string]map[string]string),
 	}
 
 	// Build pattern index
@@ -133,15 +136,16 @@ func (g *Golem) aimlToKnowledgeBase(aiml *AIML) *AIMLKnowledgeBase {
 // mergeKnowledgeBases merges two knowledge bases
 func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledgeBase, error) {
 	mergedKB := &AIMLKnowledgeBase{
-		Categories: make([]Category, 0),
-		Patterns:   make(map[string]*Category),
-		Sets:       make(map[string][]string),
-		Topics:     make(map[string][]string),
-		Variables:  make(map[string]string),
-		Properties: make(map[string]string),
-		Maps:       make(map[string]map[string]string),
-		Lists:      make(map[string][]string),
-		Arrays:     make(map[string][]string),
+		Categories:    make([]Category, 0),
+		Patterns:      make(map[string]*Category),
+		Sets:          make(map[string][]string),
+		Topics:        make(map[string][]string),
+		Variables:     make(map[string]string),
+		Properties:    make(map[string]string),
+		Maps:          make(map[string]map[string]string),
+		Lists:         make(map[string][]string),
+		Arrays:        make(map[string][]string),
+		Substitutions: make(map[string]map[string]string),
 	}
 
 	// Copy from first knowledge base
@@ -169,6 +173,9 @@ func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledge
 	}
 	for arrayName, arrayData := range kb1.Arrays {
 		mergedKB.Arrays[arrayName] = arrayData
+	}
+	for subName, subData := range kb1.Substitutions {
+		mergedKB.Substitutions[subName] = subData
 	}
 
 	// Merge from second knowledge base
@@ -213,6 +220,14 @@ func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledge
 			mergedKB.Arrays[arrayName] = make([]string, 0)
 		}
 		mergedKB.Arrays[arrayName] = append(mergedKB.Arrays[arrayName], arrayData...)
+	}
+	for subName, subData := range kb2.Substitutions {
+		if mergedKB.Substitutions[subName] == nil {
+			mergedKB.Substitutions[subName] = make(map[string]string)
+		}
+		for pattern, replacement := range subData {
+			mergedKB.Substitutions[subName][pattern] = replacement
+		}
 	}
 
 	return mergedKB, nil
@@ -374,6 +389,47 @@ func (g *Golem) LoadAIMLFromDirectory(dirPath string) (*AIMLKnowledgeBase, error
 		}
 	}
 
+	// Load substitution files from the same directory
+	substitutions, err := g.LoadSubstitutionsFromDirectory(dirPath)
+	if err != nil {
+		// Log the error but don't fail the entire operation
+		g.LogInfo("Warning: failed to load substitutions from directory: %v", err)
+	} else {
+		// Merge substitutions into the knowledge base
+		for subName, subData := range substitutions {
+			mergedKB.Substitutions[subName] = subData
+		}
+	}
+
+	// Load properties files from the same directory
+	properties, err := g.LoadPropertiesFromDirectory(dirPath)
+	if err != nil {
+		// Log the error but don't fail the entire operation
+		g.LogInfo("Warning: failed to load properties from directory: %v", err)
+	} else {
+		// Merge properties into the knowledge base
+		for _, propData := range properties {
+			for key, value := range propData {
+				mergedKB.Properties[key] = value
+			}
+		}
+	}
+
+	// Load pdefaults files from the same directory
+	pdefaults, err := g.LoadPDefaultsFromDirectory(dirPath)
+	if err != nil {
+		// Log the error but don't fail the entire operation
+		g.LogInfo("Warning: failed to load pdefaults from directory: %v", err)
+	} else {
+		// Merge pdefaults into the knowledge base (as default user properties)
+		for pdefaultName, pdefaultData := range pdefaults {
+			for key, value := range pdefaultData {
+				// Store pdefaults as a special type of property with prefix
+				mergedKB.Properties["pdefault."+pdefaultName+"."+key] = value
+			}
+		}
+	}
+
 	g.LogInfo("Merged %d AIML files into knowledge base", len(aimlFiles))
 	g.LogInfo("Total categories: %d", len(mergedKB.Categories))
 	g.LogInfo("Total patterns: %d", len(mergedKB.Patterns))
@@ -382,6 +438,7 @@ func (g *Golem) LoadAIMLFromDirectory(dirPath string) (*AIMLKnowledgeBase, error
 	g.LogInfo("Total variables: %d", len(mergedKB.Variables))
 	g.LogInfo("Total properties: %d", len(mergedKB.Properties))
 	g.LogInfo("Total maps: %d", len(mergedKB.Maps))
+	g.LogInfo("Total substitutions: %d", len(mergedKB.Substitutions))
 
 	return mergedKB, nil
 }
@@ -552,6 +609,294 @@ func (g *Golem) LoadSetsFromDirectory(dirPath string) (map[string][]string, erro
 	g.LogInfo("Loaded %d set files", len(allSets))
 
 	return allSets, nil
+}
+
+// LoadSubstitutionFromFile loads a .substitution file containing JSON array of [pattern, replacement] pairs
+func (g *Golem) LoadSubstitutionFromFile(filename string) (map[string]string, error) {
+	g.LogInfo("Loading substitution file: %s", filename)
+
+	// Read the file content
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read substitution file %s: %v", filename, err)
+	}
+
+	// Parse JSON array of [pattern, replacement] pairs
+	var substitutionPairs [][]string
+	err = json.Unmarshal(content, &substitutionPairs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JSON in substitution file %s: %v", filename, err)
+	}
+
+	// Convert array to map
+	result := make(map[string]string)
+	for _, pair := range substitutionPairs {
+		if len(pair) != 2 {
+			g.LogInfo("Warning: skipping invalid substitution pair: %v", pair)
+			continue
+		}
+
+		pattern := pair[0]
+		replacement := pair[1]
+
+		if pattern == "" {
+			g.LogInfo("Warning: skipping empty pattern in substitution: %v", pair)
+			continue
+		}
+
+		result[pattern] = replacement
+	}
+
+	g.LogInfo("Loaded %d substitution rules from %s", len(result), filename)
+
+	return result, nil
+}
+
+// LoadSubstitutionsFromDirectory loads all .substitution files from a directory
+func (g *Golem) LoadSubstitutionsFromDirectory(dirPath string) (map[string]map[string]string, error) {
+	g.LogInfo("Loading substitution files from directory: %s", dirPath)
+
+	// Create a map to store all substitutions
+	allSubstitutions := make(map[string]map[string]string)
+
+	// Walk through the directory to find all .substitution files
+	var substitutionFiles []string
+	err := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Check if it's a .substitution file
+		if !d.IsDir() && strings.HasSuffix(strings.ToLower(path), ".substitution") {
+			substitutionFiles = append(substitutionFiles, path)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk directory %s: %v", dirPath, err)
+	}
+
+	if len(substitutionFiles) == 0 {
+		g.LogInfo("No substitution files found in directory: %s", dirPath)
+		return allSubstitutions, nil
+	}
+
+	g.LogInfo("Found %d substitution files in directory", len(substitutionFiles))
+
+	// Load each substitution file
+	for _, substitutionFile := range substitutionFiles {
+		g.LogInfo("Loading substitution file: %s", substitutionFile)
+
+		// Load the individual substitution file
+		substitutionData, err := g.LoadSubstitutionFromFile(substitutionFile)
+		if err != nil {
+			// Log the error but continue with other files
+			g.LogInfo("Warning: failed to load %s: %v", substitutionFile, err)
+			continue
+		}
+
+		// Use the filename (without extension) as the substitution name
+		substitutionName := strings.TrimSuffix(filepath.Base(substitutionFile), filepath.Ext(substitutionFile))
+		allSubstitutions[substitutionName] = substitutionData
+	}
+
+	g.LogInfo("Loaded %d substitution files", len(allSubstitutions))
+
+	return allSubstitutions, nil
+}
+
+// LoadPropertiesFromFile loads a .properties file containing JSON array of [key, value] pairs
+func (g *Golem) LoadPropertiesFromFile(filename string) (map[string]string, error) {
+	g.LogInfo("Loading properties file: %s", filename)
+
+	// Read the file content
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read properties file %s: %v", filename, err)
+	}
+
+	// Parse JSON array of [key, value] pairs
+	var propertyPairs [][]string
+	err = json.Unmarshal(content, &propertyPairs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JSON in properties file %s: %v", filename, err)
+	}
+
+	// Convert array to map
+	result := make(map[string]string)
+	for _, pair := range propertyPairs {
+		if len(pair) != 2 {
+			g.LogInfo("Warning: skipping invalid property pair: %v", pair)
+			continue
+		}
+
+		key := pair[0]
+		value := pair[1]
+
+		if key == "" {
+			g.LogInfo("Warning: skipping empty key in properties: %v", pair)
+			continue
+		}
+
+		result[key] = value
+	}
+
+	g.LogInfo("Loaded %d properties from %s", len(result), filename)
+
+	return result, nil
+}
+
+// LoadPropertiesFromDirectory loads all .properties files from a directory
+func (g *Golem) LoadPropertiesFromDirectory(dirPath string) (map[string]map[string]string, error) {
+	g.LogInfo("Loading properties files from directory: %s", dirPath)
+
+	// Create a map to store all properties
+	allProperties := make(map[string]map[string]string)
+
+	// Walk through the directory to find all .properties files
+	var propertiesFiles []string
+	err := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Check if it's a .properties file
+		if !d.IsDir() && strings.HasSuffix(strings.ToLower(path), ".properties") {
+			propertiesFiles = append(propertiesFiles, path)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk directory %s: %v", dirPath, err)
+	}
+
+	if len(propertiesFiles) == 0 {
+		g.LogInfo("No properties files found in directory: %s", dirPath)
+		return allProperties, nil
+	}
+
+	g.LogInfo("Found %d properties files in directory", len(propertiesFiles))
+
+	// Load each properties file
+	for _, propertiesFile := range propertiesFiles {
+		g.LogInfo("Loading properties file: %s", propertiesFile)
+
+		// Load the individual properties file
+		propertiesData, err := g.LoadPropertiesFromFile(propertiesFile)
+		if err != nil {
+			// Log the error but continue with other files
+			g.LogInfo("Warning: failed to load %s: %v", propertiesFile, err)
+			continue
+		}
+
+		// Use the filename (without extension) as the properties name
+		propertiesName := strings.TrimSuffix(filepath.Base(propertiesFile), filepath.Ext(propertiesFile))
+		allProperties[propertiesName] = propertiesData
+	}
+
+	g.LogInfo("Loaded %d properties files", len(allProperties))
+
+	return allProperties, nil
+}
+
+// LoadPDefaultsFromFile loads a .pdefaults file containing JSON array of [key, value] pairs
+func (g *Golem) LoadPDefaultsFromFile(filename string) (map[string]string, error) {
+	g.LogInfo("Loading pdefaults file: %s", filename)
+
+	// Read the file content
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read pdefaults file %s: %v", filename, err)
+	}
+
+	// Parse JSON array of [key, value] pairs
+	var pdefaultsPairs [][]string
+	err = json.Unmarshal(content, &pdefaultsPairs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JSON in pdefaults file %s: %v", filename, err)
+	}
+
+	// Convert array to map
+	result := make(map[string]string)
+	for _, pair := range pdefaultsPairs {
+		if len(pair) != 2 {
+			g.LogInfo("Warning: skipping invalid pdefaults pair: %v", pair)
+			continue
+		}
+
+		key := pair[0]
+		value := pair[1]
+
+		if key == "" {
+			g.LogInfo("Warning: skipping empty key in pdefaults: %v", pair)
+			continue
+		}
+
+		result[key] = value
+	}
+
+	g.LogInfo("Loaded %d pdefaults from %s", len(result), filename)
+
+	return result, nil
+}
+
+// LoadPDefaultsFromDirectory loads all .pdefaults files from a directory
+func (g *Golem) LoadPDefaultsFromDirectory(dirPath string) (map[string]map[string]string, error) {
+	g.LogInfo("Loading pdefaults files from directory: %s", dirPath)
+
+	// Create a map to store all pdefaults
+	allPDefaults := make(map[string]map[string]string)
+
+	// Walk through the directory to find all .pdefaults files
+	var pdefaultsFiles []string
+	err := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Check if it's a .pdefaults file
+		if !d.IsDir() && strings.HasSuffix(strings.ToLower(path), ".pdefaults") {
+			pdefaultsFiles = append(pdefaultsFiles, path)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk directory %s: %v", dirPath, err)
+	}
+
+	if len(pdefaultsFiles) == 0 {
+		g.LogInfo("No pdefaults files found in directory: %s", dirPath)
+		return allPDefaults, nil
+	}
+
+	g.LogInfo("Found %d pdefaults files in directory", len(pdefaultsFiles))
+
+	// Load each pdefaults file
+	for _, pdefaultsFile := range pdefaultsFiles {
+		g.LogInfo("Loading pdefaults file: %s", pdefaultsFile)
+
+		// Load the individual pdefaults file
+		pdefaultsData, err := g.LoadPDefaultsFromFile(pdefaultsFile)
+		if err != nil {
+			// Log the error but continue with other files
+			g.LogInfo("Warning: failed to load %s: %v", pdefaultsFile, err)
+			continue
+		}
+
+		// Use the filename (without extension) as the pdefaults name
+		pdefaultsName := strings.TrimSuffix(filepath.Base(pdefaultsFile), filepath.Ext(pdefaultsFile))
+		allPDefaults[pdefaultsName] = pdefaultsData
+	}
+
+	g.LogInfo("Loaded %d pdefaults files", len(allPDefaults))
+
+	return allPDefaults, nil
 }
 
 // parseAIML parses AIML content using native Go string manipulation

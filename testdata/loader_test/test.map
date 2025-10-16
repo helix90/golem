@@ -1,0 +1,7 @@
+[
+    {"key": "hello", "value": "hi"},
+    {"key": "goodbye", "value": "bye"},
+    {"key": "thank you", "value": "thanks"},
+    {"key": "yes", "value": "yep"},
+    {"key": "no", "value": "nope"}
+]

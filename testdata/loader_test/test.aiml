@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml version="2.0">
+    <category>
+        <pattern>HELLO</pattern>
+        <template>Hello! How can I help you?</template>
+    </category>
+    <category>
+        <pattern>WHAT IS YOUR NAME</pattern>
+        <template>My name is TestBot.</template>
+    </category>
+    <category>
+        <pattern>GOODBYE</pattern>
+        <template>Goodbye! Have a great day!</template>
+    </category>
+</aiml>

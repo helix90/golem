@@ -1495,6 +1495,27 @@ func (g *Golem) loadAllRelatedFiles(filePath string) error {
 		return fmt.Errorf("failed to load set files from directory: %v", err)
 	}
 
+	// Load substitutions from directory
+	substitutions, err := g.LoadSubstitutionsFromDirectory(dir)
+	if err != nil {
+		// Log the error but don't fail the entire operation
+		g.LogInfo("Warning: failed to load substitutions from directory: %v", err)
+	}
+
+	// Load properties from directory
+	properties, err := g.LoadPropertiesFromDirectory(dir)
+	if err != nil {
+		// Log the error but don't fail the entire operation
+		g.LogInfo("Warning: failed to load properties from directory: %v", err)
+	}
+
+	// Load pdefaults from directory
+	pdefaults, err := g.LoadPDefaultsFromDirectory(dir)
+	if err != nil {
+		// Log the error but don't fail the entire operation
+		g.LogInfo("Warning: failed to load pdefaults from directory: %v", err)
+	}
+
 	// Merge maps into knowledge base
 	for mapName, mapData := range maps {
 		aimlKB.Maps[mapName] = mapData
@@ -1505,6 +1526,26 @@ func (g *Golem) loadAllRelatedFiles(filePath string) error {
 		aimlKB.AddSetMembers(setName, setMembers)
 	}
 
+	// Merge substitutions into knowledge base
+	for subName, subData := range substitutions {
+		aimlKB.Substitutions[subName] = subData
+	}
+
+	// Merge properties into knowledge base
+	for _, propData := range properties {
+		for key, value := range propData {
+			aimlKB.Properties[key] = value
+		}
+	}
+
+	// Merge pdefaults into knowledge base (as default user properties)
+	for pdefaultName, pdefaultData := range pdefaults {
+		for key, value := range pdefaultData {
+			// Store pdefaults as a special type of property with prefix
+			aimlKB.Properties["pdefault."+pdefaultName+"."+key] = value
+		}
+	}
+
 	// Set the knowledge base
 	g.aimlKB = aimlKB
 
@@ -1513,6 +1554,9 @@ func (g *Golem) loadAllRelatedFiles(filePath string) error {
 	fmt.Printf("Loaded %d categories\n", len(aimlKB.Categories))
 	fmt.Printf("Loaded %d maps\n", len(maps))
 	fmt.Printf("Loaded %d sets\n", len(sets))
+	fmt.Printf("Loaded %d substitution files\n", len(substitutions))
+	fmt.Printf("Loaded %d properties files\n", len(properties))
+	fmt.Printf("Loaded %d pdefaults files\n", len(pdefaults))
 
 	return nil
 }
