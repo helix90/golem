@@ -289,6 +289,9 @@ type Golem struct {
 	semanticMatcher *SemanticContextMatcher
 	// Random seed for deterministic shuffling
 	randomSeed int64
+	// Tree-based processing components
+	treeProcessor     *TreeProcessor
+	useTreeProcessing bool // Feature flag for tree-based processing
 }
 
 // NewRegexCache creates a new regex cache
@@ -1139,6 +1142,9 @@ func New(verbose bool) *Golem {
 	// Create pattern matching cache
 	patternMatchingCache := NewPatternMatchingCache(2000, 3600) // 2000 results, 1 hour TTL
 
+	// Create tree processor (will be initialized after Golem is created)
+	var treeProcessor *TreeProcessor
+
 	return &Golem{
 		verbose:                    verbose,
 		logLevel:                   logLevel,
@@ -1161,6 +1167,8 @@ func New(verbose bool) *Golem {
 		templateTagProcessingCache: templateTagProcessingCache,
 		patternMatchingCache:       patternMatchingCache,
 		persistentLearning:         persistentLearning,
+		treeProcessor:              treeProcessor,
+		useTreeProcessing:          false, // Default to regex-based processing
 	}
 }
 
@@ -1197,6 +1205,26 @@ func (g *Golem) LogTrace(format string, args ...interface{}) {
 	if g.logLevel >= LogLevelTrace {
 		g.logger.Printf("[TRACE] "+format, args...)
 	}
+}
+
+// EnableTreeProcessing enables tree-based tag processing
+func (g *Golem) EnableTreeProcessing() {
+	g.useTreeProcessing = true
+	if g.treeProcessor == nil {
+		g.treeProcessor = NewTreeProcessor(g)
+	}
+	g.LogInfo("Tree-based tag processing enabled")
+}
+
+// DisableTreeProcessing disables tree-based tag processing (reverts to regex-based)
+func (g *Golem) DisableTreeProcessing() {
+	g.useTreeProcessing = false
+	g.LogInfo("Tree-based tag processing disabled, using regex-based processing")
+}
+
+// IsTreeProcessingEnabled returns whether tree-based processing is enabled
+func (g *Golem) IsTreeProcessingEnabled() bool {
+	return g.useTreeProcessing
 }
 
 // SetPersistentLearningPath sets the path for persistent learning storage

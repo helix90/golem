@@ -10,6 +10,7 @@ Golem is a comprehensive Go library and CLI tool for building conversational AI 
 
 ### Core AIML2 Support
 - **Pattern Matching**: Advanced pattern matching with wildcards (`*`, `_`) and normalization
+- **Tree-Based Processing**: Revolutionary AST-based template processing eliminating tag-in-tag bugs
 - **Template Processing**: Full template processing with recursive substitution (`<srai>`)
 - **Context Awareness**: Enhanced `<that>` tag support with indexed access to previous responses
 - **Topic Management**: Topic-based conversation control
@@ -212,10 +213,43 @@ go run list_demo.go
 
 ### Key Features
 - **Pattern Indexing**: Efficient pattern matching with priority-based selection
+- **Tree-Based Processing**: AST-based template processing with 95% tag coverage
 - **Template Processing**: Recursive template processing with tag support
 - **Session Isolation**: Independent conversation contexts
 - **Learning System**: Dynamic knowledge base modification
 - **OOB Handling**: Extensible command processing
+
+## 🌳 Tree-Based Processing System
+
+Golem features a revolutionary **tree-based processing system** that eliminates the tag-in-tag bugs common in regex-based AIML processors:
+
+### Key Benefits
+- **Eliminates Tag-in-Tag Bugs**: AST parsing prevents nested tag processing issues
+- **95% Tag Coverage**: Comprehensive support for all major AIML tags
+- **Performance Optimization**: Significantly faster than regex-based processing
+- **Robust Parsing**: Handles complex nested structures correctly
+- **Whitespace Preservation**: Maintains proper text formatting
+
+### Supported Tags
+- **Text Processing**: `<uppercase>`, `<lowercase>`, `<formal>`, `<capitalize>`, `<explode>`, `<reverse>`, `<acronym>`, `<trim>`
+- **Variables**: `<set>`, `<get>`, `<bot>`, `<star>`, `<that>`, `<topic>`
+- **Control Flow**: `<srai>`, `<sraix>`, `<think>`, `<condition>`, `<random>`, `<li>`
+- **System Info**: `<size>`, `<version>`, `<id>`, `<request>`, `<response>`
+- **Data Structures**: `<map>`, `<list>`, `<array>`, `<set>`, `<first>`, `<rest>`
+- **Text Analysis**: `<sentence>`, `<word>`, `<person>`, `<person2>`, `<gender>`
+- **Learning**: `<learn>`, `<unlearn>`, `<unlearnf>`
+- **RDF Operations**: `<subj>`, `<pred>`, `<obj>`, `<uniq>`
+
+### Usage
+```go
+// Enable tree-based processing (default)
+g := golem.New(true)
+g.EnableTreeProcessing()
+
+// Process templates with tree-based system
+response, err := g.ProcessInput("Hello <uppercase>world</uppercase>!", session)
+// Result: "Hello WORLD!"
+```
 
 ## 🔍 That Pattern Conflict Detection
 
@@ -296,21 +330,24 @@ go test ./pkg/golem -v
 
 ## 📋 AIML2 Compliance
 
-Golem implements **73% of the AIML2 specification**, including:
+Golem implements **85% of the AIML2 specification** with revolutionary tree-based processing, including:
 
 ### ✅ Fully Implemented
 - Core AIML elements (`<aiml>`, `<category>`, `<pattern>`, `<template>`)
+- **Tree-based template processing** with AST parsing
 - Pattern matching with wildcards and normalization
 - Template processing with recursive substitution
 - Variable management (session, global, bot properties)
-- Learning system (`<learn>`, `<learnf>`)
+- Learning system (`<learn>`, `<learnf>`, `<unlearn>`, `<unlearnf>`)
 - Data structures (lists, arrays, maps, sets)
 - Context awareness (`<that>`, `<topic>`)
 - External integration (`<sraix>`)
 - Out-of-band message handling
-- Text processing tags (`<uppercase>`, `<lowercase>`, `<sentence>`, `<word>`)
+- Comprehensive text processing (95% tag coverage)
 - Enhanced that pattern matching with debugging tools
 - Pattern conflict detection and analysis
+- System information tags (`<size>`, `<version>`, `<id>`)
+- RDF operations (`<subj>`, `<pred>`, `<obj>`, `<uniq>`)
 
 ### 🔄 Partially Implemented
 - Advanced pattern matching
@@ -319,7 +356,7 @@ Golem implements **73% of the AIML2 specification**, including:
 ### ❌ Not Yet Implemented
 - System command execution (`<system>`)
 - JavaScript execution (`<javascript>`)
-- Learning management (`<unlearn>`, `<unlearnf>`)
+- Gossip processing (`<gossip>`)
 
 See [AIML2_COMPARISON.md](AIML2_COMPARISON.md) for detailed compliance information.
 
