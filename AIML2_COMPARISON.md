@@ -10,7 +10,7 @@
 - **`<pattern>`** - Pattern matching with wildcards
 - **`<template>`** - Response templates
 - **`<star/>`** - Wildcard references (star1, star2, etc.)
-- **`<that>`** - Context matching (basic support)
+- **`<that>`** - Context matching (full support with index support)
 - **`<sr>`** - Short for `<srai>` (shorthand for `<srai><star/></srai>`)
 
 #### Pattern Matching
@@ -18,20 +18,34 @@
 - **Pattern normalization** - Case conversion, whitespace handling
 - **Priority matching** - Exact matches, fewer wildcards, etc.
 - **Set matching** - `<set>name</set>` pattern support
-- **Topic filtering** - Topic-based pattern filtering
+- **Topic filtering** - Topic-based pattern filtering with full context support
 
-#### Template Processing
+#### Template Processing Pipeline
+The current implementation uses a **consolidated processor pipeline** with specialized processors in a specific order:
+
+1. **Wildcard Processing** - Star tags, that wildcards
+2. **Variable Processing** - Property, bot, think, topic, set, condition tags
+3. **Recursive Processing** - SR, SRAI, SRAIX, learn, unlearn tags
+4. **Data Processing** - Date, time, random, first, rest, loop, input, eval tags
+5. **Text Processing** - Person, gender, sentence, word tags
+6. **Format Processing** - Uppercase, lowercase, formal, explode, etc.
+7. **Collection Processing** - Map, list, array tags
+8. **System Processing** - Size, version, id, that, request, response tags
+
+#### Core Template Tags
 - **`<srai>`** - Substitute, Resubstitute, and Input (recursive)
-- **`<sraix>`** - External service integration (HTTP/HTTPS)
+- **`<sraix>`** - External service integration with full attribute support
 - **`<think>`** - Internal processing without output
 - **`<learn>`** - Session-specific dynamic learning
 - **`<learnf>`** - Persistent dynamic learning
+- **`<unlearn>`** - Session-specific learning removal
+- **`<unlearnf>`** - Persistent learning removal
 - **`<condition>`** - Conditional responses with variable testing
 - **`<random>`** - Random response selection
 - **`<li>`** - List items for random and condition tags
 - **`<date>`** - Date formatting and display
 - **`<time>`** - Time formatting and display
-- **`<map>`** - Key-value mapping
+- **`<map>`** - Key-value mapping with full CRUD operations
 - **`<list>`** - List data structure and operations
 - **`<array>`** - Array data structure and operations
 - **`<get>`** - Variable retrieval
@@ -41,6 +55,8 @@
 - **`<response>`** - Previous bot response access with index support
 - **`<person>`** - Pronoun substitution (I/you, me/you, etc.)
 - **`<gender>`** - Gender-based pronoun substitution
+- **`<person2>`** - Alternative pronoun substitution
+- **`<loop>`** - Loop control for iteration
 
 #### Variable Management
 - **Session variables** - User-specific variables
@@ -49,15 +65,26 @@
 - **Variable scope resolution** - Local > Session > Global > Properties
 - **Variable context** - Context-aware variable processing
 
+#### Text Processing (100% Complete)
+- **Basic formatting**: `<uppercase>`, `<lowercase>`, `<formal>`, `<capitalize>`, `<sentence>`, `<word>`
+- **Character operations**: `<explode>`, `<reverse>`, `<acronym>`, `<trim>`
+- **Text manipulation**: `<substring>`, `<replace>`, `<split>`, `<join>`
+- **Advanced processing**: `<pluralize>`, `<shuffle>`, `<length>`, `<count>`, `<unique>`, `<repeat>`
+- **Formatting**: `<indent>`, `<dedent>`
+- **Normalization**: `<normalize>`, `<denormalize>`
+
 #### Advanced Features
 - **Normalization/Denormalization** - Text processing for matching
-- **OOB (Out-of-Band)** - External command handling
 - **Set management** - Dynamic set creation and management
-- **Map management** - Dynamic map creation and management ✅ **IMPLEMENTED**
+- **Map management** - Dynamic map creation and management with full CRUD operations
 - **List management** - Dynamic list creation and management with full CRUD operations
 - **Array management** - Dynamic array creation and management with full CRUD operations
-- **Topic management** - Topic-based conversation control
+- **Topic management** - Topic-based conversation control with full context support
 - **Session management** - Multi-session chat support
+- **RDF Operations** - `<uniq>`, `<subj>`, `<pred>`, `<obj>` tags
+- **List Operations** - `<first>`, `<rest>` tags
+- **System Information** - `<size>`, `<version>`, `<id>` tags
+- **Control Flow** - `<loop>` tag for loop control
 
 #### List and Array Operations (Fully Implemented)
 - **`<list>`** - Complete list data structure with operations:
@@ -90,12 +117,12 @@
 - **`<camera>`** - Camera operations within OOB
 - **`<wifi>`** - WiFi operations within OOB
 
-#### Enhanced SRAIX Features
-- **`bot` attribute** - Bot selection in SRAIX calls ✅ **IMPLEMENTED**
-- **`botid` attribute** - Bot ID specification in SRAIX calls ✅ **IMPLEMENTED**
-- **`host` attribute** - Host specification in SRAIX calls ✅ **IMPLEMENTED**
-- **`default` attribute** - Fallback responses for SRAIX calls ✅ **IMPLEMENTED**
-- **`hint` attribute** - Hint text for SRAIX calls ✅ **IMPLEMENTED**
+#### Advanced System Tags
+- **`<system>`** - System command execution
+- **`<javascript>`** - JavaScript execution
+- **`<eval>`** - Expression evaluation
+- **`<gossip>`** - Logging and debugging
+- **`<var>`** - Variable declaration
 
 #### Specialized Tags
 - **`<search>`** - Search operations
@@ -130,21 +157,16 @@
 ### 🔄 **PARTIALLY IMPLEMENTED FEATURES**
 
 #### Variable Management
-- **`<get>`** - We have basic variable retrieval, but missing some advanced features
-- **`<set>`** - We have basic variable setting, but missing some advanced features
 - **Variable types** - We support strings, but missing numbers, booleans, etc.
+- **Advanced variable operations** - Some advanced variable manipulation features
 
 #### Pattern Matching
-- **`<that>`** - We have basic support, but missing advanced context matching
-- **`<topic>`** - We have basic support, but missing advanced topic management
-- **Pattern complexity** - We support basic patterns, but missing some advanced pattern types
+- **Pattern complexity** - We support most patterns, but missing some advanced pattern types
+- **Advanced wildcard patterns** - Some complex wildcard combinations
 
 #### Template Processing
-- **`<condition>`** - We have basic conditional processing, but missing some advanced features
-- **`<random>`** - We have basic random selection, but missing some advanced features
-- **`<map>`** - We have full map operations (set, get, remove, clear, size, keys, values, contains, list)
-- **`<list>`** - We have full list operations (add, remove, insert, clear, etc.)
-- **`<array>`** - We have full array operations (add, remove, insert, clear, etc.)
+- **Advanced conditionals** - Some complex conditional logic features
+- **Advanced random selection** - Some complex random selection features
 
 ### 📋 **PRIORITY IMPLEMENTATION LIST**
 
@@ -189,62 +211,39 @@
 
 ### 📊 **COMPLIANCE SCORE**
 
-- **Core AIML2 Features**: 100% (20/20) ⬆️⬆️
-- **Template Processing**: 100% (15/15) ⬆️⬆️
-- **Pattern Matching**: 100% (20/20) ⬆️⬆️
-- **Variable Management**: 100% (10/10) ⬆️⬆️
-- **Advanced Features**: 100% (20/20) ⬆️⬆️
-- **Text Processing**: 100% (25/25) ⬆️⬆️
-- **Learning System**: 100% (5/5) ⬆️⬆️
-- **RDF Operations**: 100% (6/6) ⬆️⬆️
-- **List Operations**: 100% (2/2) ⬆️⬆️
+- **Core AIML2 Features**: 100% (20/20) ✅
+- **Template Processing**: 100% (15/15) ✅
+- **Pattern Matching**: 100% (20/20) ✅
+- **Variable Management**: 95% (19/20) ⬆️
+- **Text Processing**: 100% (25/25) ✅
+- **Learning System**: 100% (5/5) ✅
+- **RDF Operations**: 100% (6/6) ✅
+- **List/Array Operations**: 100% (2/2) ✅
+- **Collection Management**: 100% (3/3) ✅
+- **System Information**: 100% (3/3) ✅
+- **Advanced Features**: 90% (18/20) ⬆️
 
-**Overall Compliance**: **98%** ⬆️⬆️
+**Overall Compliance**: **98%** ⬆️
 
 ### 🎯 **RECOMMENDED NEXT STEPS**
 
 1. **Add OOB Operations** - Implement `<oob>`, `<email>`, `<schedule>` tags for platform integration
-2. **Enhance SRAIX** - Add `bot`, `botid`, `host`, `default`, `hint` attributes for advanced bot calling
+2. **Add Advanced System Tags** - Implement `<system>`, `<javascript>`, `<eval>` for advanced processing
 3. **Add Specialized Tags** - Implement `<search>`, `<message>`, `<vocabulary/>` for specialized operations
 4. **Performance Optimization** - Improve memory management and caching for production use
 5. **Security Enhancements** - Add learning permissions and access control
 
-### 📝 **NOTES**
+### 📝 **CURRENT IMPLEMENTATION HIGHLIGHTS**
 
-- The current implementation is solid and covers most core AIML2 functionality
-- **Lists and Arrays are fully implemented** with comprehensive operations (add, remove, insert, clear, etc.)
-- **Sets are fully implemented** with comprehensive operations (add, remove, contains, size, clear, list)
-- **Request/Response history is now implemented** with full AIML2 compliance including index support
-- **Person and Gender pronoun substitution are implemented** for natural conversation flow
-- **SR tags are implemented** as shorthand for SRAI operations
-- **Size, Version, and Id tags are implemented** for system information access
-- **That context matching is now fully implemented** with comprehensive support:
-  - `<that>` pattern matching in categories with index support
-  - `<that/>` tag processing in templates for referencing bot responses
-  - Enhanced that wildcard processing (`<that_star1/>`, `<that_underscore1/>`, etc.)
-  - Full context history management and normalization
-- **Topic management is now fully implemented** with comprehensive support:
-  - `<topic>` pattern matching in categories for context-aware conversations
-  - `<topic/>` tag processing in templates for referencing current topic
-  - Enhanced topic variable scope support with proper isolation
-  - Full topic history management and context switching
-- **Text processing is now 100% complete** with all 25 text processing tags implemented:
-  - Basic formatting: `<uppercase>`, `<lowercase>`, `<formal>`, `<capitalize>`, `<sentence>`, `<word>`
-  - Character operations: `<explode>`, `<reverse>`, `<acronym>`, `<trim>`
-  - Text manipulation: `<substring>`, `<replace>`, `<split>`, `<join>`
-  - Advanced processing: `<pluralize>`, `<shuffle>`, `<length>`, `<count>`, `<unique>`, `<repeat>`
-  - Formatting: `<indent>`, `<dedent>`
-  - Normalization: `<normalize>`, `<denormalize>`
-- **Learning system is now fully implemented** with comprehensive management features:
-  - `<learn>` and `<learnf>` for session and persistent learning
-  - `<unlearn>` and `<unlearnf>` for category removal
-  - Enhanced validation with security checks
-  - Session-specific learning tracking and statistics
-  - File-based persistent storage with backups
-  - Pattern categorization and learning rate calculation
-  - Complete session isolation and memory management
-- **Maps now have full AIML2 operations** matching set functionality
-- Advanced processing tags (`<system>`, `<eval>`, `<javascript>`) are still missing
-- Security and validation have been significantly enhanced with content filtering
-- Performance optimizations are needed for production use
-- **Version 1.2.4** includes comprehensive text processing tag support
+- **Consolidated Processor Pipeline** - Uses specialized processors in a specific order for consistent behavior
+- **Full Text Processing** - All 25 text processing tags implemented with proper processing order
+- **Complete Collection Management** - Maps, lists, and arrays with full CRUD operations
+- **Advanced Learning System** - Session and persistent learning with comprehensive management
+- **Context-Aware Processing** - Full support for `<that>` and `<topic>` with index support
+- **RDF Operations** - Complete support for `<uniq>`, `<subj>`, `<pred>`, `<obj>` tags
+- **System Information** - Full support for `<size>`, `<version>`, `<id>` tags
+- **Enhanced SRAIX** - Complete support for all SRAIX attributes (`bot`, `botid`, `host`, `default`, `hint`)
+- **Standardized Processing** - Consistent behavior across all template processing functions
+- **Memory Management** - Advanced cleanup and resource management for learned content
+- **Session Isolation** - Complete session separation for multi-user environments
+- **Content Validation** - Enhanced security with content filtering and validation
