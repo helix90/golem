@@ -99,6 +99,8 @@ func (p *ASTParser) parseChildren(parent *ASTNode) {
 			if node != nil {
 				parent.Children = append(parent.Children, node)
 			}
+			// Continue parsing even if parseTag() returned nil (for closing tags)
+			// This ensures we parse any text that follows the closing tag
 			continue
 		}
 

@@ -368,6 +368,7 @@ func TestWordTagAdvancedProcessing(t *testing.T) {
 // TestNormalizeTagAdvancedProcessing tests advanced <normalize> tag functionality
 func TestNormalizeTagAdvancedProcessing(t *testing.T) {
 	g := New(false)
+	g.EnableTreeProcessing() // Enable AST-based processing
 	session := g.CreateSession("test_session")
 
 	testCases := []struct {

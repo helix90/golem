@@ -1880,6 +1880,7 @@ func (g *Golem) getCachedRegex(pattern string, cacheType string) *regexp.Regexp 
 func (g *Golem) processTemplateWithContext(template string, wildcards map[string]string, ctx *VariableContext) string {
 	// Check if tree-based processing is enabled
 	if g.useTreeProcessing {
+		g.LogInfo("Using tree-based processing for template: %s", template)
 		if g.treeProcessor == nil {
 			g.treeProcessor = NewTreeProcessor(g)
 		}
@@ -1889,8 +1890,11 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 			// Fall back to regex-based processing on error
 			g.LogWarn("Falling back to regex-based processing due to tree processing error")
 		} else {
+			g.LogInfo("Tree-based processing result: %s", response)
 			return response
 		}
+	} else {
+		g.LogInfo("Tree processing disabled, using regex-based processing")
 	}
 
 	// Use consolidated pipeline (regex-based processing)

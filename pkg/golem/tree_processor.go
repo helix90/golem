@@ -45,10 +45,14 @@ func (tp *TreeProcessor) processNode(node *ASTNode) string {
 		if len(node.Children) > 0 {
 			children := ""
 			for _, child := range node.Children {
-				children += tp.processNode(child)
+				childResult := tp.processNode(child)
+				tp.golem.LogInfo("processNode: child type=%d, content='%s' -> result='%s'", child.Type, child.Content, childResult)
+				children += childResult
 			}
+			tp.golem.LogInfo("processNode: text node with children -> result='%s'", children)
 			return children
 		}
+		tp.golem.LogInfo("processNode: text node -> content='%s'", node.Content)
 		return node.Content
 	case NodeTypeComment:
 		return "" // Comments are not output
@@ -838,14 +842,16 @@ func (tp *TreeProcessor) processResponseTag(node *ASTNode, content string) strin
 
 func (tp *TreeProcessor) processNormalizeTag(node *ASTNode, content string) string {
 	// Normalize tag - text normalization
-	// Use the existing normalize processing method
-	return tp.golem.processNormalizeTagsWithContext(fmt.Sprintf("<normalize>%s</normalize>", content), tp.ctx)
+	// Process the content directly using the normalization function
+	result := tp.golem.normalizeTextForOutput(content)
+	tp.golem.LogInfo("processNormalizeTag: content='%s' -> result='%s'", content, result)
+	return result
 }
 
 func (tp *TreeProcessor) processDenormalizeTag(node *ASTNode, content string) string {
 	// Denormalize tag - text denormalization
-	// Use the existing denormalize processing method
-	return tp.golem.processDenormalizeTagsWithContext(fmt.Sprintf("<denormalize>%s</denormalize>", content), tp.ctx)
+	// Process the content directly using the denormalization function
+	return tp.golem.denormalizeText(content)
 }
 
 // Learning tags
