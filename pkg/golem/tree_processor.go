@@ -30,6 +30,34 @@ func (tp *TreeProcessor) ProcessTemplate(template string, wildcards map[string]s
 		return template, err
 	}
 
+	// Store wildcards in session variables so they can be accessed by <star/> tags
+	if ctx != nil && ctx.Session != nil && len(wildcards) > 0 {
+		// Save current wildcards to restore them later
+		oldWildcards := make(map[string]string)
+		for key := range wildcards {
+			if value, exists := ctx.Session.Variables[key]; exists {
+				oldWildcards[key] = value
+			}
+		}
+
+		// Set new wildcards
+		for key, value := range wildcards {
+			ctx.Session.Variables[key] = value
+		}
+
+		// Restore old wildcards after processing
+		defer func() {
+			// Remove current wildcards
+			for key := range wildcards {
+				delete(ctx.Session.Variables, key)
+			}
+			// Restore old wildcards
+			for key, value := range oldWildcards {
+				ctx.Session.Variables[key] = value
+			}
+		}()
+	}
+
 	// Process the AST
 	tp.ctx = ctx
 	result := tp.processNode(ast)
@@ -593,7 +621,7 @@ func (tp *TreeProcessor) processListTag(node *ASTNode, content string) string {
 		return content
 	}
 
-	operation, _ := node.Attributes["operation"]
+	operation := node.Attributes["operation"]
 
 	// If no knowledge base, just return empty string (operation performed)
 	if tp.ctx == nil || tp.ctx.KnowledgeBase == nil || tp.ctx.KnowledgeBase.Lists == nil {
@@ -631,16 +659,30 @@ func (tp *TreeProcessor) processArrayTag(node *ASTNode, content string) string {
 
 func (tp *TreeProcessor) processLearnTag(node *ASTNode, content string) string {
 	// Process learn tag - dynamic learning (session-specific)
+	// Get the raw, unprocessed content from the AST node children
+	// We need to preserve tags like <star/> in their original form
+	rawContent := ""
+	for _, child := range node.Children {
+		rawContent += child.String()
+	}
+
 	// The underlying function processes both <learn> and <learnf> tags via regex
-	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learn>%s</learn>", content), tp.ctx)
+	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learn>%s</learn>", rawContent), tp.ctx)
 }
 
 func (tp *TreeProcessor) processLearnfTag(node *ASTNode, content string) string {
 	// Process learnf tag - persistent learning
 	// The <learnf> tag adds categories to the persistent knowledge base
 	// Unlike <learn>, these persist across sessions
+	// Get the raw, unprocessed content from the AST node children
+	// We need to preserve tags like <star/> in their original form
+	rawContent := ""
+	for _, child := range node.Children {
+		rawContent += child.String()
+	}
+
 	// The underlying function processes both <learn> and <learnf> tags via regex
-	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learnf>%s</learnf>", content), tp.ctx)
+	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learnf>%s</learnf>", rawContent), tp.ctx)
 }
 
 // Text processing tags
