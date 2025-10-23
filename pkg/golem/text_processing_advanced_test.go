@@ -413,7 +413,7 @@ func TestNormalizeTagAdvancedProcessing(t *testing.T) {
 		{
 			name:     "Nested normalize tags",
 			template: "<normalize>Hello <normalize>world</normalize> test</normalize>",
-			expected: "HELLO <NORMALIZE>WORLD test</normalize>",
+			expected: "HELLO WORLD TEST",
 		},
 		{
 			name:     "Unicode characters",

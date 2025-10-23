@@ -183,7 +183,7 @@ func TestNormalizeDenormalizeIntegration(t *testing.T) {
 		{
 			name:     "Nested processing",
 			template: "<normalize><denormalize><normalize>Hello, World!</normalize></denormalize></normalize>",
-			expected: "<DENORMALIZE><NORMALIZE>HELLO WORLD</denormalize></normalize>",
+			expected: "HELLO WORLD",
 		},
 	}
 

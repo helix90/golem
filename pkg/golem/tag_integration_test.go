@@ -648,7 +648,7 @@ func TestNestedTagScenarios(t *testing.T) {
 		{
 			name:     "Nested collection operations",
 			template: `<list name="outer" operation="add"><list name="inner" operation="add">test</list></list>`,
-			expected: "</list>",
+			expected: "",
 			setup:    func() {},
 		},
 		{
@@ -665,7 +665,7 @@ func TestNestedTagScenarios(t *testing.T) {
 		{
 			name:     "Nested variables",
 			template: `<get name="outer"><get name="inner"></get></get>`,
-			expected: "<get name=\"outer\">hello</get>",
+			expected: "hello",
 			setup: func() {
 				g := New(false)
 				ctx := g.createSession("test_session")

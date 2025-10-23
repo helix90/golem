@@ -356,14 +356,14 @@ func TestSizeVersionEdgeCases(t *testing.T) {
 		{
 			name:        "Size tag with no knowledge base",
 			template:    "Size: <size/>",
-			expected:    "Size: <size/>",
-			description: "Should leave size tag unchanged when no knowledge base",
+			expected:    "Size: 0",
+			description: "Should return 0 when no knowledge base",
 		},
 		{
 			name:        "Version tag with no knowledge base",
 			template:    "Version: <version/>",
-			expected:    "Version: <version/>",
-			description: "Should leave version tag unchanged when no knowledge base",
+			expected:    "Version: 2.0",
+			description: "Should return default version when no knowledge base",
 		},
 	}
 
@@ -540,17 +540,17 @@ func TestIdTagWithNoSession(t *testing.T) {
 		{
 			name:     "Id tag with no session",
 			template: "Hello <id/>!",
-			expected: "Hello <id/>!",
+			expected: "Hello !",
 		},
 		{
 			name:     "Multiple id tags with no session",
 			template: "User <id/> has session <id/>.",
-			expected: "User <id/> has session <id/>.",
+			expected: "User  has session .",
 		},
 		{
 			name:     "Only id tag with no session",
 			template: "<id/>",
-			expected: "<id/>",
+			expected: "",
 		},
 	}
 
