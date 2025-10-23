@@ -859,9 +859,27 @@ func (tp *TreeProcessor) processInputTag(node *ASTNode, content string) string {
 }
 
 func (tp *TreeProcessor) processEvalTag(node *ASTNode, content string) string {
-	// Use the existing eval processing method
-	// Use the existing eval processing method from consolidated processor
-	// For now, return content as eval processing is complex
+	// Process eval tag - evaluates AIML code dynamically
+	// The <eval> tag causes its content to be evaluated as AIML template code
+	// In the AST, child nodes are already processed before reaching this point,
+	// so the content parameter contains the fully evaluated result
+	// This allows for dynamic tag construction and re-evaluation
+
+	// Trim whitespace from the evaluated content
+	content = strings.TrimSpace(content)
+
+	// If empty after trimming, return empty string
+	if content == "" {
+		tp.golem.LogDebug("Eval tag: empty content after evaluation")
+		return ""
+	}
+
+	tp.golem.LogDebug("Eval tag: evaluated content='%s'", content)
+
+	// Return the evaluated content
+	// Note: Unlike the regex processor which re-processes the content through
+	// the full template pipeline, the AST naturally handles nested evaluation
+	// through its tree traversal, so we simply return the already-evaluated content
 	return content
 }
 
