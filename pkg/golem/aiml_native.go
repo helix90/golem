@@ -1740,21 +1740,41 @@ func matchPatternWithWildcardsAndSetsCasePreservingInternal(g *Golem, normalized
 
 	// If original input is different from normalized input, try case-preserving extraction
 	if originalInput != normalizedInput {
-		// Extract wildcard values from the original input for case preservation
-		// We need to find the wildcard positions in the original input
+		// First try: Extract from case-preserved (but still punctuation-normalized) input
 		originalNormalized := NormalizeForMatchingCasePreserving(originalInput)
-		// Convert pattern to lowercase for matching against case-preserved input
 		lowercasePattern := strings.ToLower(pattern)
 		lowercaseRegexPattern := patternToRegexWithSetsCached(g, lowercasePattern, kb)
 		lowercaseRe, err := regexp.Compile(lowercaseRegexPattern)
 		if err == nil {
-			// Match against the case-preserved input
 			casePreservedMatches := lowercaseRe.FindStringSubmatch(originalNormalized)
 			if len(casePreservedMatches) > 1 {
-				// Overwrite with case-preserved values
 				starIndex := 1
 				for _, match := range casePreservedMatches[1:] {
 					wildcards[fmt.Sprintf("star%d", starIndex)] = match
+					starIndex++
+				}
+			}
+		}
+
+		// Second try: Extract from completely unnormalized input to preserve punctuation
+		// This is done by creating a regex that's very lenient (case-insensitive, whitespace-flexible)
+		// Build a lenient regex from the pattern
+		lenientPattern := strings.ToLower(pattern)
+		// Replace wildcards with a pattern that captures everything (including punctuation)
+		lenientPattern = strings.ReplaceAll(lenientPattern, "*", "(.+?)")
+		lenientPattern = strings.ReplaceAll(lenientPattern, "_", "([\\w]+)")
+		// Make whitespace flexible
+		lenientPattern = regexp.MustCompile(`\s+`).ReplaceAllString(lenientPattern, `\s+`)
+		// Make it case-insensitive and add anchors
+		lenientRegex, err := regexp.Compile("(?i)^\\s*" + lenientPattern + "\\s*$")
+		if err == nil {
+			unnormalizedMatches := lenientRegex.FindStringSubmatch(originalInput)
+			if len(unnormalizedMatches) > 1 {
+				// Overwrite with completely unnormalized values (preserving punctuation)
+				starIndex := 1
+				for _, match := range unnormalizedMatches[1:] {
+					// Trim whitespace from wildcard values
+					wildcards[fmt.Sprintf("star%d", starIndex)] = strings.TrimSpace(match)
 					starIndex++
 				}
 			}
@@ -5445,6 +5465,7 @@ type VariableContext struct {
 	Topic          string             // Current topic
 	KnowledgeBase  *AIMLKnowledgeBase // Knowledge base context
 	RecursionDepth int                // Current recursion depth for SRAI processing
+	Wildcards      map[string]string  // Wildcard values from pattern matching
 }
 
 // getVariableValue retrieves a variable value from the appropriate context with proper scope resolution
@@ -9719,18 +9740,37 @@ func (g *Golem) processCategoryDynamicContent(categoryContent string, ctx *Varia
 
 // processDynamicPattern processes dynamic evaluation within a pattern
 func (g *Golem) processDynamicPattern(patternContent string, ctx *VariableContext) string {
-	// Process <eval> tags within the pattern
-	evalRegex := regexp.MustCompile(`(?s)<eval>(.*?)</eval>`)
-	evalMatches := evalRegex.FindAllStringSubmatch(patternContent, -1)
-
 	processed := patternContent
-	for _, match := range evalMatches {
+
+	// First, replace <star/> tags with wildcard placeholders that won't be processed
+	// These should become wildcards in the learned pattern, not be replaced with values
+	starPlaceholder := "___STAR_WILDCARD___"
+	processed = strings.ReplaceAll(processed, "<star/>", starPlaceholder)
+
+	// Replace <star index="N"/> with indexed wildcard placeholders
+	starIndexRegex := regexp.MustCompile(`<star\s+index="(\d+)"\s*/>`)
+	starIndexMatches := starIndexRegex.FindAllStringSubmatch(processed, -1)
+	for _, match := range starIndexMatches {
 		if len(match) > 1 {
-			evalContent := strings.TrimSpace(match[1])
-			// Process the eval content through the template pipeline
-			evaluated := g.processTemplateWithContext(evalContent, map[string]string{}, ctx)
-			processed = strings.ReplaceAll(processed, match[0], evaluated)
+			placeholder := fmt.Sprintf("___STAR%s_WILDCARD___", match[1])
+			processed = strings.ReplaceAll(processed, match[0], placeholder)
 		}
+	}
+
+	// Now process variable and formatting tags in patterns
+	// These should be evaluated during learning to create the actual pattern
+	// Use the template processor to evaluate these tags (like <get>, <uppercase>, etc.)
+	if strings.Contains(processed, "<") {
+		// Process the pattern content as a template to evaluate all remaining tags
+		processed = g.processTemplateWithContext(processed, map[string]string{}, ctx)
+	}
+
+	// Finally, convert the placeholders back to AIML wildcards
+	processed = strings.ReplaceAll(processed, starPlaceholder, "*")
+	// Convert indexed star placeholders to wildcards
+	for i := 1; i <= 10; i++ {
+		placeholder := fmt.Sprintf("___STAR%d_WILDCARD___", i)
+		processed = strings.ReplaceAll(processed, placeholder, "*")
 	}
 
 	return processed
@@ -9738,11 +9778,35 @@ func (g *Golem) processDynamicPattern(patternContent string, ctx *VariableContex
 
 // processDynamicTemplate processes dynamic evaluation within a template
 func (g *Golem) processDynamicTemplate(templateContent string, ctx *VariableContext) string {
+	processed := templateContent
+
+	// If we have wildcards from the teaching pattern, evaluate <star/> tags
+	// These refer to the wildcards from the OUTER pattern that triggered the learning
+	// Otherwise, preserve <star/> tags for runtime evaluation by the learned pattern
+	if ctx.Wildcards != nil && len(ctx.Wildcards) > 0 {
+		// Process <star index="N"/> tags
+		starIndexRegex := regexp.MustCompile(`<star\s+index="(\d+)"\s*/>`)
+		starIndexMatches := starIndexRegex.FindAllStringSubmatch(processed, -1)
+		for _, match := range starIndexMatches {
+			if len(match) > 1 {
+				index := match[1]
+				wildcardKey := fmt.Sprintf("star%s", index)
+				if value, exists := ctx.Wildcards[wildcardKey]; exists {
+					processed = strings.ReplaceAll(processed, match[0], value)
+				}
+			}
+		}
+
+		// Process <star/> (defaults to star1)
+		if value, exists := ctx.Wildcards["star1"]; exists {
+			processed = strings.ReplaceAll(processed, "<star/>", value)
+		}
+	}
+
 	// Process <eval> tags within the template
 	evalRegex := regexp.MustCompile(`(?s)<eval>(.*?)</eval>`)
-	evalMatches := evalRegex.FindAllStringSubmatch(templateContent, -1)
+	evalMatches := evalRegex.FindAllStringSubmatch(processed, -1)
 
-	processed := templateContent
 	for _, match := range evalMatches {
 		if len(match) > 1 {
 			evalContent := strings.TrimSpace(match[1])
@@ -9976,8 +10040,10 @@ func (g *Golem) validateContent(category Category) error {
 		return fmt.Errorf("template cannot be empty or whitespace only")
 	}
 
-	// Check for minimum content length
-	if len(strings.TrimSpace(category.Pattern)) < 2 {
+	// Check for minimum content length (but allow wildcards)
+	trimmedPattern := strings.TrimSpace(category.Pattern)
+	// Allow single wildcard patterns like "*" or "_"
+	if len(trimmedPattern) < 2 && trimmedPattern != "*" && trimmedPattern != "_" {
 		return fmt.Errorf("pattern too short (min 2 characters)")
 	}
 	if len(strings.TrimSpace(category.Template)) < 2 {
@@ -10191,19 +10257,29 @@ func (g *Golem) addSessionCategory(category Category, ctx *VariableContext) erro
 		return fmt.Errorf("category validation failed: %v", err)
 	}
 
-	// Normalize the pattern
+	// Normalize the pattern and build the proper key including that and topic
 	normalizedPattern := NormalizePattern(category.Pattern)
+	key := normalizedPattern
+	if category.That != "" {
+		key += "|THAT:" + NormalizePattern(category.That)
+		if category.ThatIndex != 0 {
+			key += fmt.Sprintf("|THATINDEX:%d", category.ThatIndex)
+		}
+	}
+	if category.Topic != "" {
+		key += "|TOPIC:" + strings.ToUpper(category.Topic)
+	}
 
 	// Check if category already exists
-	if existingCategory, exists := g.aimlKB.Patterns[normalizedPattern]; exists {
-		g.LogInfo("Updating existing session category: %s", normalizedPattern)
+	if existingCategory, exists := g.aimlKB.Patterns[key]; exists {
+		g.LogInfo("Updating existing session category: %s", key)
 		// Update existing category
 		*existingCategory = category
 	} else {
-		g.LogInfo("Adding new session category: %s", normalizedPattern)
+		g.LogInfo("Adding new session category: %s", key)
 		// Add new category
 		g.aimlKB.Categories = append(g.aimlKB.Categories, category)
-		g.aimlKB.Patterns[normalizedPattern] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
+		g.aimlKB.Patterns[key] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
 	}
 
 	// Update session learning statistics
@@ -10295,19 +10371,29 @@ func (g *Golem) addPersistentCategory(category Category) error {
 		return fmt.Errorf("category validation failed: %v", err)
 	}
 
-	// Normalize the pattern
+	// Normalize the pattern and build the proper key including that and topic
 	normalizedPattern := NormalizePattern(category.Pattern)
+	key := normalizedPattern
+	if category.That != "" {
+		key += "|THAT:" + NormalizePattern(category.That)
+		if category.ThatIndex != 0 {
+			key += fmt.Sprintf("|THATINDEX:%d", category.ThatIndex)
+		}
+	}
+	if category.Topic != "" {
+		key += "|TOPIC:" + strings.ToUpper(category.Topic)
+	}
 
 	// Check if category already exists
-	if existingCategory, exists := g.aimlKB.Patterns[normalizedPattern]; exists {
-		g.LogInfo("Updating existing persistent category: %s", normalizedPattern)
+	if existingCategory, exists := g.aimlKB.Patterns[key]; exists {
+		g.LogInfo("Updating existing persistent category: %s", key)
 		// Update existing category
 		*existingCategory = category
 	} else {
-		g.LogInfo("Adding new persistent category: %s", normalizedPattern)
+		g.LogInfo("Adding new persistent category: %s", key)
 		// Add new category
 		g.aimlKB.Categories = append(g.aimlKB.Categories, category)
-		g.aimlKB.Patterns[normalizedPattern] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
+		g.aimlKB.Patterns[key] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
 	}
 
 	// Save to persistent storage if available
@@ -10331,24 +10417,38 @@ func (g *Golem) removeSessionCategory(category Category, ctx *VariableContext) e
 		return fmt.Errorf("no knowledge base available")
 	}
 
-	// Normalize the pattern
+	// Normalize the pattern and build the proper key including that and topic
 	normalizedPattern := NormalizePattern(category.Pattern)
+	key := normalizedPattern
+	if category.That != "" {
+		key += "|THAT:" + NormalizePattern(category.That)
+		if category.ThatIndex != 0 {
+			key += fmt.Sprintf("|THATINDEX:%d", category.ThatIndex)
+		}
+	}
+	if category.Topic != "" {
+		key += "|TOPIC:" + strings.ToUpper(category.Topic)
+	}
 
 	// Check if category exists
-	if _, exists := g.aimlKB.Patterns[normalizedPattern]; !exists {
-		g.LogInfo("Category not found for removal: %s", normalizedPattern)
-		return fmt.Errorf("category not found: %s", normalizedPattern)
+	if _, exists := g.aimlKB.Patterns[key]; !exists {
+		g.LogInfo("Category not found for removal: %s", key)
+		return fmt.Errorf("category not found: %s", key)
 	}
 
 	// Remove from patterns map
-	delete(g.aimlKB.Patterns, normalizedPattern)
+	delete(g.aimlKB.Patterns, key)
 
 	// Remove from categories slice
 	for i, cat := range g.aimlKB.Categories {
-		if NormalizePattern(cat.Pattern) == normalizedPattern {
+		// Match based on pattern, that, and topic
+		if NormalizePattern(cat.Pattern) == normalizedPattern &&
+			cat.That == category.That &&
+			cat.Topic == category.Topic &&
+			cat.ThatIndex == category.ThatIndex {
 			// Remove the category by slicing it out
 			g.aimlKB.Categories = append(g.aimlKB.Categories[:i], g.aimlKB.Categories[i+1:]...)
-			g.LogInfo("Removed session category: %s", normalizedPattern)
+			g.LogInfo("Removed session category: %s", key)
 
 			// Update session learning statistics
 			if ctx.Session != nil && ctx.Session.LearningStats != nil {
@@ -10369,24 +10469,38 @@ func (g *Golem) removePersistentCategory(category Category) error {
 		return fmt.Errorf("no knowledge base available")
 	}
 
-	// Normalize the pattern
+	// Normalize the pattern and build the proper key including that and topic
 	normalizedPattern := NormalizePattern(category.Pattern)
+	key := normalizedPattern
+	if category.That != "" {
+		key += "|THAT:" + NormalizePattern(category.That)
+		if category.ThatIndex != 0 {
+			key += fmt.Sprintf("|THATINDEX:%d", category.ThatIndex)
+		}
+	}
+	if category.Topic != "" {
+		key += "|TOPIC:" + strings.ToUpper(category.Topic)
+	}
 
 	// Check if category exists
-	if _, exists := g.aimlKB.Patterns[normalizedPattern]; !exists {
-		g.LogInfo("Category not found for removal: %s", normalizedPattern)
-		return fmt.Errorf("category not found: %s", normalizedPattern)
+	if _, exists := g.aimlKB.Patterns[key]; !exists {
+		g.LogInfo("Category not found for removal: %s", key)
+		return fmt.Errorf("category not found: %s", key)
 	}
 
 	// Remove from patterns map
-	delete(g.aimlKB.Patterns, normalizedPattern)
+	delete(g.aimlKB.Patterns, key)
 
 	// Remove from categories slice
 	for i, cat := range g.aimlKB.Categories {
-		if NormalizePattern(cat.Pattern) == normalizedPattern {
+		// Match based on pattern, that, and topic
+		if NormalizePattern(cat.Pattern) == normalizedPattern &&
+			cat.That == category.That &&
+			cat.Topic == category.Topic &&
+			cat.ThatIndex == category.ThatIndex {
 			// Remove the category by slicing it out
 			g.aimlKB.Categories = append(g.aimlKB.Categories[:i], g.aimlKB.Categories[i+1:]...)
-			g.LogInfo("Removed persistent category: %s", normalizedPattern)
+			g.LogInfo("Removed persistent category: %s", key)
 
 			// Remove from persistent storage if available
 			if g.persistentLearning != nil {
@@ -10394,7 +10508,7 @@ func (g *Golem) removePersistentCategory(category Category) error {
 					g.LogWarn("Failed to remove category from persistent storage: %v", err)
 					// Don't fail the operation, just log the warning
 				} else {
-					g.LogInfo("Category removed from persistent storage: %s", normalizedPattern)
+					g.LogInfo("Category removed from persistent storage: %s", key)
 				}
 			}
 

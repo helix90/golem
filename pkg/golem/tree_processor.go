@@ -30,13 +30,24 @@ func (tp *TreeProcessor) ProcessTemplate(template string, wildcards map[string]s
 		return template, err
 	}
 
+	// Store wildcards in context so they can be accessed by learn tag processing
+	if ctx != nil {
+		// Save current wildcards to restore them later
+		oldWildcards := ctx.Wildcards
+		ctx.Wildcards = wildcards
+
+		defer func() {
+			ctx.Wildcards = oldWildcards
+		}()
+	}
+
 	// Store wildcards in session variables so they can be accessed by <star/> tags
 	if ctx != nil && ctx.Session != nil && len(wildcards) > 0 {
 		// Save current wildcards to restore them later
-		oldWildcards := make(map[string]string)
+		oldSessionWildcards := make(map[string]string)
 		for key := range wildcards {
 			if value, exists := ctx.Session.Variables[key]; exists {
-				oldWildcards[key] = value
+				oldSessionWildcards[key] = value
 			}
 		}
 
@@ -52,7 +63,7 @@ func (tp *TreeProcessor) ProcessTemplate(template string, wildcards map[string]s
 				delete(ctx.Session.Variables, key)
 			}
 			// Restore old wildcards
-			for key, value := range oldWildcards {
+			for key, value := range oldSessionWildcards {
 				ctx.Session.Variables[key] = value
 			}
 		}()
@@ -714,7 +725,8 @@ func (tp *TreeProcessor) processChildPreservingReferences(node *ASTNode) string 
 
 	// For tags, check if they should be preserved as references
 	if node.Type == NodeTypeSelfClosingTag || node.Type == NodeTypeTag {
-		// List of tags that should be preserved (wildcards and history references)
+		// List of tags that should be preserved (wildcards, history references, formatting, and variables)
+		// These tags should not be processed during learning, but preserved for runtime
 		preservedTags := map[string]bool{
 			"star":      true, // Wildcard references
 			"that":      true, // Response history
@@ -724,6 +736,31 @@ func (tp *TreeProcessor) processChildPreservingReferences(node *ASTNode) string 
 			"request":   true, // Request history
 			"response":  true, // Response history
 			"sr":        true, // Shorthand SRAI - should be preserved for runtime
+			// Formatting tags - preserve during learning
+			"uppercase": true,
+			"lowercase": true,
+			"formal":    true,
+			"sentence":  true,
+			"explode":   true,
+			"normalize": true,
+			// Variable tags - preserve during learning so they evaluate at runtime
+			"get":        true,
+			"set":        true,
+			"bot":        true,
+			"name":       true,
+			"id":         true,
+			"size":       true,
+			"version":    true,
+			"date":       true,
+			"vocabulary": true,
+			// Recursive tags - preserve for runtime evaluation
+			"srai":  true,
+			"sraix": true,
+			// Conditional tags - preserve for runtime evaluation
+			"condition": true,
+			"li":        true,
+			// Random tags - preserve for runtime evaluation
+			"random": true,
 		}
 
 		if preservedTags[node.TagName] {
@@ -1250,26 +1287,46 @@ func (tp *TreeProcessor) processSystemTag(node *ASTNode, content string) string 
 
 func (tp *TreeProcessor) processSubjTag(node *ASTNode, content string) string {
 	// Subj tag - RDF subject
-	// This would integrate with the existing RDF implementation
-	return content
+	// Process content and add trailing space for RDF readability
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+	return content + " "
 }
 
 func (tp *TreeProcessor) processPredTag(node *ASTNode, content string) string {
 	// Pred tag - RDF predicate
-	// This would integrate with the existing RDF implementation
-	return content
+	// Process content and add trailing space for RDF readability
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+	return content + " "
 }
 
 func (tp *TreeProcessor) processObjTag(node *ASTNode, content string) string {
 	// Obj tag - RDF object
-	// This would integrate with the existing RDF implementation
+	// Process content without trailing space (it's the last element)
+	content = strings.TrimSpace(content)
 	return content
 }
 
 func (tp *TreeProcessor) processUniqTag(node *ASTNode, content string) string {
-	// Uniq tag - RDF unique
-	// This would integrate with the existing RDF implementation
-	return content
+	// Uniq tag - RDF unique/triple container
+	// Process content and format with proper spacing
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+
+	// Clean up multiple spaces and format for readability
+	words := strings.Fields(content)
+	if len(words) == 0 {
+		return ""
+	}
+
+	return strings.Join(words, " ")
 }
 
 // Helper method for random number generation
