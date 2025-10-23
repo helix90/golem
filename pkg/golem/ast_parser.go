@@ -160,8 +160,10 @@ func (p *ASTParser) parseTag() *ASTNode {
 	// Check if this is an implicitly self-closing tag
 	implicitlySelfClosing := map[string]bool{
 		"star":     true,
+		"sr":       true,
 		"get":      true,
 		"bot":      true,
+		"that":     true,
 		"input":    true,
 		"loop":     true,
 		"date":     true,
@@ -296,8 +298,10 @@ func (p *ASTParser) parseTag() *ASTNode {
 	// If we get here, check if it should be a self-closing tag
 	implicitlySelfClosingTags := map[string]bool{
 		"star":     true,
+		"sr":       true,
 		"get":      true,
 		"bot":      true,
+		"that":     true,
 		"input":    true,
 		"loop":     true,
 		"date":     true,

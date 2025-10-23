@@ -4984,16 +4984,45 @@ func (g *Golem) processThatWildcardTagsWithContext(template string, ctx *Variabl
 
 // processThatTagsWithContext processes <that/> tags for referencing bot's previous response
 // <that/> tag references the bot's most recent response (equivalent to <response index="1"/>)
+// <that index="N"/> references the Nth most recent response
 func (g *Golem) processThatTagsWithContext(template string, ctx *VariableContext) string {
 	if ctx.Session == nil {
 		return template
 	}
 
-	// Find all <that/> tags
-	thatTagRegex := regexp.MustCompile(`<that/>`)
+	// First, find all <that index="N"/> tags with index attribute
+	thatIndexRegex := regexp.MustCompile(`<that\s+index="(\d+)"\s*/>`)
+	indexMatches := thatIndexRegex.FindAllStringSubmatch(template, -1)
+
+	g.LogDebug("That tag processing: found %d indexed matches in template: '%s'", len(indexMatches), template)
+
+	for _, match := range indexMatches {
+		if len(match) > 1 {
+			indexStr := match[1]
+			index := 1
+			if parsed, err := strconv.Atoi(indexStr); err == nil && parsed > 0 {
+				index = parsed
+			}
+
+			// Get the response by index
+			responseValue := ctx.Session.GetResponseByIndex(index)
+			if responseValue == "" {
+				g.LogDebug("No response found for that tag with index %d", index)
+				// Replace with empty string if no response found
+				template = strings.ReplaceAll(template, match[0], "")
+			} else {
+				// Replace the that tag with the actual response
+				template = strings.ReplaceAll(template, match[0], responseValue)
+				g.LogDebug("That tag (index=%d): -> '%s'", index, responseValue)
+			}
+		}
+	}
+
+	// Then, find all <that/> tags without index (default to index 1)
+	thatTagRegex := regexp.MustCompile(`<that\s*/>`)
 	matches := thatTagRegex.FindAllStringSubmatch(template, -1)
 
-	g.LogDebug("That tag processing: found %d matches in template: '%s'", len(matches), template)
+	g.LogDebug("That tag processing: found %d plain matches in template: '%s'", len(matches), template)
 
 	for _, match := range matches {
 		// Get the most recent response (index 1)

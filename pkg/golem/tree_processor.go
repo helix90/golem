@@ -90,6 +90,8 @@ func (tp *TreeProcessor) processTag(node *ASTNode) string {
 		return tp.processBotTag(node, content)
 	case "star":
 		return tp.processStarTag(node, content)
+	case "sr":
+		return tp.processSRTag(node, content)
 	case "that":
 		return tp.processThatTag(node, content)
 	case "topic":
@@ -217,6 +219,8 @@ func (tp *TreeProcessor) processSelfClosingTag(node *ASTNode) string {
 	switch node.TagName {
 	case "star":
 		return tp.processStarTag(node, "")
+	case "sr":
+		return tp.processSRTag(node, "")
 	case "input":
 		return tp.processInputTag(node, "")
 	case "loop":
@@ -245,6 +249,10 @@ func (tp *TreeProcessor) processSelfClosingTag(node *ASTNode) string {
 		return tp.processResponseTag(node, "")
 	case "get":
 		return tp.processGetTag(node, "")
+	case "that":
+		return tp.processThatTag(node, "")
+	case "bot":
+		return tp.processBotTag(node, "")
 	default:
 		// Unknown self-closing tag, return as-is
 		attrStr := ""
@@ -393,11 +401,116 @@ func (tp *TreeProcessor) processStarTag(node *ASTNode, content string) string {
 	return ""
 }
 
+func (tp *TreeProcessor) processSRTag(node *ASTNode, content string) string {
+	// Process SR tag - shorthand for <srai><star/></srai>
+	// SR recursively processes the first wildcard (star1)
+
+	if tp.ctx == nil || tp.ctx.Session == nil {
+		tp.golem.LogDebug("SR tag: no context or session available")
+		return ""
+	}
+
+	// Get the first wildcard (star1) from session variables
+	starContent := ""
+	if value, exists := tp.ctx.Session.Variables["star1"]; exists {
+		starContent = value
+	}
+
+	tp.golem.LogDebug("SR tag: star1 content='%s'", starContent)
+
+	// If no star content, return empty
+	if starContent == "" {
+		tp.golem.LogDebug("SR tag: no star content available")
+		return ""
+	}
+
+	// If no knowledge base, return empty
+	if tp.ctx.KnowledgeBase == nil {
+		tp.golem.LogDebug("SR tag: no knowledge base available")
+		return ""
+	}
+
+	// Try to match the star content as a pattern in the knowledge base
+	category, wildcards, err := tp.ctx.KnowledgeBase.MatchPattern(starContent)
+	if err != nil || category == nil {
+		tp.golem.LogDebug("SR tag: no matching pattern for '%s'", starContent)
+		return ""
+	}
+
+	tp.golem.LogDebug("SR tag: found matching pattern for '%s'", starContent)
+
+	// Check recursion depth to prevent infinite loops
+	if tp.ctx.RecursionDepth >= 100 {
+		tp.golem.LogDebug("SR tag: max recursion depth reached")
+		return ""
+	}
+
+	// Increment recursion depth
+	oldDepth := tp.ctx.RecursionDepth
+	tp.ctx.RecursionDepth++
+	defer func() {
+		tp.ctx.RecursionDepth = oldDepth
+	}()
+
+	// Store old wildcards and restore them after processing
+	oldWildcards := make(map[string]string)
+	if tp.ctx.Session.Variables != nil {
+		// Save current wildcards
+		for k, v := range tp.ctx.Session.Variables {
+			if strings.HasPrefix(k, "star") {
+				oldWildcards[k] = v
+			}
+		}
+
+		// Set new wildcards from the matched pattern
+		for k, v := range wildcards {
+			tp.ctx.Session.Variables[k] = v
+		}
+	}
+
+	// Process the matched template recursively
+	result := tp.golem.processTemplateWithContext(category.Template, wildcards, tp.ctx)
+
+	// Restore old wildcards
+	if tp.ctx.Session.Variables != nil {
+		// Remove wildcards from the matched pattern
+		for k := range wildcards {
+			delete(tp.ctx.Session.Variables, k)
+		}
+		// Restore original wildcards
+		for k, v := range oldWildcards {
+			tp.ctx.Session.Variables[k] = v
+		}
+	}
+
+	tp.golem.LogDebug("SR tag: result='%s'", result)
+
+	return result
+}
+
 func (tp *TreeProcessor) processThatTag(node *ASTNode, content string) string {
 	// Process that tag - previous response reference
-	// This would need to be implemented based on the actual ChatSession structure
-	// For now, return empty string
-	return ""
+	// <that/> or <that> with no index returns the most recent response (index 1)
+	// <that index="N"/> returns the Nth most recent response
+
+	if tp.ctx == nil || tp.ctx.Session == nil {
+		return ""
+	}
+
+	// Get the index attribute, default to 1 (most recent)
+	index := 1
+	if indexStr, exists := node.Attributes["index"]; exists {
+		if parsed, err := strconv.Atoi(indexStr); err == nil && parsed > 0 {
+			index = parsed
+		}
+	}
+
+	// Get the response by index
+	response := tp.ctx.Session.GetResponseByIndex(index)
+
+	tp.golem.LogDebug("That tag: index=%d, response='%s'", index, response)
+
+	return response
 }
 
 func (tp *TreeProcessor) processTopicTag(node *ASTNode, content string) string {
@@ -722,13 +835,27 @@ func (tp *TreeProcessor) processLoopTag(node *ASTNode, content string) string {
 }
 
 func (tp *TreeProcessor) processInputTag(node *ASTNode, content string) string {
-	// Get user input
-	if tp.ctx != nil && tp.ctx.Session != nil {
-		// This would need to be implemented based on the actual ChatSession structure
-		// For now, return empty string
+	// Process input tag - returns the most recent user input
+	// <input/> always returns the current/most recent user input (last item in RequestHistory)
+	// This is different from <request> which can take an index attribute
+
+	if tp.ctx == nil || tp.ctx.Session == nil {
+		tp.golem.LogDebug("Input tag: no context or session available")
 		return ""
 	}
-	return ""
+
+	// Get the most recent user input from request history
+	if len(tp.ctx.Session.RequestHistory) == 0 {
+		tp.golem.LogDebug("Input tag: no request history available")
+		return ""
+	}
+
+	// Return the last (most recent) item from RequestHistory
+	currentInput := tp.ctx.Session.RequestHistory[len(tp.ctx.Session.RequestHistory)-1]
+
+	tp.golem.LogDebug("Input tag: returning '%s'", currentInput)
+
+	return currentInput
 }
 
 func (tp *TreeProcessor) processEvalTag(node *ASTNode, content string) string {
@@ -813,6 +940,7 @@ func (tp *TreeProcessor) processIdTag(node *ASTNode, content string) string {
 
 func (tp *TreeProcessor) processRequestTag(node *ASTNode, content string) string {
 	// Request tag - previous request
+	// Index 1 = most recent, index 2 = 2nd most recent, etc.
 	index := 1
 	if idx, exists := node.Attributes["index"]; exists {
 		if parsed, err := strconv.Atoi(idx); err == nil {
@@ -821,9 +949,8 @@ func (tp *TreeProcessor) processRequestTag(node *ASTNode, content string) string
 	}
 
 	if tp.ctx != nil && tp.ctx.Session != nil {
-		if tp.ctx.Session.RequestHistory != nil && index <= len(tp.ctx.Session.RequestHistory) {
-			return tp.ctx.Session.RequestHistory[index-1]
-		}
+		// Use GetRequestByIndex which properly handles reverse indexing
+		return tp.ctx.Session.GetRequestByIndex(index)
 	}
 	return ""
 }
