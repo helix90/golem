@@ -4017,6 +4017,7 @@ func (g *Golem) randomInt(max int) int {
 // <normalize> tag normalizes text using the same logic as pattern matching
 func (g *Golem) processNormalizeTagsWithContext(template string, ctx *VariableContext) string {
 	// Process normalize tags iteratively until no more changes occur
+	// Note: For nested normalize tags, use tree processing (EnableTreeProcessing)
 	prevTemplate := ""
 	for template != prevTemplate {
 		prevTemplate = template
@@ -4051,6 +4052,7 @@ func (g *Golem) processNormalizeTagsWithContext(template string, ctx *VariableCo
 // <denormalize> tag reverses the normalization process to restore more natural text
 func (g *Golem) processDenormalizeTagsWithContext(template string, ctx *VariableContext) string {
 	// Process denormalize tags iteratively until no more changes occur
+	// Note: For nested denormalize tags, use tree processing (EnableTreeProcessing)
 	prevTemplate := ""
 	for template != prevTemplate {
 		prevTemplate = template

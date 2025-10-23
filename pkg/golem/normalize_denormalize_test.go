@@ -158,7 +158,8 @@ func TestDenormalizeTagProcessing(t *testing.T) {
 
 // TestNormalizeDenormalizeIntegration tests the integration of normalize and denormalize tags
 func TestNormalizeDenormalizeIntegration(t *testing.T) {
-	g := New(false) // Disable verbose mode for cleaner test output
+	g := New(false)          // Disable verbose mode for cleaner test output
+	g.EnableTreeProcessing() // Enable AST-based processing for nested tag support
 
 	tests := []struct {
 		name     string
