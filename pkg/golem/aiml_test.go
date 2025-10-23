@@ -6011,7 +6011,7 @@ func TestUniqueTagIntegration(t *testing.T) {
 		expected string
 	}{
 		{"unique hello world hello test", "hello world test"},
-		{"unique comma apple,banana,apple,cherry,banana", "applebananaapplecherrybanana"},
+		{"unique comma apple,banana,apple,cherry,banana", "apple,banana,cherry"},
 		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/>"},
 		{"nested unique user", "hello user world test"},
 	}
