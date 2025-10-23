@@ -45,14 +45,10 @@ func (tp *TreeProcessor) processNode(node *ASTNode) string {
 		if len(node.Children) > 0 {
 			children := ""
 			for _, child := range node.Children {
-				childResult := tp.processNode(child)
-				tp.golem.LogInfo("processNode: child type=%d, content='%s' -> result='%s'", child.Type, child.Content, childResult)
-				children += childResult
+				children += tp.processNode(child)
 			}
-			tp.golem.LogInfo("processNode: text node with children -> result='%s'", children)
 			return children
 		}
-		tp.golem.LogInfo("processNode: text node -> content='%s'", node.Content)
 		return node.Content
 	case NodeTypeComment:
 		return "" // Comments are not output
@@ -843,9 +839,7 @@ func (tp *TreeProcessor) processResponseTag(node *ASTNode, content string) strin
 func (tp *TreeProcessor) processNormalizeTag(node *ASTNode, content string) string {
 	// Normalize tag - text normalization
 	// Process the content directly using the normalization function
-	result := tp.golem.normalizeTextForOutput(content)
-	tp.golem.LogInfo("processNormalizeTag: content='%s' -> result='%s'", content, result)
-	return result
+	return tp.golem.normalizeTextForOutput(content)
 }
 
 func (tp *TreeProcessor) processDenormalizeTag(node *ASTNode, content string) string {

@@ -245,9 +245,12 @@ func (p *ASTParser) parseTag() *ASTNode {
 		// Parse the next node
 		oldPos := p.pos
 
-		// Skip whitespace
+		// Parse whitespace as text content (don't skip it)
 		if p.isWhitespace() {
-			p.consumeWhitespace()
+			node := p.parseText()
+			if node != nil {
+				tagNode.Children = append(tagNode.Children, node)
+			}
 			continue
 		}
 
