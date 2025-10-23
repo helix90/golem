@@ -451,8 +451,19 @@ func (tp *TreeProcessor) processListItemTag(node *ASTNode, content string) strin
 
 func (tp *TreeProcessor) processConditionTag(node *ASTNode, content string) string {
 	// Process condition tag - conditional logic
-	// This is a complex tag that would need full implementation
-	return tp.golem.processConditionTagsWithContext(fmt.Sprintf("<condition>%s</condition>", content), tp.ctx)
+	// Build the condition tag with attributes for the regex-based processing
+	var conditionTag string
+	if name, exists := node.Attributes["name"]; exists {
+		conditionTag = fmt.Sprintf(`<condition name="%s"`, name)
+		if value, exists := node.Attributes["value"]; exists {
+			conditionTag += fmt.Sprintf(` value="%s"`, value)
+		}
+		conditionTag += fmt.Sprintf(`>%s</condition>`, content)
+	} else {
+		conditionTag = fmt.Sprintf("<condition>%s</condition>", content)
+	}
+
+	return tp.golem.processConditionTagsWithContext(conditionTag, tp.ctx)
 }
 
 func (tp *TreeProcessor) processMapTag(node *ASTNode, content string) string {
