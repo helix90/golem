@@ -295,10 +295,19 @@ func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 
 	// Set the variable in context
 	if tp.ctx != nil {
-		if tp.ctx.LocalVars == nil {
-			tp.ctx.LocalVars = make(map[string]string)
+		// Set in session variables if session exists
+		if tp.ctx.Session != nil {
+			if tp.ctx.Session.Variables == nil {
+				tp.ctx.Session.Variables = make(map[string]string)
+			}
+			tp.ctx.Session.Variables[name] = value
+		} else {
+			// Fallback to local variables
+			if tp.ctx.LocalVars == nil {
+				tp.ctx.LocalVars = make(map[string]string)
+			}
+			tp.ctx.LocalVars[name] = value
 		}
-		tp.ctx.LocalVars[name] = value
 	}
 
 	// Set tags don't output content
@@ -326,10 +335,24 @@ func (tp *TreeProcessor) processGetTag(node *ASTNode, content string) string {
 				return value
 			}
 		}
+		// Check topic variables
+		if tp.ctx.Topic != "" && tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.TopicVars != nil {
+			if topicVars, exists := tp.ctx.KnowledgeBase.TopicVars[tp.ctx.Topic]; exists {
+				if value, exists := topicVars[name]; exists {
+					return value
+				}
+			}
+		}
+		// Check global variables
+		if tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.Properties != nil {
+			if value, exists := tp.ctx.KnowledgeBase.Properties[name]; exists {
+				return value
+			}
+		}
 	}
 
-	// Variable not found
-	return ""
+	// If variable not found, return the processed content as default
+	return content
 }
 
 func (tp *TreeProcessor) processBotTag(node *ASTNode, content string) string {
@@ -439,7 +462,40 @@ func (tp *TreeProcessor) processMapTag(node *ASTNode, content string) string {
 
 func (tp *TreeProcessor) processListTag(node *ASTNode, content string) string {
 	// Process list tag - list operations
-	return tp.golem.processListTagsWithContext(fmt.Sprintf("<list>%s</list>", content), tp.ctx)
+	name, exists := node.Attributes["name"]
+	if !exists {
+		return content
+	}
+
+	operation, _ := node.Attributes["operation"]
+
+	// If no knowledge base, just return empty string (operation performed)
+	if tp.ctx == nil || tp.ctx.KnowledgeBase == nil || tp.ctx.KnowledgeBase.Lists == nil {
+		return ""
+	}
+
+	// Get or create the list
+	if tp.ctx.KnowledgeBase.Lists[name] == nil {
+		tp.ctx.KnowledgeBase.Lists[name] = make([]string, 0)
+	}
+	list := tp.ctx.KnowledgeBase.Lists[name]
+
+	switch operation {
+	case "add", "append":
+		// Add item to the end of the list
+		list = append(list, content)
+		tp.ctx.KnowledgeBase.Lists[name] = list
+		return "" // List operations don't return content
+	case "get":
+		// Return all items joined
+		return strings.Join(list, " ")
+	case "size":
+		// Return size of list
+		return strconv.Itoa(len(list))
+	default:
+		// For other operations, just return empty string
+		return ""
+	}
 }
 
 func (tp *TreeProcessor) processArrayTag(node *ASTNode, content string) string {

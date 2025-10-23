@@ -4873,6 +4873,12 @@ func (g *Golem) processBotTagsWithContext(template string, ctx *VariableContext)
 // processSizeTagsWithContext processes <size/> tags to return the number of categories
 func (g *Golem) processSizeTagsWithContext(template string, ctx *VariableContext) string {
 	if ctx.KnowledgeBase == nil {
+		// Return 0 when no knowledge base is available
+		sizeTagRegex := regexp.MustCompile(`<size/>`)
+		matches := sizeTagRegex.FindAllString(template, -1)
+		if len(matches) > 0 {
+			template = strings.ReplaceAll(template, "<size/>", "0")
+		}
 		return template
 	}
 
@@ -4897,6 +4903,12 @@ func (g *Golem) processSizeTagsWithContext(template string, ctx *VariableContext
 // processVersionTagsWithContext processes <version/> tags to return the AIML version
 func (g *Golem) processVersionTagsWithContext(template string, ctx *VariableContext) string {
 	if ctx.KnowledgeBase == nil {
+		// Return default version when no knowledge base is available
+		versionTagRegex := regexp.MustCompile(`<version/>`)
+		matches := versionTagRegex.FindAllString(template, -1)
+		if len(matches) > 0 {
+			template = strings.ReplaceAll(template, "<version/>", "2.0")
+		}
 		return template
 	}
 
@@ -7177,11 +7189,44 @@ func (g *Golem) processMapTagsWithContext(template string, ctx *VariableContext)
 	return template
 }
 
+// findInnermostListTag finds the innermost <list> tag in the template
+func (g *Golem) findInnermostListTag(template string) string {
+	// Find the last <list> tag before the first </list> tag
+	lastOpenIndex := -1
+	firstCloseIndex := -1
+
+	for i := 0; i < len(template); i++ {
+		if i+6 <= len(template) && template[i:i+6] == "<list " {
+			lastOpenIndex = i
+		} else if i+7 <= len(template) && template[i:i+7] == "</list>" {
+			firstCloseIndex = i
+			break
+		}
+	}
+
+	if lastOpenIndex == -1 || firstCloseIndex == -1 {
+		return ""
+	}
+
+	// Extract the complete tag
+	return template[lastOpenIndex : firstCloseIndex+7]
+}
+
 // processListTagsWithContext processes <list> tags with variable context
 func (g *Golem) processListTagsWithContext(template string, ctx *VariableContext) string {
 	g.LogInfo("List processing: ctx.KnowledgeBase=%v, ctx.KnowledgeBase.Lists=%v", ctx.KnowledgeBase != nil, ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Lists != nil)
 	if ctx.KnowledgeBase == nil || ctx.KnowledgeBase.Lists == nil {
-		g.LogInfo("List processing: returning early due to nil knowledge base or lists")
+		g.LogInfo("List processing: no knowledge base available, processing tags as operations")
+		// Process list tags even without knowledge base - they should be removed as operations
+		// Process innermost tags first to handle nesting
+		for {
+			innermostTag := g.findInnermostListTag(template)
+			if innermostTag == "" {
+				break
+			}
+			// Remove the innermost list tag as it's an operation, not content
+			template = strings.ReplaceAll(template, innermostTag, "")
+		}
 		return template
 	}
 

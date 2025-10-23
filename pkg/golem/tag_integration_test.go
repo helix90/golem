@@ -703,6 +703,7 @@ func TestNestedTagScenarios(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := New(false)
+			g.EnableTreeProcessing() // Enable AST-based processing
 			ctx := g.createSession("test_session")
 
 			// Handle specific test cases that need setup
