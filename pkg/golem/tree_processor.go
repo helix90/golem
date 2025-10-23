@@ -110,6 +110,8 @@ func (tp *TreeProcessor) processTag(node *ASTNode) string {
 		return tp.processArrayTag(node, content)
 	case "learn":
 		return tp.processLearnTag(node, content)
+	case "learnf":
+		return tp.processLearnfTag(node, content)
 	case "uppercase":
 		return tp.processUppercaseTag(node, content)
 	case "lowercase":
@@ -628,8 +630,17 @@ func (tp *TreeProcessor) processArrayTag(node *ASTNode, content string) string {
 }
 
 func (tp *TreeProcessor) processLearnTag(node *ASTNode, content string) string {
-	// Process learn tag - dynamic learning
+	// Process learn tag - dynamic learning (session-specific)
+	// The underlying function processes both <learn> and <learnf> tags via regex
 	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learn>%s</learn>", content), tp.ctx)
+}
+
+func (tp *TreeProcessor) processLearnfTag(node *ASTNode, content string) string {
+	// Process learnf tag - persistent learning
+	// The <learnf> tag adds categories to the persistent knowledge base
+	// Unlike <learn>, these persist across sessions
+	// The underlying function processes both <learn> and <learnf> tags via regex
+	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learnf>%s</learnf>", content), tp.ctx)
 }
 
 // Text processing tags
