@@ -659,30 +659,164 @@ func (tp *TreeProcessor) processArrayTag(node *ASTNode, content string) string {
 
 func (tp *TreeProcessor) processLearnTag(node *ASTNode, content string) string {
 	// Process learn tag - dynamic learning (session-specific)
-	// Get the raw, unprocessed content from the AST node children
-	// We need to preserve tags like <star/> in their original form
-	rawContent := ""
-	for _, child := range node.Children {
-		rawContent += child.String()
-	}
+	// Process content while preserving wildcard/reference tags
+	// This evaluates tags like <get>, <uppercase>, etc. but preserves <star/>, <that/>, etc.
+	processedContent := tp.processNodePreservingReferences(node)
 
 	// The underlying function processes both <learn> and <learnf> tags via regex
-	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learn>%s</learn>", rawContent), tp.ctx)
+	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learn>%s</learn>", processedContent), tp.ctx)
 }
 
 func (tp *TreeProcessor) processLearnfTag(node *ASTNode, content string) string {
 	// Process learnf tag - persistent learning
 	// The <learnf> tag adds categories to the persistent knowledge base
 	// Unlike <learn>, these persist across sessions
-	// Get the raw, unprocessed content from the AST node children
-	// We need to preserve tags like <star/> in their original form
-	rawContent := ""
-	for _, child := range node.Children {
-		rawContent += child.String()
-	}
+	// Process content while preserving wildcard/reference tags
+	// This evaluates tags like <get>, <uppercase>, etc. but preserves <star/>, <that/>, etc.
+	processedContent := tp.processNodePreservingReferences(node)
 
 	// The underlying function processes both <learn> and <learnf> tags via regex
-	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learnf>%s</learnf>", rawContent), tp.ctx)
+	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learnf>%s</learnf>", processedContent), tp.ctx)
+}
+
+// processNodePreservingReferences processes a node's children while preserving reference tags
+// Reference tags (like <star/>, <that/>, <input/>, etc.) are output as their string representation
+// Other tags (like <get/>, <uppercase/>, etc.) are processed normally
+func (tp *TreeProcessor) processNodePreservingReferences(node *ASTNode) string {
+	var result strings.Builder
+
+	for _, child := range node.Children {
+		result.WriteString(tp.processChildPreservingReferences(child))
+	}
+
+	return result.String()
+}
+
+// processChildPreservingReferences processes a single child node
+// Returns the string representation for reference tags, processed content for others
+func (tp *TreeProcessor) processChildPreservingReferences(node *ASTNode) string {
+	// For text nodes, return content as-is
+	if node.Type == NodeTypeText {
+		if len(node.Children) > 0 {
+			var result strings.Builder
+			for _, child := range node.Children {
+				result.WriteString(tp.processChildPreservingReferences(child))
+			}
+			return result.String()
+		}
+		return node.Content
+	}
+
+	// For comments and CDATA, return as-is
+	if node.Type == NodeTypeComment || node.Type == NodeTypeCDATA {
+		return node.String()
+	}
+
+	// For tags, check if they should be preserved as references
+	if node.Type == NodeTypeSelfClosingTag || node.Type == NodeTypeTag {
+		// List of tags that should be preserved (wildcards and history references)
+		preservedTags := map[string]bool{
+			"star":      true, // Wildcard references
+			"that":      true, // Response history
+			"thatstar":  true, // That wildcard
+			"topicstar": true, // Topic wildcard
+			"input":     true, // Request history (alternative form)
+			"request":   true, // Request history
+			"response":  true, // Response history
+			"sr":        true, // Shorthand SRAI - should be preserved for runtime
+		}
+
+		if preservedTags[node.TagName] {
+			// Return the tag as its string representation
+			return node.String()
+		}
+
+		// For non-preserved tags, process them normally
+		// But we need to recursively preserve references in their children
+		if node.Type == NodeTypeTag {
+			// Process children while preserving references
+			var processedChildren strings.Builder
+			for _, child := range node.Children {
+				processedChildren.WriteString(tp.processChildPreservingReferences(child))
+			}
+
+			// Now process this tag with the processed children content
+			// We need to temporarily set up the node's processed content
+			// and call the appropriate tag processor
+			return tp.processTagWithContent(node, processedChildren.String())
+		} else {
+			// Self-closing tag - process it
+			return tp.processSelfClosingTag(node)
+		}
+	}
+
+	// For other node types, just process normally
+	return tp.processNode(node)
+}
+
+// processTagWithContent processes a tag with given content
+// This is similar to processTag but uses provided content instead of processing children
+func (tp *TreeProcessor) processTagWithContent(node *ASTNode, content string) string {
+	// Helper function to format tag with attributes
+	formatTag := func(tagName string, attrs map[string]string, content string) string {
+		if len(attrs) == 0 {
+			return fmt.Sprintf("<%s>%s</%s>", tagName, content, tagName)
+		}
+
+		var attrStr strings.Builder
+		for key, value := range attrs {
+			if value == "" {
+				attrStr.WriteString(fmt.Sprintf(" %s", key))
+			} else {
+				attrStr.WriteString(fmt.Sprintf(` %s="%s"`, key, value))
+			}
+		}
+
+		return fmt.Sprintf("<%s%s>%s</%s>", tagName, attrStr.String(), content, tagName)
+	}
+
+	// Process the tag based on its name
+	switch node.TagName {
+	case "template", "think", "random", "li":
+		// For structural tags, preserve with attributes if any
+		return formatTag(node.TagName, node.Attributes, content)
+	case "condition":
+		// Condition tags need special handling - preserve the structure
+		return formatTag("condition", node.Attributes, content)
+	case "pattern", "that", "topic":
+		// Pattern-related tags should be preserved with their content and attributes
+		return formatTag(node.TagName, node.Attributes, content)
+	case "category":
+		// Category tag should be preserved
+		return fmt.Sprintf("<category>%s</category>", content)
+	case "get":
+		return tp.processGetTag(node, content)
+	case "set":
+		return tp.processSetTag(node, content)
+	case "bot":
+		return tp.processBotTag(node, content)
+	case "uppercase":
+		return tp.processUppercaseTag(node, content)
+	case "lowercase":
+		return tp.processLowercaseTag(node, content)
+	case "formal":
+		return tp.processFormalTag(node, content)
+	case "sentence":
+		return tp.processSentenceTag(node, content)
+	case "person":
+		return tp.processPersonTag(node, content)
+	case "person2":
+		return tp.processPerson2Tag(node, content)
+	case "gender":
+		return tp.processGenderTag(node, content)
+	case "srai":
+		return tp.processSRAITag(node, content)
+	case "eval":
+		return tp.processEvalTag(node, content)
+	default:
+		// For unknown tags, return content wrapped in the tag with attributes
+		return formatTag(node.TagName, node.Attributes, content)
+	}
 }
 
 // Text processing tags
