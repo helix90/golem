@@ -1191,8 +1191,26 @@ func (tp *TreeProcessor) processPerson2Tag(node *ASTNode, content string) string
 }
 
 func (tp *TreeProcessor) processGenderTag(node *ASTNode, content string) string {
-	// Use the existing gender processing method
-	return tp.golem.processGenderTagsWithContext(fmt.Sprintf("<gender>%s</gender>", content), tp.ctx)
+	// Process gender tag - swap masculine/feminine pronouns
+	// Normalize whitespace
+	content = strings.TrimSpace(content)
+	content = strings.Join(strings.Fields(content), " ")
+
+	// Check cache first
+	var substitutedContent string
+	if tp.golem.templateTagProcessingCache != nil {
+		if cached, found := tp.golem.templateTagProcessingCache.GetProcessedTag("gender", content, tp.ctx); found {
+			substitutedContent = cached
+		} else {
+			substitutedContent = tp.golem.SubstituteGenderPronouns(content)
+			tp.golem.templateTagProcessingCache.SetProcessedTag("gender", content, substitutedContent, tp.ctx)
+		}
+	} else {
+		substitutedContent = tp.golem.SubstituteGenderPronouns(content)
+	}
+
+	tp.golem.LogInfo("Gender tag: '%s' -> '%s'", content, substitutedContent)
+	return substitutedContent
 }
 
 func (tp *TreeProcessor) processSentenceTag(node *ASTNode, content string) string {
