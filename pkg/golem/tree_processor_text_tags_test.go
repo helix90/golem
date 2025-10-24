@@ -198,6 +198,11 @@ func TestTreeProcessorTextTagsIntegration(t *testing.T) {
 		<pattern>COMBINED TEST</pattern>
 		<template><person><gender>he told you</gender></person></template>
 	</category>
+	
+	<category>
+		<pattern>CAPITALIZE SENTENCE</pattern>
+		<template><sentence>hello world. how are you?</sentence></template>
+	</category>
 </aiml>`
 
 	err := g.LoadAIMLFromString(aimlContent)
@@ -242,6 +247,11 @@ func TestTreeProcessorTextTagsIntegration(t *testing.T) {
 			input:    "combined test",
 			expected: "she told I",
 		},
+		{
+			name:     "Sentence tag in category",
+			input:    "capitalize sentence",
+			expected: "Hello world. How are you?",
+		},
 	}
 
 	for _, tt := range tests {
@@ -253,6 +263,70 @@ func TestTreeProcessorTextTagsIntegration(t *testing.T) {
 
 			if response != tt.expected {
 				t.Errorf("Expected '%s', got '%s'", tt.expected, response)
+			}
+		})
+	}
+}
+
+// TestTreeProcessorSentenceTag tests the <sentence> tag with tree processor
+func TestTreeProcessorSentenceTag(t *testing.T) {
+	g := New(false)
+	g.EnableTreeProcessing() // Enable AST-based processing
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Single sentence - lowercase",
+			template: "<sentence>hello world</sentence>",
+			expected: "Hello world",
+		},
+		{
+			name:     "Multiple sentences",
+			template: "<sentence>hello world. how are you?</sentence>",
+			expected: "Hello world. How are you?",
+		},
+		{
+			name:     "Multiple sentences with exclamation",
+			template: "<sentence>wow! that's amazing! really?</sentence>",
+			expected: "Wow! That's amazing! Really?",
+		},
+		{
+			name:     "Already capitalized",
+			template: "<sentence>Hello World. How Are You?</sentence>",
+			expected: "Hello World. How Are You?",
+		},
+		{
+			name:     "Mixed case",
+			template: "<sentence>hELLo wORLD. hOW aRE yOU?</sentence>",
+			expected: "HELLo wORLD. HOW aRE yOU?",
+		},
+		{
+			name:     "Empty content",
+			template: "<sentence></sentence>",
+			expected: "",
+		},
+		{
+			name:     "Whitespace only",
+			template: "<sentence>   </sentence>",
+			expected: "",
+		},
+		{
+			name:     "Sentences with numbers",
+			template: "<sentence>i have 5 apples. you have 3 oranges.</sentence>",
+			expected: "I have 5 apples. You have 3 oranges.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := g.CreateSession("test_sentence_" + tt.name)
+			result := g.ProcessTemplateWithContext(tt.template, nil, session)
+
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
 			}
 		})
 	}
@@ -278,6 +352,11 @@ func TestTreeProcessorTextTagsWithWildcards(t *testing.T) {
 	<category>
 		<pattern>GENDER ECHO *</pattern>
 		<template><gender><star/></gender></template>
+	</category>
+	
+	<category>
+		<pattern>SENTENCE ECHO *</pattern>
+		<template><sentence><star/></sentence></template>
 	</category>
 </aiml>`
 
@@ -317,6 +396,11 @@ func TestTreeProcessorTextTagsWithWildcards(t *testing.T) {
 			name:     "Gender with wildcard",
 			input:    "gender echo he said hello",
 			expected: "she said hello",
+		},
+		{
+			name:     "Sentence with wildcard",
+			input:    "sentence echo hello world. how are you?",
+			expected: "Hello world. How are you?",
 		},
 	}
 
