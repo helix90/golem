@@ -203,6 +203,11 @@ func TestTreeProcessorTextTagsIntegration(t *testing.T) {
 		<pattern>CAPITALIZE SENTENCE</pattern>
 		<template><sentence>hello world. how are you?</sentence></template>
 	</category>
+	
+	<category>
+		<pattern>CAPITALIZE WORDS</pattern>
+		<template><word>hello world how are you</word></template>
+	</category>
 </aiml>`
 
 	err := g.LoadAIMLFromString(aimlContent)
@@ -251,6 +256,11 @@ func TestTreeProcessorTextTagsIntegration(t *testing.T) {
 			name:     "Sentence tag in category",
 			input:    "capitalize sentence",
 			expected: "Hello world. How are you?",
+		},
+		{
+			name:     "Word tag in category",
+			input:    "capitalize words",
+			expected: "Hello World How Are You",
 		},
 	}
 
@@ -332,6 +342,80 @@ func TestTreeProcessorSentenceTag(t *testing.T) {
 	}
 }
 
+// TestTreeProcessorWordTag tests the <word> tag with tree processor
+func TestTreeProcessorWordTag(t *testing.T) {
+	g := New(false)
+	g.EnableTreeProcessing() // Enable AST-based processing
+
+	tests := []struct {
+		name     string
+		template string
+		expected string
+	}{
+		{
+			name:     "Basic lowercase words",
+			template: "<word>hello world</word>",
+			expected: "Hello World",
+		},
+		{
+			name:     "Multiple words",
+			template: "<word>the quick brown fox jumps</word>",
+			expected: "The Quick Brown Fox Jumps",
+		},
+		{
+			name:     "Already capitalized",
+			template: "<word>Hello World</word>",
+			expected: "Hello World",
+		},
+		{
+			name:     "Mixed case",
+			template: "<word>hELLo wORLD</word>",
+			expected: "HELLo WORLD",
+		},
+		{
+			name:     "Single word",
+			template: "<word>test</word>",
+			expected: "Test",
+		},
+		{
+			name:     "Empty content",
+			template: "<word></word>",
+			expected: "",
+		},
+		{
+			name:     "Whitespace only",
+			template: "<word>   </word>",
+			expected: "",
+		},
+		{
+			name:     "Words with numbers",
+			template: "<word>i have 5 apples</word>",
+			expected: "I Have 5 Apples",
+		},
+		{
+			name:     "Hyphenated words",
+			template: "<word>state-of-the-art design</word>",
+			expected: "State-Of-The-Art Design",
+		},
+		{
+			name:     "Words with punctuation",
+			template: "<word>hello, world! how are you?</word>",
+			expected: "Hello, World! How Are You?",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := g.CreateSession("test_word_" + tt.name)
+			result := g.ProcessTemplateWithContext(tt.template, nil, session)
+
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
 // TestTreeProcessorTextTagsWithWildcards tests text tags with wildcards
 func TestTreeProcessorTextTagsWithWildcards(t *testing.T) {
 	g := New(false)
@@ -357,6 +441,11 @@ func TestTreeProcessorTextTagsWithWildcards(t *testing.T) {
 	<category>
 		<pattern>SENTENCE ECHO *</pattern>
 		<template><sentence><star/></sentence></template>
+	</category>
+	
+	<category>
+		<pattern>WORD ECHO *</pattern>
+		<template><word><star/></word></template>
 	</category>
 </aiml>`
 
@@ -401,6 +490,11 @@ func TestTreeProcessorTextTagsWithWildcards(t *testing.T) {
 			name:     "Sentence with wildcard",
 			input:    "sentence echo hello world. how are you?",
 			expected: "Hello world. How are you?",
+		},
+		{
+			name:     "Word with wildcard",
+			input:    "word echo hello world how are you",
+			expected: "Hello World How Are You",
 		},
 	}
 

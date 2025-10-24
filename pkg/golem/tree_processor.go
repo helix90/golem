@@ -1229,8 +1229,18 @@ func (tp *TreeProcessor) processSentenceTag(node *ASTNode, content string) strin
 }
 
 func (tp *TreeProcessor) processWordTag(node *ASTNode, content string) string {
-	// Use the existing word processing method
-	return tp.golem.processWordTagsWithContext(fmt.Sprintf("<word>%s</word>", content), tp.ctx)
+	// Process word tag - capitalize first letter of each word (Title Case)
+	content = strings.TrimSpace(content)
+
+	if content == "" {
+		return ""
+	}
+
+	// Capitalize words using the existing method
+	processedContent := tp.golem.capitalizeWords(content)
+
+	tp.golem.LogDebug("Word tag: '%s' -> '%s'", content, processedContent)
+	return processedContent
 }
 
 func (tp *TreeProcessor) processDateTag(node *ASTNode, content string) string {
