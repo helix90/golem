@@ -110,7 +110,7 @@ func TestTreeProcessorEvalTagWithVariables(t *testing.T) {
 <aiml version="2.0">
 	<category>
 		<pattern>SET * TO *</pattern>
-		<template><eval><set><star index="2"/></set><star/></set></eval>Variable set</template>
+		<template><eval><set name="<star/>"><star index="2"/></set></eval>Variable set</template>
 	</category>
 	
 	<category>
@@ -397,6 +397,11 @@ func TestTreeProcessorEvalTagWithHistory(t *testing.T) {
 	<category>
 		<pattern>WHAT DID YOU SAY</pattern>
 		<template><eval>I said: <that/></eval></template>
+	</category>
+	
+	<category>
+		<pattern>*</pattern>
+		<template>I heard you say <star/>.</template>
 	</category>
 </aiml>`
 

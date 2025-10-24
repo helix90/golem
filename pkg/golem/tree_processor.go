@@ -332,12 +332,46 @@ func (tp *TreeProcessor) processThinkTag(node *ASTNode, content string) string {
 	return tp.golem.processThinkTagsWithContext(fmt.Sprintf("<think>%s</think>", content), tp.ctx)
 }
 
+// evaluateAttributeValue evaluates an attribute value if it contains AIML tags
+// For example, name="<star/>" will be evaluated to the actual wildcard value
+func (tp *TreeProcessor) evaluateAttributeValue(value string) string {
+	// Quick check: if it doesn't contain '<', it's a plain string
+	if !strings.Contains(value, "<") {
+		return value
+	}
+
+	// Check if it contains AIML tags
+	if strings.Contains(value, "<star") || strings.Contains(value, "<get") ||
+		strings.Contains(value, "<bot") || strings.Contains(value, "<that") ||
+		strings.Contains(value, "<input") || strings.Contains(value, "<id") {
+		// Parse and evaluate the attribute value as AIML
+		parser := NewASTParser(value)
+		root, err := parser.Parse()
+		if err != nil {
+			// If parsing fails, return the original value
+			return value
+		}
+
+		// Process the parsed tree
+		var result strings.Builder
+		for _, node := range root.Children {
+			result.WriteString(tp.processNode(node))
+		}
+		return strings.TrimSpace(result.String())
+	}
+
+	return value
+}
+
 func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 	// Process set tag - variable assignment
 	name, exists := node.Attributes["name"]
 	if !exists {
 		return content
 	}
+
+	// Evaluate the name if it contains AIML tags (like <star/>)
+	name = tp.evaluateAttributeValue(name)
 
 	// Process the content to get the value
 	value := content // Content is already processed by processNode
@@ -369,6 +403,9 @@ func (tp *TreeProcessor) processGetTag(node *ASTNode, content string) string {
 	if !exists {
 		return content
 	}
+
+	// Evaluate the name if it contains AIML tags (like <star/>)
+	name = tp.evaluateAttributeValue(name)
 
 	// Get the variable value from context
 	if tp.ctx != nil {

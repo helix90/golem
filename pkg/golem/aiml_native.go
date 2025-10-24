@@ -5132,21 +5132,23 @@ func (g *Golem) processVersionTagsWithContext(template string, ctx *VariableCont
 
 // processIdTagsWithContext processes <id/> tags to return the current session ID
 func (g *Golem) processIdTagsWithContext(template string, ctx *VariableContext) string {
-	if ctx.Session == nil {
-		return template
-	}
-
 	// Find all <id/> tags
 	idTagRegex := regexp.MustCompile(`<id/>`)
 	matches := idTagRegex.FindAllString(template, -1)
 
 	if len(matches) > 0 {
-		// Get the session ID
-		sessionID := ctx.Session.ID
+		var sessionID string
+		if ctx.Session != nil {
+			// Get the session ID
+			sessionID = ctx.Session.ID
+			g.LogDebug("Id tag: found session ID '%s'", sessionID)
+		} else {
+			// No session, replace with empty string
+			sessionID = ""
+			g.LogDebug("Id tag: no session, replacing with empty string")
+		}
 
-		g.LogDebug("Id tag: found session ID '%s'", sessionID)
-
-		// Replace all <id/> tags with the session ID
+		// Replace all <id/> tags with the session ID (or empty string)
 		template = strings.ReplaceAll(template, "<id/>", sessionID)
 	}
 

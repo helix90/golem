@@ -403,7 +403,7 @@ func TestVariableContextInComplexTemplates(t *testing.T) {
 		{
 			name:           "Complex template with SRAI",
 			input:          "COMPLEX test_value",
-			expectedOutput: "Setting:  Processing: Simple with test value",
+			expectedOutput: "Setting:  Processing: Simple with test_value",
 			description:    "Complex template should maintain variable context through SRAI (note: extra spaces from set tag removal)",
 		},
 		{

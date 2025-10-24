@@ -332,19 +332,19 @@ func TestTreeProcessorEvalTagWithWildcards(t *testing.T) {
 			name:      "Eval with star",
 			template:  "<eval>You said: <star/></eval>",
 			wildcards: map[string]string{"star1": "hello"},
-			expected:  "You said:", // Wildcards need to be in session.Variables for tree processor
+			expected:  "You said: hello", // Tree processor puts wildcards in session.Variables
 		},
 		{
 			name:      "Eval with uppercase star",
 			template:  "<eval><uppercase><star/></uppercase></eval>",
 			wildcards: map[string]string{"star1": "hello"},
-			expected:  "", // Wildcards need to be in session.Variables
+			expected:  "HELLO", // Tree processor puts wildcards in session.Variables
 		},
 		{
 			name:      "Eval with multiple stars",
 			template:  "<eval><star index=\"1\"/> and <star index=\"2\"/></eval>",
 			wildcards: map[string]string{"star1": "first", "star2": "second"},
-			expected:  "and", // Wildcards need to be in session.Variables
+			expected:  "first and second", // Tree processor puts wildcards in session.Variables
 		},
 	}
 
