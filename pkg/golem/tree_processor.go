@@ -3,6 +3,7 @@ package golem
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -665,50 +666,414 @@ func (tp *TreeProcessor) processConditionTag(node *ASTNode, content string) stri
 
 func (tp *TreeProcessor) processMapTag(node *ASTNode, content string) string {
 	// Process map tag - mapping operations
-	return tp.golem.processMapTagsWithContext(fmt.Sprintf("<map>%s</map>", content), tp.ctx)
-}
+	// Check for required knowledge base
+	if tp.ctx == nil || tp.ctx.KnowledgeBase == nil || tp.ctx.KnowledgeBase.Maps == nil {
+		return content
+	}
 
-func (tp *TreeProcessor) processListTag(node *ASTNode, content string) string {
-	// Process list tag - list operations
+	// Get the map name
 	name, exists := node.Attributes["name"]
 	if !exists {
 		return content
 	}
 
-	operation := node.Attributes["operation"]
+	// Evaluate the map name if it contains tags
+	name = tp.evaluateAttributeValue(name)
 
-	// If no knowledge base, just return empty string (operation performed)
+	// Get the key attribute (optional)
+	keyAttr, hasKeyAttr := node.Attributes["key"]
+	if hasKeyAttr {
+		keyAttr = tp.evaluateAttributeValue(keyAttr)
+	}
+
+	// Get the operation (optional, default is "get")
+	operation, hasOperation := node.Attributes["operation"]
+	if !hasOperation {
+		operation = "get"
+	}
+
+	// Determine the key: if key attribute is provided, use it; otherwise use content
+	key := keyAttr
+	if !hasKeyAttr || key == "" {
+		key = strings.TrimSpace(content)
+	}
+
+	tp.golem.LogInfo("Map tag: name='%s', key='%s', operation='%s', content='%s'", name, key, operation, content)
+
+	// Get or create the map
+	if tp.ctx.KnowledgeBase.Maps[name] == nil {
+		tp.ctx.KnowledgeBase.Maps[name] = make(map[string]string)
+		tp.golem.LogInfo("Created new map '%s'", name)
+	}
+
+	mapData := tp.ctx.KnowledgeBase.Maps[name]
+	tp.golem.LogInfo("Before operation: map '%s' = %v", name, mapData)
+
+	switch operation {
+	case "set", "assign":
+		// Set a key-value pair
+		if key != "" {
+			// Use content as value
+			value := strings.TrimSpace(content)
+			if hasKeyAttr {
+				// Key was in attribute, content is the value
+				value = content
+			} else {
+				// Key was in content, value is also content (for now)
+				value = content
+			}
+			tp.ctx.KnowledgeBase.Maps[name][key] = strings.TrimSpace(value)
+			tp.golem.LogInfo("Set map '%s'['%s'] = '%s'", name, key, strings.TrimSpace(value))
+			tp.golem.LogInfo("After set: map '%s' = %v", name, tp.ctx.KnowledgeBase.Maps[name])
+			return "" // Set operations don't return content
+		}
+		return ""
+
+	case "remove", "delete":
+		// Remove a key-value pair
+		if key != "" {
+			if _, exists := tp.ctx.KnowledgeBase.Maps[name][key]; exists {
+				delete(tp.ctx.KnowledgeBase.Maps[name], key)
+				tp.golem.LogInfo("Removed key '%s' from map '%s'", key, name)
+				tp.golem.LogInfo("After remove: map '%s' = %v", name, tp.ctx.KnowledgeBase.Maps[name])
+			} else {
+				tp.golem.LogInfo("Key '%s' not found in map '%s'", key, name)
+			}
+		}
+		return "" // Remove operations don't return content
+
+	case "clear":
+		// Clear all entries
+		tp.ctx.KnowledgeBase.Maps[name] = make(map[string]string)
+		tp.golem.LogInfo("Cleared map '%s'", name)
+		return "" // Clear operations don't return content
+
+	case "size", "length":
+		// Return the size of the map
+		size := strconv.Itoa(len(tp.ctx.KnowledgeBase.Maps[name]))
+		tp.golem.LogInfo("Map '%s' size: %s", name, size)
+		return size
+
+	case "contains", "has":
+		// Check if map contains key
+		contains := false
+		if key != "" {
+			_, contains = tp.ctx.KnowledgeBase.Maps[name][key]
+		}
+		result := "false"
+		if contains {
+			result = "true"
+		}
+		tp.golem.LogInfo("Map '%s' contains key '%s': %s", name, key, result)
+		return result
+
+	case "keys":
+		// Return all keys
+		keys := make([]string, 0, len(tp.ctx.KnowledgeBase.Maps[name]))
+		for k := range tp.ctx.KnowledgeBase.Maps[name] {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys) // Sort for consistent output
+		keysString := strings.Join(keys, " ")
+		tp.golem.LogInfo("Map '%s' keys: %s", name, keysString)
+		return keysString
+
+	case "values":
+		// Return all values
+		values := make([]string, 0, len(tp.ctx.KnowledgeBase.Maps[name]))
+		for _, v := range tp.ctx.KnowledgeBase.Maps[name] {
+			values = append(values, v)
+		}
+		sort.Strings(values) // Sort for consistent output
+		valuesString := strings.Join(values, " ")
+		tp.golem.LogInfo("Map '%s' values: %s", name, valuesString)
+		return valuesString
+
+	case "list":
+		// Return all key-value pairs
+		pairs := make([]string, 0, len(tp.ctx.KnowledgeBase.Maps[name]))
+		for k, v := range tp.ctx.KnowledgeBase.Maps[name] {
+			pairs = append(pairs, k+":"+v)
+		}
+		sort.Strings(pairs) // Sort for consistent output
+		pairsString := strings.Join(pairs, " ")
+		tp.golem.LogInfo("Map '%s' pairs: %s", name, pairsString)
+		return pairsString
+
+	case "get", "":
+		// Get value by key (original functionality)
+		if key != "" {
+			if value, exists := tp.ctx.KnowledgeBase.Maps[name][key]; exists {
+				tp.golem.LogInfo("Mapped '%s' -> '%s'", key, value)
+				return value
+			} else {
+				// Key not found in map, return the original key
+				tp.golem.LogInfo("Key '%s' not found in map '%s', returning key", key, name)
+				return key
+			}
+		}
+		return ""
+
+	default:
+		// Unknown operation, treat as get
+		tp.golem.LogInfo("Unknown operation '%s', treating as get", operation)
+		if key != "" {
+			if value, exists := tp.ctx.KnowledgeBase.Maps[name][key]; exists {
+				return value
+			}
+			return key
+		}
+		return ""
+	}
+}
+
+func (tp *TreeProcessor) processListTag(node *ASTNode, content string) string {
+	// Process list tag - list operations
+	// Get the list name
+	name, exists := node.Attributes["name"]
+	if !exists {
+		return content
+	}
+
+	// Evaluate the list name if it contains tags
+	name = tp.evaluateAttributeValue(name)
+
+	// Get the index attribute (optional)
+	indexStr, hasIndex := node.Attributes["index"]
+	if hasIndex {
+		indexStr = tp.evaluateAttributeValue(indexStr)
+	}
+
+	// Get the operation (optional)
+	operation, hasOperation := node.Attributes["operation"]
+	if !hasOperation {
+		operation = ""
+	}
+
+	// If no knowledge base, just return empty string for operations
 	if tp.ctx == nil || tp.ctx.KnowledgeBase == nil || tp.ctx.KnowledgeBase.Lists == nil {
+		tp.golem.LogInfo("List processing: no knowledge base available")
 		return ""
 	}
 
 	// Get or create the list
 	if tp.ctx.KnowledgeBase.Lists[name] == nil {
 		tp.ctx.KnowledgeBase.Lists[name] = make([]string, 0)
+		tp.golem.LogInfo("Created new list '%s'", name)
 	}
 	list := tp.ctx.KnowledgeBase.Lists[name]
+	tp.golem.LogInfo("Processing list tag: name='%s', index='%s', operation='%s', content='%s'", name, indexStr, operation, content)
+	tp.golem.LogInfo("Before operation: list '%s' = %v", name, list)
 
 	switch operation {
 	case "add", "append":
 		// Add item to the end of the list
 		list = append(list, content)
 		tp.ctx.KnowledgeBase.Lists[name] = list
+		tp.golem.LogInfo("Added '%s' to list '%s'", content, name)
+		tp.golem.LogInfo("After add: list '%s' = %v", name, list)
 		return "" // List operations don't return content
-	case "get":
-		// Return all items joined
-		return strings.Join(list, " ")
-	case "size":
-		// Return size of list
-		return strconv.Itoa(len(list))
-	default:
-		// For other operations, just return empty string
+
+	case "insert":
+		// Insert item at specific index
+		if hasIndex {
+			if index, err := strconv.Atoi(indexStr); err == nil && index >= 0 && index <= len(list) {
+				// Insert at the specified index
+				list = append(list[:index], append([]string{content}, list[index:]...)...)
+				tp.ctx.KnowledgeBase.Lists[name] = list
+				tp.golem.LogInfo("Inserted '%s' at index %d in list '%s'", content, index, name)
+				tp.golem.LogInfo("After insert: list '%s' = %v", name, list)
+			} else {
+				// Invalid index, append to end
+				list = append(list, content)
+				tp.ctx.KnowledgeBase.Lists[name] = list
+				tp.golem.LogInfo("Invalid index %s, appended '%s' to list '%s'", indexStr, content, name)
+				tp.golem.LogInfo("After append: list '%s' = %v", name, list)
+			}
+		} else {
+			// No index specified, append to end
+			list = append(list, content)
+			tp.ctx.KnowledgeBase.Lists[name] = list
+			tp.golem.LogInfo("No index specified, appended '%s' to list '%s'", content, name)
+			tp.golem.LogInfo("After append: list '%s' = %v", name, list)
+		}
 		return ""
+
+	case "remove", "delete":
+		// Remove item from list
+		if hasIndex {
+			if index, err := strconv.Atoi(indexStr); err == nil && index >= 0 && index < len(list) {
+				// Remove at specific index
+				list = append(list[:index], list[index+1:]...)
+				tp.ctx.KnowledgeBase.Lists[name] = list
+				tp.golem.LogInfo("Removed item at index %d from list '%s'", index, name)
+				tp.golem.LogInfo("After remove by index: list '%s' = %v", name, list)
+			} else {
+				// Invalid index, try to remove by value
+				for i, item := range list {
+					if item == content {
+						list = append(list[:i], list[i+1:]...)
+						tp.ctx.KnowledgeBase.Lists[name] = list
+						tp.golem.LogInfo("Removed '%s' from list '%s'", content, name)
+						tp.golem.LogInfo("After remove by value: list '%s' = %v", name, list)
+						break
+					}
+				}
+			}
+		} else {
+			// No index, remove by value
+			for i, item := range list {
+				if item == content {
+					list = append(list[:i], list[i+1:]...)
+					tp.ctx.KnowledgeBase.Lists[name] = list
+					tp.golem.LogInfo("Removed '%s' from list '%s'", content, name)
+					tp.golem.LogInfo("After remove by value: list '%s' = %v", name, list)
+					break
+				}
+			}
+		}
+		return ""
+
+	case "clear":
+		// Clear the list
+		tp.ctx.KnowledgeBase.Lists[name] = make([]string, 0)
+		tp.golem.LogInfo("Cleared list '%s'", name)
+		return ""
+
+	case "size", "length":
+		// Return size of list
+		size := strconv.Itoa(len(list))
+		tp.golem.LogInfo("List '%s' size: %s", name, size)
+		return size
+
+	case "get", "":
+		// Get item(s) from list
+		if hasIndex {
+			// Get item at specific index
+			if index, err := strconv.Atoi(indexStr); err == nil && index >= 0 && index < len(list) {
+				tp.golem.LogInfo("Got list '%s'[%d] = '%s'", name, index, list[index])
+				return list[index]
+			}
+			// Invalid index
+			tp.golem.LogInfo("Invalid index %s for list '%s'", indexStr, name)
+			return ""
+		}
+		// No index, return all items joined
+		result := strings.Join(list, " ")
+		tp.golem.LogInfo("Got all items from list '%s': '%s'", name, result)
+		return result
+
+	default:
+		// Unknown operation, return all items
+		tp.golem.LogInfo("Unknown operation '%s', returning all items", operation)
+		return strings.Join(list, " ")
 	}
 }
 
 func (tp *TreeProcessor) processArrayTag(node *ASTNode, content string) string {
 	// Process array tag - array operations
-	return tp.golem.processArrayTagsWithContext(fmt.Sprintf("<array>%s</array>", content), tp.ctx)
+	// Get the array name
+	name, exists := node.Attributes["name"]
+	if !exists {
+		return content
+	}
+
+	// Evaluate the array name if it contains tags
+	name = tp.evaluateAttributeValue(name)
+
+	// Get the index attribute (optional)
+	indexStr, hasIndex := node.Attributes["index"]
+	if hasIndex {
+		indexStr = tp.evaluateAttributeValue(indexStr)
+	}
+
+	// Get the operation (optional, default is "get")
+	operation, hasOperation := node.Attributes["operation"]
+	if !hasOperation {
+		operation = "get"
+	}
+
+	// If no knowledge base, just return empty string
+	if tp.ctx == nil || tp.ctx.KnowledgeBase == nil || tp.ctx.KnowledgeBase.Arrays == nil {
+		tp.golem.LogInfo("Array processing: no knowledge base available")
+		return ""
+	}
+
+	// Get or create the array
+	if tp.ctx.KnowledgeBase.Arrays[name] == nil {
+		tp.ctx.KnowledgeBase.Arrays[name] = make([]string, 0)
+		tp.golem.LogInfo("Created new array '%s'", name)
+	}
+	array := tp.ctx.KnowledgeBase.Arrays[name]
+	tp.golem.LogInfo("Processing array tag: name='%s', index='%s', operation='%s', content='%s'", name, indexStr, operation, content)
+	tp.golem.LogInfo("Before operation: array '%s' = %v", name, array)
+
+	switch operation {
+	case "set", "assign":
+		// Set item at specific index
+		if hasIndex {
+			if index, err := strconv.Atoi(indexStr); err == nil && index >= 0 {
+				// Ensure array is large enough
+				for len(array) <= index {
+					array = append(array, "")
+				}
+				array[index] = content
+				tp.ctx.KnowledgeBase.Arrays[name] = array
+				tp.golem.LogInfo("Set array '%s'[%d] = '%s'", name, index, content)
+				tp.golem.LogInfo("After set: array '%s' = %v", name, array)
+			} else {
+				// Invalid index
+				tp.golem.LogInfo("Invalid index %s for array '%s'", indexStr, name)
+			}
+		} else {
+			// No index specified, append to end
+			array = append(array, content)
+			tp.ctx.KnowledgeBase.Arrays[name] = array
+			tp.golem.LogInfo("Appended '%s' to array '%s'", content, name)
+			tp.golem.LogInfo("After append: array '%s' = %v", name, array)
+		}
+		return "" // Set operations don't return content
+
+	case "get", "":
+		// Get item at index
+		if hasIndex {
+			if index, err := strconv.Atoi(indexStr); err == nil && index >= 0 && index < len(array) {
+				tp.golem.LogInfo("Got array '%s'[%d] = '%s'", name, index, array[index])
+				return array[index]
+			}
+			// Invalid index
+			tp.golem.LogInfo("Invalid index %s for array '%s'", indexStr, name)
+			return ""
+		}
+		// Return all items joined by space
+		items := strings.Join(array, " ")
+		tp.golem.LogInfo("Got all items from array '%s': '%s'", name, items)
+		return items
+
+	case "size", "length":
+		// Return the size of the array
+		size := strconv.Itoa(len(array))
+		tp.golem.LogInfo("Array '%s' size: %s", name, size)
+		return size
+
+	case "clear":
+		// Clear the array
+		tp.ctx.KnowledgeBase.Arrays[name] = make([]string, 0)
+		tp.golem.LogInfo("Cleared array '%s'", name)
+		tp.golem.LogInfo("After clear: array '%s' = %v", name, tp.ctx.KnowledgeBase.Arrays[name])
+		return ""
+
+	default:
+		// Unknown operation, treat as get
+		tp.golem.LogInfo("Unknown operation '%s', treating as get", operation)
+		if hasIndex {
+			if index, err := strconv.Atoi(indexStr); err == nil && index >= 0 && index < len(array) {
+				return array[index]
+			}
+			return ""
+		}
+		return strings.Join(array, " ")
+	}
 }
 
 func (tp *TreeProcessor) processLearnTag(node *ASTNode, content string) string {
