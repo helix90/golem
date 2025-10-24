@@ -316,15 +316,137 @@ func (tp *TreeProcessor) processSelfClosingTag(node *ASTNode) string {
 // Tag processing methods
 
 func (tp *TreeProcessor) processSRAITag(node *ASTNode, content string) string {
-	// Process SRAI tag - recursive AIML processing
-	// Use the existing SRAI processing method
-	return tp.golem.processSRAITagsWithContext(fmt.Sprintf("<srai>%s</srai>", content), tp.ctx)
+	// Process SRAI tag - recursive AIML processing (Symbolic Reduction and Inference)
+	// Check recursion depth to prevent infinite recursion
+	if tp.ctx == nil || tp.ctx.RecursionDepth >= MaxSRAIRecursionDepth {
+		tp.golem.LogWarn("SRAI recursion depth limit reached (%d), stopping recursion", MaxSRAIRecursionDepth)
+		return content
+	}
+
+	// Trim and normalize the content
+	sraiContent := strings.TrimSpace(content)
+
+	tp.golem.LogInfo("Processing SRAI: '%s' (depth: %d)", sraiContent, tp.ctx.RecursionDepth)
+
+	// Try to match the SRAI content as a new AIML pattern
+	if tp.golem.aimlKB != nil {
+		category, wildcards, err := tp.golem.aimlKB.MatchPattern(sraiContent)
+		tp.golem.LogInfo("SRAI pattern match: content='%s', err=%v, category=%v, wildcards=%v",
+			sraiContent, err, category != nil, wildcards)
+
+		if err == nil && category != nil {
+			// Create a new context with incremented recursion depth
+			// Preserve all context except increment recursion depth
+			newCtx := &VariableContext{
+				LocalVars:      tp.ctx.LocalVars,
+				Session:        tp.ctx.Session,
+				Topic:          tp.ctx.Topic,
+				KnowledgeBase:  tp.ctx.KnowledgeBase,
+				RecursionDepth: tp.ctx.RecursionDepth + 1,
+				Wildcards:      tp.ctx.Wildcards, // Preserve parent wildcards
+			}
+
+			// Process the matched template with the new context
+			response := tp.golem.processTemplateWithContext(category.Template, wildcards, newCtx)
+			tp.golem.LogInfo("SRAI result: '%s' -> '%s'", sraiContent, response)
+			return response
+		} else {
+			// No match found, return the content as-is
+			tp.golem.LogInfo("SRAI no match for: '%s'", sraiContent)
+			return sraiContent
+		}
+	}
+
+	// No knowledge base, return content as-is
+	return sraiContent
 }
 
 func (tp *TreeProcessor) processSRAIXTag(node *ASTNode, content string) string {
-	// Process SRAIX tag - external service integration
-	// Use the existing SRAIX processing method
-	return tp.golem.processSRAIXTagsWithContext(fmt.Sprintf("<sraix>%s</sraix>", content), tp.ctx)
+	// Process SRAIX tag - external service integration (SRAI eXtended)
+	// Check if SRAIX manager is configured
+	if tp.golem.sraixMgr == nil {
+		tp.golem.LogInfo("SRAIX manager not configured, returning content")
+		return content
+	}
+
+	// Get and evaluate attributes
+	serviceName := ""
+	if val, exists := node.Attributes["service"]; exists {
+		serviceName = strings.TrimSpace(tp.evaluateAttributeValue(val))
+	}
+
+	botName := ""
+	if val, exists := node.Attributes["bot"]; exists {
+		botName = strings.TrimSpace(tp.evaluateAttributeValue(val))
+	}
+
+	botID := ""
+	if val, exists := node.Attributes["botid"]; exists {
+		botID = strings.TrimSpace(tp.evaluateAttributeValue(val))
+	}
+
+	hostName := ""
+	if val, exists := node.Attributes["host"]; exists {
+		hostName = strings.TrimSpace(tp.evaluateAttributeValue(val))
+	}
+
+	defaultResponse := ""
+	if val, exists := node.Attributes["default"]; exists {
+		defaultResponse = strings.TrimSpace(tp.evaluateAttributeValue(val))
+	}
+
+	hintText := ""
+	if val, exists := node.Attributes["hint"]; exists {
+		hintText = strings.TrimSpace(tp.evaluateAttributeValue(val))
+	}
+
+	// The content is already processed by the AST
+	sraixContent := strings.TrimSpace(content)
+
+	tp.golem.LogInfo("Processing SRAIX: service='%s', bot='%s', botid='%s', host='%s', default='%s', hint='%s', content='%s'",
+		serviceName, botName, botID, hostName, defaultResponse, hintText, sraixContent)
+
+	// Determine which service to use based on available attributes
+	var targetService string
+	if serviceName != "" {
+		targetService = serviceName
+	} else if botName != "" {
+		// Use bot name as service identifier
+		targetService = botName
+	} else {
+		tp.golem.LogInfo("SRAIX tag missing service or bot attribute")
+		// Use default response if available
+		if defaultResponse != "" {
+			return defaultResponse
+		}
+		return content
+	}
+
+	// Build request parameters
+	requestParams := make(map[string]string)
+	if botID != "" {
+		requestParams["botid"] = botID
+	}
+	if hostName != "" {
+		requestParams["host"] = hostName
+	}
+	if hintText != "" {
+		requestParams["hint"] = hintText
+	}
+
+	// Make the external service request
+	response, err := tp.golem.sraixMgr.ProcessSRAIX(targetService, sraixContent, requestParams)
+	if err != nil {
+		tp.golem.LogInfo("SRAIX request failed: %v", err)
+		// Use default response if available, otherwise return content
+		if defaultResponse != "" {
+			return defaultResponse
+		}
+		return content
+	}
+
+	tp.golem.LogInfo("SRAIX result: service='%s', input='%s' -> '%s'", targetService, sraixContent, response)
+	return response
 }
 
 func (tp *TreeProcessor) processThinkTag(node *ASTNode, content string) string {
