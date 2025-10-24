@@ -327,9 +327,15 @@ func (tp *TreeProcessor) processSRAIXTag(node *ASTNode, content string) string {
 }
 
 func (tp *TreeProcessor) processThinkTag(node *ASTNode, content string) string {
-	// Think tags don't output content, but may set variables
-	// Use the existing think processing method
-	return tp.golem.processThinkTagsWithContext(fmt.Sprintf("<think>%s</think>", content), tp.ctx)
+	// Process think tag - evaluates content but produces no output
+	// The content parameter already contains the fully processed result of all child nodes
+	// (variables have been set, operations performed, etc.)
+	// We simply return empty string to suppress output
+
+	tp.golem.LogInfo("Think tag: processed '%s' (no output)", content)
+
+	// Think tags don't output anything
+	return ""
 }
 
 // evaluateAttributeValue evaluates an attribute value if it contains AIML tags
