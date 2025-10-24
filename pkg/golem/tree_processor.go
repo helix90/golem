@@ -1145,13 +1145,49 @@ func (tp *TreeProcessor) processEvalTag(node *ASTNode, content string) string {
 }
 
 func (tp *TreeProcessor) processPersonTag(node *ASTNode, content string) string {
-	// Use the existing person processing method
-	return tp.golem.processPersonTagsWithContext(fmt.Sprintf("<person>%s</person>", content), tp.ctx)
+	// Process person tag - pronoun substitution (1st/2nd person swap)
+	// Normalize whitespace
+	content = strings.TrimSpace(content)
+	content = strings.Join(strings.Fields(content), " ")
+
+	// Check cache first
+	var substitutedContent string
+	if tp.golem.templateTagProcessingCache != nil {
+		if cached, found := tp.golem.templateTagProcessingCache.GetProcessedTag("person", content, tp.ctx); found {
+			substitutedContent = cached
+		} else {
+			substitutedContent = tp.golem.SubstitutePronouns(content)
+			tp.golem.templateTagProcessingCache.SetProcessedTag("person", content, substitutedContent, tp.ctx)
+		}
+	} else {
+		substitutedContent = tp.golem.SubstitutePronouns(content)
+	}
+
+	tp.golem.LogInfo("Person tag: '%s' -> '%s'", content, substitutedContent)
+	return substitutedContent
 }
 
 func (tp *TreeProcessor) processPerson2Tag(node *ASTNode, content string) string {
-	// Use the existing person2 processing method
-	return tp.golem.processPerson2TagsWithContext(fmt.Sprintf("<person2>%s</person2>", content), tp.ctx)
+	// Process person2 tag - first-to-third person pronoun substitution
+	// Normalize whitespace
+	content = strings.TrimSpace(content)
+	content = strings.Join(strings.Fields(content), " ")
+
+	// Check cache first
+	var substitutedContent string
+	if tp.golem.templateTagProcessingCache != nil {
+		if cached, found := tp.golem.templateTagProcessingCache.GetProcessedTag("person2", content, tp.ctx); found {
+			substitutedContent = cached
+		} else {
+			substitutedContent = tp.golem.SubstitutePronouns2(content)
+			tp.golem.templateTagProcessingCache.SetProcessedTag("person2", content, substitutedContent, tp.ctx)
+		}
+	} else {
+		substitutedContent = tp.golem.SubstitutePronouns2(content)
+	}
+
+	tp.golem.LogInfo("Person2 tag: '%s' -> '%s'", content, substitutedContent)
+	return substitutedContent
 }
 
 func (tp *TreeProcessor) processGenderTag(node *ASTNode, content string) string {
