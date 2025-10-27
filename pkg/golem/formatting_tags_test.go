@@ -63,7 +63,7 @@ func TestFormalTagProcessing(t *testing.T) {
 		{
 			name:     "Nested with other tags",
 			template: "<formal><uppercase>hello world</uppercase></formal>",
-			expected: "HELLO WORLD",
+			expected: "Hello World", // Tree processor evaluates inner tags first: uppercase("hello world")="HELLO WORLD", then formal("HELLO WORLD")="Hello World"
 		},
 	}
 

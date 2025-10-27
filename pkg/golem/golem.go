@@ -1168,7 +1168,7 @@ func New(verbose bool) *Golem {
 		patternMatchingCache:       patternMatchingCache,
 		persistentLearning:         persistentLearning,
 		treeProcessor:              treeProcessor,
-		useTreeProcessing:          false, // Default to regex-based processing
+		useTreeProcessing:          true, // Tree-based AST processing is now the default (correct AIML behavior)
 	}
 }
 

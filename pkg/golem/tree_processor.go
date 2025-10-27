@@ -74,7 +74,21 @@ func (tp *TreeProcessor) ProcessTemplate(template string, wildcards map[string]s
 	tp.ctx = ctx
 	result := tp.processNode(ast)
 
-	return result, nil
+	// Smart trimming: preserve intentional indentation; collapse whitespace-only to empty
+	// This matches the behavior of the consolidated template processor
+	finalResult := result
+	if len(result) > 0 {
+		// Collapse whitespace-only output to empty
+		if strings.TrimSpace(result) == "" {
+			finalResult = ""
+		} else if result[0] != ' ' && result[0] != '\t' {
+			// If it doesn't start with intentional indentation, trim normally
+			finalResult = strings.TrimSpace(result)
+		}
+		// If it starts with space/tab and has non-whitespace content, preserve it (intentional indentation)
+	}
+
+	return finalResult, nil
 }
 
 // processNode processes a single AST node
@@ -105,14 +119,24 @@ func (tp *TreeProcessor) processNode(node *ASTNode) string {
 
 // processTag processes a tag node
 func (tp *TreeProcessor) processTag(node *ASTNode) string {
-	// Process children first to handle nested tags
-	processedChildren := make([]string, len(node.Children))
-	for i, child := range node.Children {
-		processedChildren[i] = tp.processNode(child)
+	// Some tags need to process their children selectively (not all at once)
+	// For those tags, skip pre-processing children
+	skipChildProcessing := false
+	switch node.TagName {
+	case "random", "condition", "learn", "learnf":
+		skipChildProcessing = true
 	}
 
-	// Join processed children
-	content := strings.Join(processedChildren, "")
+	// Process children first to handle nested tags (unless tag handles its own children)
+	var content string
+	if !skipChildProcessing {
+		processedChildren := make([]string, len(node.Children))
+		for i, child := range node.Children {
+			processedChildren[i] = tp.processNode(child)
+		}
+		// Join processed children
+		content = strings.Join(processedChildren, "")
+	}
 
 	// Process the tag based on its name
 	switch node.TagName {
@@ -513,8 +537,14 @@ func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 				tp.ctx.Session.Variables = make(map[string]string)
 			}
 			tp.ctx.Session.Variables[name] = value
+		} else if tp.ctx.KnowledgeBase != nil {
+			// No session - set in knowledge base variables (global)
+			if tp.ctx.KnowledgeBase.Variables == nil {
+				tp.ctx.KnowledgeBase.Variables = make(map[string]string)
+			}
+			tp.ctx.KnowledgeBase.Variables[name] = value
 		} else {
-			// Fallback to local variables
+			// Fallback to local variables as last resort
 			if tp.ctx.LocalVars == nil {
 				tp.ctx.LocalVars = make(map[string]string)
 			}
@@ -558,7 +588,13 @@ func (tp *TreeProcessor) processGetTag(node *ASTNode, content string) string {
 				}
 			}
 		}
-		// Check global variables
+		// Check global variables (from knowledge base)
+		if tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.Variables != nil {
+			if value, exists := tp.ctx.KnowledgeBase.Variables[name]; exists {
+				return value
+			}
+		}
+		// Check bot properties
 		if tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.Properties != nil {
 			if value, exists := tp.ctx.KnowledgeBase.Properties[name]; exists {
 				return value
@@ -597,11 +633,20 @@ func (tp *TreeProcessor) processStarTag(node *ASTNode, content string) string {
 		}
 	}
 
-	// Get wildcard value
-	if tp.ctx != nil && tp.ctx.Session != nil {
-		key := fmt.Sprintf("star%d", index)
-		if value, exists := tp.ctx.Session.Variables[key]; exists {
-			return value
+	key := fmt.Sprintf("star%d", index)
+
+	// Get wildcard value - check session variables first, then wildcards in context
+	if tp.ctx != nil {
+		if tp.ctx.Session != nil {
+			if value, exists := tp.ctx.Session.Variables[key]; exists {
+				return value
+			}
+		}
+		// Also check the Wildcards map directly (for cases without a session)
+		if tp.ctx.Wildcards != nil {
+			if value, exists := tp.ctx.Wildcards[key]; exists {
+				return value
+			}
 		}
 	}
 
@@ -612,15 +657,23 @@ func (tp *TreeProcessor) processSRTag(node *ASTNode, content string) string {
 	// Process SR tag - shorthand for <srai><star/></srai>
 	// SR recursively processes the first wildcard (star1)
 
-	if tp.ctx == nil || tp.ctx.Session == nil {
-		tp.golem.LogDebug("SR tag: no context or session available")
+	if tp.ctx == nil {
+		tp.golem.LogDebug("SR tag: no context available")
 		return ""
 	}
 
-	// Get the first wildcard (star1) from session variables
+	// Get the first wildcard (star1) - check session variables first, then wildcards in context
 	starContent := ""
-	if value, exists := tp.ctx.Session.Variables["star1"]; exists {
-		starContent = value
+	if tp.ctx.Session != nil {
+		if value, exists := tp.ctx.Session.Variables["star1"]; exists {
+			starContent = value
+		}
+	}
+	// Also check the Wildcards map directly (for cases without a session)
+	if starContent == "" && tp.ctx.Wildcards != nil {
+		if value, exists := tp.ctx.Wildcards["star1"]; exists {
+			starContent = value
+		}
 	}
 
 	tp.golem.LogDebug("SR tag: star1 content='%s'", starContent)
@@ -661,7 +714,7 @@ func (tp *TreeProcessor) processSRTag(node *ASTNode, content string) string {
 
 	// Store old wildcards and restore them after processing
 	oldWildcards := make(map[string]string)
-	if tp.ctx.Session.Variables != nil {
+	if tp.ctx.Session != nil && tp.ctx.Session.Variables != nil {
 		// Save current wildcards
 		for k, v := range tp.ctx.Session.Variables {
 			if strings.HasPrefix(k, "star") {
@@ -673,13 +726,26 @@ func (tp *TreeProcessor) processSRTag(node *ASTNode, content string) string {
 		for k, v := range wildcards {
 			tp.ctx.Session.Variables[k] = v
 		}
+	} else if tp.ctx.Wildcards != nil {
+		// No session - use context wildcards instead
+		// Save current wildcards
+		for k, v := range tp.ctx.Wildcards {
+			if strings.HasPrefix(k, "star") {
+				oldWildcards[k] = v
+			}
+		}
+
+		// Set new wildcards from the matched pattern
+		for k, v := range wildcards {
+			tp.ctx.Wildcards[k] = v
+		}
 	}
 
 	// Process the matched template recursively
 	result := tp.golem.processTemplateWithContext(category.Template, wildcards, tp.ctx)
 
 	// Restore old wildcards
-	if tp.ctx.Session.Variables != nil {
+	if tp.ctx.Session != nil && tp.ctx.Session.Variables != nil {
 		// Remove wildcards from the matched pattern
 		for k := range wildcards {
 			delete(tp.ctx.Session.Variables, k)
@@ -687,6 +753,15 @@ func (tp *TreeProcessor) processSRTag(node *ASTNode, content string) string {
 		// Restore original wildcards
 		for k, v := range oldWildcards {
 			tp.ctx.Session.Variables[k] = v
+		}
+	} else if tp.ctx.Wildcards != nil {
+		// Remove wildcards from the matched pattern
+		for k := range wildcards {
+			delete(tp.ctx.Wildcards, k)
+		}
+		// Restore original wildcards
+		for k, v := range oldWildcards {
+			tp.ctx.Wildcards[k] = v
 		}
 	}
 
@@ -745,6 +820,8 @@ func (tp *TreeProcessor) processRandomTag(node *ASTNode, content string) string 
 	for _, child := range node.Children {
 		if child.Type == NodeTypeTag && child.TagName == "li" {
 			item := tp.processNode(child)
+			// Trim whitespace from each item
+			item = strings.TrimSpace(item)
 			if item != "" {
 				items = append(items, item)
 			}
@@ -761,29 +838,83 @@ func (tp *TreeProcessor) processRandomTag(node *ASTNode, content string) string 
 }
 
 func (tp *TreeProcessor) processListItemTag(node *ASTNode, content string) string {
-	// Process list item tag - just return processed content
-	return tp.processNode(&ASTNode{
-		Type:     NodeTypeText,
-		Content:  content,
-		Children: []*ASTNode{},
-	})
+	// Process list item tag - process and return children
+	var result strings.Builder
+	for _, child := range node.Children {
+		result.WriteString(tp.processNode(child))
+	}
+	return result.String()
 }
 
 func (tp *TreeProcessor) processConditionTag(node *ASTNode, content string) string {
-	// Process condition tag - conditional logic
-	// Build the condition tag with attributes for the regex-based processing
-	var conditionTag string
-	if name, exists := node.Attributes["name"]; exists {
-		conditionTag = fmt.Sprintf(`<condition name="%s"`, name)
-		if value, exists := node.Attributes["value"]; exists {
-			conditionTag += fmt.Sprintf(` value="%s"`, value)
-		}
-		conditionTag += fmt.Sprintf(`>%s</condition>`, content)
-	} else {
-		conditionTag = fmt.Sprintf("<condition>%s</condition>", content)
+	// Process condition tag - conditional logic (native implementation)
+
+	// Get the variable name and expected value from attributes
+	varName, hasName := node.Attributes["name"]
+	expectedValue, hasExpectedValue := node.Attributes["value"]
+
+	// Get the actual variable value
+	var actualValue string
+	if hasName {
+		actualValue = tp.golem.resolveVariable(varName, tp.ctx)
 	}
 
-	return tp.golem.processConditionTagsWithContext(conditionTag, tp.ctx)
+	// Type 1: Simple condition with value attribute
+	if hasExpectedValue {
+		if strings.EqualFold(actualValue, expectedValue) {
+			// Process children
+			var result strings.Builder
+			for _, child := range node.Children {
+				result.WriteString(tp.processNode(child))
+			}
+			return result.String()
+		}
+		return "" // No match
+	}
+
+	// Type 2: Multiple <li> conditions
+	var defaultLi *ASTNode
+	for _, child := range node.Children {
+		if child.Type == NodeTypeTag && child.TagName == "li" {
+			liValue, hasValue := child.Attributes["value"]
+
+			// If no value, this is the default case - save it for later
+			if !hasValue || liValue == "" {
+				defaultLi = child
+				continue
+			}
+
+			// Check if this condition matches
+			if strings.EqualFold(actualValue, liValue) {
+				// Process this li's children
+				var result strings.Builder
+				for _, liChild := range child.Children {
+					result.WriteString(tp.processNode(liChild))
+				}
+				return strings.TrimSpace(result.String())
+			}
+		}
+	}
+
+	// No match found, use default <li> if available
+	if defaultLi != nil {
+		var result strings.Builder
+		for _, liChild := range defaultLi.Children {
+			result.WriteString(tp.processNode(liChild))
+		}
+		return strings.TrimSpace(result.String())
+	}
+
+	// Type 3: No <li> elements and no value - just check if variable has a value
+	if hasName && actualValue != "" {
+		var result strings.Builder
+		for _, child := range node.Children {
+			result.WriteString(tp.processNode(child))
+		}
+		return result.String()
+	}
+
+	return "" // No match
 }
 
 func (tp *TreeProcessor) processMapTag(node *ASTNode, content string) string {
@@ -1468,12 +1599,14 @@ func (tp *TreeProcessor) processReverseTag(node *ASTNode, content string) string
 }
 
 func (tp *TreeProcessor) processAcronymTag(node *ASTNode, content string) string {
-	// Process content directly - convert to acronym
+	// Process content directly - convert to acronym (first letter of each word, uppercase)
 	words := strings.Fields(content)
 	var acronym strings.Builder
 	for _, word := range words {
 		if len(word) > 0 {
-			acronym.WriteRune(rune(word[0]))
+			// Take first letter and uppercase it
+			firstLetter := strings.ToUpper(string(word[0]))
+			acronym.WriteString(firstLetter)
 		}
 	}
 	return acronym.String()
@@ -1853,16 +1986,28 @@ func (tp *TreeProcessor) processDateTag(node *ASTNode, content string) string {
 	if f, exists := node.Attributes["format"]; exists {
 		format = f
 	}
-	return time.Now().Format(format)
+	// Convert C-style or alternative formats to Go time format
+	goFormat := tp.golem.convertToGoTimeFormat(format)
+	return time.Now().Format(goFormat)
 }
 
 func (tp *TreeProcessor) processTimeTag(node *ASTNode, content string) string {
 	// Time tag - current time
-	format := "3:04 PM"
+	defaultFormat := "3:04 PM"
+	format := defaultFormat
 	if f, exists := node.Attributes["format"]; exists {
 		format = f
 	}
-	return time.Now().Format(format)
+	// Convert C-style or alternative formats to Go time format
+	goFormat := tp.golem.convertToGoTimeFormat(format)
+
+	// If format conversion didn't change anything and it's not a recognized Go format,
+	// fall back to default
+	if goFormat == format && !tp.golem.looksLikeGoTimeFormat(format) && format != defaultFormat {
+		goFormat = defaultFormat
+	}
+
+	return time.Now().Format(goFormat)
 }
 
 // System tags
@@ -1952,8 +2097,30 @@ func (tp *TreeProcessor) processUnlearnTag(node *ASTNode, content string) string
 }
 
 func (tp *TreeProcessor) processUnlearnfTag(node *ASTNode, content string) string {
-	// Unlearnf tag - remove learned files
-	// For now, return empty string as this functionality needs to be implemented
+	// Unlearnf tag - remove categories from persistent storage
+	if tp.golem.aimlKB == nil {
+		tp.golem.LogWarn("Unlearnf: No knowledge base available")
+		return ""
+	}
+
+	tp.golem.LogInfo("Processing unlearnf: '%s'", content)
+
+	// Parse the AIML content within the unlearnf tag
+	categories, err := tp.golem.parseLearnContent(content)
+	if err != nil {
+		tp.golem.LogError("Failed to parse unlearnf content: %v", err)
+		return ""
+	}
+
+	// Remove categories from persistent knowledge base
+	for _, category := range categories {
+		err := tp.golem.removePersistentCategory(category)
+		if err != nil {
+			tp.golem.LogInfo("Failed to remove persistent category: %v", err)
+		}
+	}
+
+	// Unlearnf tags don't output content
 	return ""
 }
 

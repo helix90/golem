@@ -410,6 +410,22 @@ func (p *ASTParser) parseAttributeName() string {
 
 // parseAttributeValue parses an attribute value
 func (p *ASTParser) parseAttributeValue() string {
+	// Handle backslash-escaped quotes (common in Go string literals)
+	if p.peek(2) == "\\\"" {
+		p.consume('\\')
+		p.consume('"')
+		start := p.pos
+		for p.pos < p.len {
+			if p.peek(2) == "\\\"" {
+				p.consume('\\')
+				p.consume('"')
+				break
+			}
+			p.pos++
+		}
+		return p.input[start : p.pos-2]
+	}
+
 	if p.peek(1) == "\"" {
 		p.consume('"')
 		start := p.pos

@@ -622,7 +622,9 @@ func TestSRAIWithSession(t *testing.T) {
 	// Test SRAI processing with session
 	template := "I can help you with various tasks. <srai>WHAT IS YOUR NAME</srai>"
 	result := g.ProcessTemplateWithSession(template, make(map[string]string), session)
-	expected := "I can help you with various tasks. My name is Golem, your AI assistant."
+	// Note: Template uses <get name="name"/> which checks session variables first
+	// Session has name="TestUser", so that takes precedence over bot property name="Golem"
+	expected := "I can help you with various tasks. My name is TestUser, your AI assistant."
 
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
@@ -649,7 +651,8 @@ func TestSRAINoMatch(t *testing.T) {
 	// Test SRAI with no matching pattern
 	template := "I can help you. <srai>NONEXISTENT PATTERN</srai>"
 	result := g.ProcessTemplate(template, make(map[string]string))
-	expected := "I can help you. <srai>NONEXISTENT PATTERN</srai>"
+	// Per AIML spec: SRAI with no match returns the input text (not empty, not the tag preserved)
+	expected := "I can help you. NONEXISTENT PATTERN"
 
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
@@ -4083,12 +4086,12 @@ func TestBotTagProcessing(t *testing.T) {
 		{
 			name:     "Non-existent bot property",
 			template: "Hello! I am <bot name=\"nonexistent\"/>.",
-			expected: "Hello! I am <bot name=\"nonexistent\"/>.",
+			expected: "Hello! I am .", // Per AIML spec: missing properties return empty string
 		},
 		{
 			name:     "Empty bot property",
 			template: "Hello! I am <bot name=\"empty\"/>.",
-			expected: "Hello! I am <bot name=\"empty\"/>.",
+			expected: "Hello! I am .", // Per AIML spec: empty properties return empty string
 		},
 		{
 			name:     "Mixed bot and get tags",
