@@ -32,32 +32,34 @@ type Category struct {
 
 // AIMLKnowledgeBase stores the parsed AIML data for efficient searching
 type AIMLKnowledgeBase struct {
-	Categories    []Category
-	Patterns      map[string]*Category
-	Sets          map[string][]string
-	Topics        map[string][]string
-	TopicVars     map[string]map[string]string // TopicVars: topicName -> varName -> value
-	Variables     map[string]string
-	Properties    map[string]string
-	Maps          map[string]map[string]string // Maps: mapName -> key -> value
-	Lists         map[string][]string          // Lists: listName -> []values
-	Arrays        map[string][]string          // Arrays: arrayName -> []values
-	Substitutions map[string]map[string]string // Substitutions: substitutionName -> pattern -> replacement
+	Categories     []Category
+	Patterns       map[string]*Category
+	Sets           map[string][]string                   // Sets: for pattern matching (e.g., <set name="colors">)
+	Topics         map[string][]string
+	TopicVars      map[string]map[string]string          // TopicVars: topicName -> varName -> value
+	Variables      map[string]string
+	Properties     map[string]string
+	Maps           map[string]map[string]string          // Maps: mapName -> key -> value
+	Lists          map[string][]string                   // Lists: listName -> []values
+	Arrays         map[string][]string                   // Arrays: arrayName -> []values
+	SetCollections map[string]map[string]bool            // SetCollections: setName -> unique values (as map keys)
+	Substitutions  map[string]map[string]string          // Substitutions: substitutionName -> pattern -> replacement
 }
 
 // NewAIMLKnowledgeBase creates a new knowledge base
 func NewAIMLKnowledgeBase() *AIMLKnowledgeBase {
 	return &AIMLKnowledgeBase{
-		Patterns:      make(map[string]*Category),
-		Sets:          make(map[string][]string),
-		Topics:        make(map[string][]string),
-		TopicVars:     make(map[string]map[string]string),
-		Variables:     make(map[string]string),
-		Properties:    make(map[string]string),
-		Maps:          make(map[string]map[string]string),
-		Lists:         make(map[string][]string),
-		Arrays:        make(map[string][]string),
-		Substitutions: make(map[string]map[string]string),
+		Patterns:       make(map[string]*Category),
+		Sets:           make(map[string][]string),
+		Topics:         make(map[string][]string),
+		TopicVars:      make(map[string]map[string]string),
+		Variables:      make(map[string]string),
+		Properties:     make(map[string]string),
+		Maps:           make(map[string]map[string]string),
+		Lists:          make(map[string][]string),
+		Arrays:         make(map[string][]string),
+		SetCollections: make(map[string]map[string]bool),
+		Substitutions:  make(map[string]map[string]string),
 	}
 }
 
@@ -101,16 +103,17 @@ func (g *Golem) LoadAIMLFromString(content string) error {
 // aimlToKnowledgeBase converts AIML to AIMLKnowledgeBase
 func (g *Golem) aimlToKnowledgeBase(aiml *AIML) *AIMLKnowledgeBase {
 	kb := &AIMLKnowledgeBase{
-		Categories:    aiml.Categories,
-		Patterns:      make(map[string]*Category),
-		Sets:          make(map[string][]string),
-		Topics:        make(map[string][]string),
-		Variables:     make(map[string]string),
-		Properties:    make(map[string]string),
-		Maps:          make(map[string]map[string]string),
-		Lists:         make(map[string][]string),
-		Arrays:        make(map[string][]string),
-		Substitutions: make(map[string]map[string]string),
+		Categories:     aiml.Categories,
+		Patterns:       make(map[string]*Category),
+		Sets:           make(map[string][]string),
+		Topics:         make(map[string][]string),
+		Variables:      make(map[string]string),
+		Properties:     make(map[string]string),
+		Maps:           make(map[string]map[string]string),
+		Lists:          make(map[string][]string),
+		Arrays:         make(map[string][]string),
+		SetCollections: make(map[string]map[string]bool),
+		Substitutions:  make(map[string]map[string]string),
 	}
 
 	// Build pattern index
@@ -136,16 +139,17 @@ func (g *Golem) aimlToKnowledgeBase(aiml *AIML) *AIMLKnowledgeBase {
 // mergeKnowledgeBases merges two knowledge bases
 func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledgeBase, error) {
 	mergedKB := &AIMLKnowledgeBase{
-		Categories:    make([]Category, 0),
-		Patterns:      make(map[string]*Category),
-		Sets:          make(map[string][]string),
-		Topics:        make(map[string][]string),
-		Variables:     make(map[string]string),
-		Properties:    make(map[string]string),
-		Maps:          make(map[string]map[string]string),
-		Lists:         make(map[string][]string),
-		Arrays:        make(map[string][]string),
-		Substitutions: make(map[string]map[string]string),
+		Categories:     make([]Category, 0),
+		Patterns:       make(map[string]*Category),
+		Sets:           make(map[string][]string),
+		Topics:         make(map[string][]string),
+		Variables:      make(map[string]string),
+		Properties:     make(map[string]string),
+		Maps:           make(map[string]map[string]string),
+		Lists:          make(map[string][]string),
+		Arrays:         make(map[string][]string),
+		SetCollections: make(map[string]map[string]bool),
+		Substitutions:  make(map[string]map[string]string),
 	}
 
 	// Copy from first knowledge base
@@ -173,6 +177,9 @@ func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledge
 	}
 	for arrayName, arrayData := range kb1.Arrays {
 		mergedKB.Arrays[arrayName] = arrayData
+	}
+	for setName, setData := range kb1.SetCollections {
+		mergedKB.SetCollections[setName] = setData
 	}
 	for subName, subData := range kb1.Substitutions {
 		mergedKB.Substitutions[subName] = subData
@@ -220,6 +227,14 @@ func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledge
 			mergedKB.Arrays[arrayName] = make([]string, 0)
 		}
 		mergedKB.Arrays[arrayName] = append(mergedKB.Arrays[arrayName], arrayData...)
+	}
+	for setName, setData := range kb2.SetCollections {
+		if mergedKB.SetCollections[setName] == nil {
+			mergedKB.SetCollections[setName] = make(map[string]bool)
+		}
+		for item := range setData {
+			mergedKB.SetCollections[setName][item] = true
+		}
 	}
 	for subName, subData := range kb2.Substitutions {
 		if mergedKB.Substitutions[subName] == nil {

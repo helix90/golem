@@ -517,7 +517,7 @@ func (tp *TreeProcessor) evaluateAttributeValue(value string) string {
 }
 
 func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
-	// Process set tag - variable assignment
+	// Process set tag - can be either variable assignment OR collection operations
 	name, exists := node.Attributes["name"]
 	if !exists {
 		return content
@@ -526,6 +526,24 @@ func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 	// Evaluate the name if it contains AIML tags (like <star/>)
 	name = tp.evaluateAttributeValue(name)
 
+	// Check if this is a collection operation (has operation attribute)
+	operation, hasOperation := node.Attributes["operation"]
+
+	if hasOperation {
+		// This is a Set collection operation, not a variable assignment
+		return tp.processSetCollectionTag(node, name, operation, content)
+	}
+
+	// No operation attribute - check if a Set collection with this name already exists
+	// If yes, treat it as "get" operation; if no, treat as variable assignment
+	if tp.ctx != nil && tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.SetCollections != nil {
+		if _, exists := tp.ctx.KnowledgeBase.SetCollections[name]; exists {
+			// Set collection exists, treat this as a "get" operation
+			return tp.processSetCollectionTag(node, name, "get", content)
+		}
+	}
+
+	// No operation and no existing Set collection - this is variable assignment (original behavior)
 	// Process the content to get the value
 	value := content // Content is already processed by processNode
 
@@ -554,6 +572,92 @@ func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 
 	// Set tags don't output content
 	return ""
+}
+
+func (tp *TreeProcessor) processSetCollectionTag(node *ASTNode, name string, operation string, content string) string {
+	// Process Set collection operations (unique values)
+	// Check for required knowledge base
+	if tp.ctx == nil || tp.ctx.KnowledgeBase == nil || tp.ctx.KnowledgeBase.SetCollections == nil {
+		tp.golem.LogInfo("Set collection: no knowledge base available")
+		return ""
+	}
+
+	// Get or create the set
+	if tp.ctx.KnowledgeBase.SetCollections[name] == nil {
+		tp.ctx.KnowledgeBase.SetCollections[name] = make(map[string]bool)
+		tp.golem.LogInfo("Created new set collection '%s'", name)
+	}
+
+	setData := tp.ctx.KnowledgeBase.SetCollections[name]
+	item := strings.TrimSpace(content)
+
+	tp.golem.LogInfo("Set collection tag: name='%s', operation='%s', item='%s'", name, operation, item)
+	tp.golem.LogInfo("Before operation: set '%s' has %d items", name, len(setData))
+
+	switch operation {
+	case "add":
+		// Add item to set (only if not already present)
+		if item != "" {
+			setData[item] = true
+			tp.golem.LogInfo("Added '%s' to set '%s'", item, name)
+		}
+		return "" // Add operations don't return content
+
+	case "remove", "delete":
+		// Remove item from set
+		if item != "" {
+			if _, exists := setData[item]; exists {
+				delete(setData, item)
+				tp.golem.LogInfo("Removed '%s' from set '%s'", item, name)
+			} else {
+				tp.golem.LogInfo("Item '%s' not found in set '%s'", item, name)
+			}
+		}
+		return "" // Remove operations don't return content
+
+	case "clear":
+		// Clear all items from set
+		tp.ctx.KnowledgeBase.SetCollections[name] = make(map[string]bool)
+		tp.golem.LogInfo("Cleared set '%s'", name)
+		return "" // Clear operations don't return content
+
+	case "size", "length":
+		// Return the size of the set
+		size := strconv.Itoa(len(setData))
+		tp.golem.LogInfo("Set '%s' size: %s", name, size)
+		return size
+
+	case "contains", "has":
+		// Check if set contains item
+		_, contains := setData[item]
+		result := "false"
+		if contains {
+			result = "true"
+		}
+		tp.golem.LogInfo("Set '%s' contains '%s': %s", name, item, result)
+		return result
+
+	case "get", "":
+		// Return all items in set (space-separated, sorted for consistency)
+		items := make([]string, 0, len(setData))
+		for item := range setData {
+			items = append(items, item)
+		}
+		sort.Strings(items) // Sort for consistent output
+		result := strings.Join(items, " ")
+		tp.golem.LogInfo("Got all items from set '%s': '%s'", name, result)
+		return result
+
+	default:
+		// Unknown operation, return all items
+		tp.golem.LogInfo("Unknown operation '%s', returning all items", operation)
+		items := make([]string, 0, len(setData))
+		for item := range setData {
+			items = append(items, item)
+		}
+		sort.Strings(items)
+		return strings.Join(items, " ")
+	}
 }
 
 func (tp *TreeProcessor) processGetTag(node *ASTNode, content string) string {

@@ -179,13 +179,17 @@ func (al *AIMLLoader) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKno
 	}
 
 	result := &AIMLKnowledgeBase{
-		Categories: make([]Category, 0, len(kb1.Categories)+len(kb2.Categories)),
-		Patterns:   make(map[string]*Category),
-		Sets:       make(map[string][]string),
-		Topics:     make(map[string][]string),
-		Variables:  make(map[string]string),
-		Properties: make(map[string]string),
-		Maps:       make(map[string]map[string]string),
+		Categories:     make([]Category, 0, len(kb1.Categories)+len(kb2.Categories)),
+		Patterns:       make(map[string]*Category),
+		Sets:           make(map[string][]string),
+		Topics:         make(map[string][]string),
+		Variables:      make(map[string]string),
+		Properties:     make(map[string]string),
+		Maps:           make(map[string]map[string]string),
+		Lists:          make(map[string][]string),
+		Arrays:         make(map[string][]string),
+		SetCollections: make(map[string]map[string]bool),
+		Substitutions:  make(map[string]map[string]string),
 	}
 
 	// Add categories from both knowledge bases
