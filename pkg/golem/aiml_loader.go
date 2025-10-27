@@ -188,7 +188,7 @@ func (al *AIMLLoader) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKno
 		Maps:           make(map[string]map[string]string),
 		Lists:          make(map[string][]string),
 		Arrays:         make(map[string][]string),
-		SetCollections: make(map[string]map[string]bool),
+		SetCollections: make(map[string]*SetCollection),
 		Substitutions:  make(map[string]map[string]string),
 	}
 

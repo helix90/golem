@@ -30,6 +30,20 @@ type Category struct {
 	Topic     string
 }
 
+// SetCollection represents an ordered set (maintains insertion order while ensuring uniqueness)
+type SetCollection struct {
+	Items []string          // Maintains insertion order
+	Index map[string]bool   // For O(1) uniqueness checking
+}
+
+// NewSetCollection creates a new empty set collection
+func NewSetCollection() *SetCollection {
+	return &SetCollection{
+		Items: make([]string, 0),
+		Index: make(map[string]bool),
+	}
+}
+
 // AIMLKnowledgeBase stores the parsed AIML data for efficient searching
 type AIMLKnowledgeBase struct {
 	Categories     []Category
@@ -42,7 +56,7 @@ type AIMLKnowledgeBase struct {
 	Maps           map[string]map[string]string          // Maps: mapName -> key -> value
 	Lists          map[string][]string                   // Lists: listName -> []values
 	Arrays         map[string][]string                   // Arrays: arrayName -> []values
-	SetCollections map[string]map[string]bool            // SetCollections: setName -> unique values (as map keys)
+	SetCollections map[string]*SetCollection             // SetCollections: setName -> ordered unique values
 	Substitutions  map[string]map[string]string          // Substitutions: substitutionName -> pattern -> replacement
 }
 
@@ -58,7 +72,7 @@ func NewAIMLKnowledgeBase() *AIMLKnowledgeBase {
 		Maps:           make(map[string]map[string]string),
 		Lists:          make(map[string][]string),
 		Arrays:         make(map[string][]string),
-		SetCollections: make(map[string]map[string]bool),
+		SetCollections: make(map[string]*SetCollection),
 		Substitutions:  make(map[string]map[string]string),
 	}
 }
@@ -112,7 +126,7 @@ func (g *Golem) aimlToKnowledgeBase(aiml *AIML) *AIMLKnowledgeBase {
 		Maps:           make(map[string]map[string]string),
 		Lists:          make(map[string][]string),
 		Arrays:         make(map[string][]string),
-		SetCollections: make(map[string]map[string]bool),
+		SetCollections: make(map[string]*SetCollection),
 		Substitutions:  make(map[string]map[string]string),
 	}
 
@@ -148,7 +162,7 @@ func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledge
 		Maps:           make(map[string]map[string]string),
 		Lists:          make(map[string][]string),
 		Arrays:         make(map[string][]string),
-		SetCollections: make(map[string]map[string]bool),
+		SetCollections: make(map[string]*SetCollection),
 		Substitutions:  make(map[string]map[string]string),
 	}
 
@@ -230,10 +244,14 @@ func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledge
 	}
 	for setName, setData := range kb2.SetCollections {
 		if mergedKB.SetCollections[setName] == nil {
-			mergedKB.SetCollections[setName] = make(map[string]bool)
+			mergedKB.SetCollections[setName] = NewSetCollection()
 		}
-		for item := range setData {
-			mergedKB.SetCollections[setName][item] = true
+		// Merge items while maintaining uniqueness
+		for _, item := range setData.Items {
+			if !mergedKB.SetCollections[setName].Index[item] {
+				mergedKB.SetCollections[setName].Items = append(mergedKB.SetCollections[setName].Items, item)
+				mergedKB.SetCollections[setName].Index[item] = true
+			}
 		}
 	}
 	for subName, subData := range kb2.Substitutions {

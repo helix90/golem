@@ -575,7 +575,7 @@ func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 }
 
 func (tp *TreeProcessor) processSetCollectionTag(node *ASTNode, name string, operation string, content string) string {
-	// Process Set collection operations (unique values)
+	// Process Set collection operations (unique values with insertion order)
 	// Check for required knowledge base
 	if tp.ctx == nil || tp.ctx.KnowledgeBase == nil || tp.ctx.KnowledgeBase.SetCollections == nil {
 		tp.golem.LogInfo("Set collection: no knowledge base available")
@@ -584,7 +584,7 @@ func (tp *TreeProcessor) processSetCollectionTag(node *ASTNode, name string, ope
 
 	// Get or create the set
 	if tp.ctx.KnowledgeBase.SetCollections[name] == nil {
-		tp.ctx.KnowledgeBase.SetCollections[name] = make(map[string]bool)
+		tp.ctx.KnowledgeBase.SetCollections[name] = NewSetCollection()
 		tp.golem.LogInfo("Created new set collection '%s'", name)
 	}
 
@@ -592,44 +592,51 @@ func (tp *TreeProcessor) processSetCollectionTag(node *ASTNode, name string, ope
 	item := strings.TrimSpace(content)
 
 	tp.golem.LogInfo("Set collection tag: name='%s', operation='%s', item='%s'", name, operation, item)
-	tp.golem.LogInfo("Before operation: set '%s' has %d items", name, len(setData))
+	tp.golem.LogInfo("Before operation: set '%s' has %d items", name, len(setData.Items))
 
 	switch operation {
 	case "add":
-		// Add item to set (only if not already present)
-		if item != "" {
-			setData[item] = true
+		// Add item to set (only if not already present) maintaining insertion order
+		if item != "" && !setData.Index[item] {
+			setData.Items = append(setData.Items, item)
+			setData.Index[item] = true
 			tp.golem.LogInfo("Added '%s' to set '%s'", item, name)
 		}
 		return "" // Add operations don't return content
 
 	case "remove", "delete":
 		// Remove item from set
-		if item != "" {
-			if _, exists := setData[item]; exists {
-				delete(setData, item)
-				tp.golem.LogInfo("Removed '%s' from set '%s'", item, name)
-			} else {
-				tp.golem.LogInfo("Item '%s' not found in set '%s'", item, name)
+		if item != "" && setData.Index[item] {
+			// Remove from index
+			delete(setData.Index, item)
+			// Remove from items slice
+			for i, v := range setData.Items {
+				if v == item {
+					setData.Items = append(setData.Items[:i], setData.Items[i+1:]...)
+					break
+				}
 			}
+			tp.golem.LogInfo("Removed '%s' from set '%s'", item, name)
+		} else {
+			tp.golem.LogInfo("Item '%s' not found in set '%s'", item, name)
 		}
 		return "" // Remove operations don't return content
 
 	case "clear":
 		// Clear all items from set
-		tp.ctx.KnowledgeBase.SetCollections[name] = make(map[string]bool)
+		tp.ctx.KnowledgeBase.SetCollections[name] = NewSetCollection()
 		tp.golem.LogInfo("Cleared set '%s'", name)
 		return "" // Clear operations don't return content
 
 	case "size", "length":
 		// Return the size of the set
-		size := strconv.Itoa(len(setData))
+		size := strconv.Itoa(len(setData.Items))
 		tp.golem.LogInfo("Set '%s' size: %s", name, size)
 		return size
 
 	case "contains", "has":
 		// Check if set contains item
-		_, contains := setData[item]
+		contains := setData.Index[item]
 		result := "false"
 		if contains {
 			result = "true"
@@ -638,25 +645,15 @@ func (tp *TreeProcessor) processSetCollectionTag(node *ASTNode, name string, ope
 		return result
 
 	case "get", "":
-		// Return all items in set (space-separated, sorted for consistency)
-		items := make([]string, 0, len(setData))
-		for item := range setData {
-			items = append(items, item)
-		}
-		sort.Strings(items) // Sort for consistent output
-		result := strings.Join(items, " ")
+		// Return all items in set (space-separated, in insertion order)
+		result := strings.Join(setData.Items, " ")
 		tp.golem.LogInfo("Got all items from set '%s': '%s'", name, result)
 		return result
 
 	default:
 		// Unknown operation, return all items
 		tp.golem.LogInfo("Unknown operation '%s', returning all items", operation)
-		items := make([]string, 0, len(setData))
-		for item := range setData {
-			items = append(items, item)
-		}
-		sort.Strings(items)
-		return strings.Join(items, " ")
+		return strings.Join(setData.Items, " ")
 	}
 }
 
