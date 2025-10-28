@@ -11,8 +11,9 @@ import (
 
 // TreeProcessor handles processing of AST nodes for AIML tag processing
 type TreeProcessor struct {
-	golem *Golem
-	ctx   *VariableContext
+	golem       *Golem
+	ctx         *VariableContext
+	starCounter int // Tracks auto-incrementing star index for <star/> tags without explicit index
 }
 
 // NewTreeProcessor creates a new tree processor
@@ -24,6 +25,9 @@ func NewTreeProcessor(golem *Golem) *TreeProcessor {
 
 // ProcessTemplate processes a template using tree-based approach
 func (tp *TreeProcessor) ProcessTemplate(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
+	// Reset star counter for auto-incrementing <star/> tags
+	tp.starCounter = 0
+
 	// Parse template into AST
 	parser := NewASTParser(template)
 	ast, err := parser.Parse()
@@ -736,11 +740,19 @@ func (tp *TreeProcessor) processBotTag(node *ASTNode, content string) string {
 
 func (tp *TreeProcessor) processStarTag(node *ASTNode, content string) string {
 	// Process star tag - wildcard reference
-	index := 1
+	var index int
 	if idx, exists := node.Attributes["index"]; exists {
+		// Explicit index provided
 		if parsed, err := strconv.Atoi(idx); err == nil {
 			index = parsed
+		} else {
+			index = 1 // Default to 1 if parsing fails
 		}
+	} else {
+		// No explicit index - auto-increment for AIML spec compliance
+		// First <star/> is star1, second is star2, etc.
+		tp.starCounter++
+		index = tp.starCounter
 	}
 
 	key := fmt.Sprintf("star%d", index)
