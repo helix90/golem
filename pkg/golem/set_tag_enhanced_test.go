@@ -35,7 +35,7 @@ func TestSetTagEnhancedBasicOperations(t *testing.T) {
 
 	// Test 1: Set username
 	response, _ := g.ProcessInput("SET USERNAME", session)
-	expected := "Hello , welcome!"
+	expected := "Hello , welcome!" // Set returns empty for regex processor compatibility
 	if response != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, response)
 	}
@@ -49,7 +49,7 @@ func TestSetTagEnhancedBasicOperations(t *testing.T) {
 
 	// Test 2: Set age with explicit assign operation
 	response, _ = g.ProcessInput("SET AGE", session)
-	expected = "Setting age:"
+	expected = "Setting age:" // Set returns empty for regex processor compatibility
 	if response != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, response)
 	}
