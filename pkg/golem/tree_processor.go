@@ -74,20 +74,8 @@ func (tp *TreeProcessor) ProcessTemplate(template string, wildcards map[string]s
 	tp.ctx = ctx
 	result := tp.processNode(ast)
 
-	// Smart trimming: preserve meaningful spaces; collapse whitespace-only to empty
-	// This matches the behavior of the consolidated template processor
-	finalResult := result
-	if len(result) > 0 {
-		// Collapse whitespace-only output to empty
-		if strings.TrimSpace(result) == "" {
-			finalResult = ""
-		} else {
-			// Trim leading and trailing newlines/tabs, but preserve spaces
-			finalResult = strings.Trim(result, "\n\r\t")
-		}
-	}
-
-	return finalResult, nil
+	// Trim all leading and trailing whitespace from final output (AIML spec)
+	return strings.TrimSpace(result), nil
 }
 
 // processNode processes a single AST node
@@ -1682,13 +1670,42 @@ func (tp *TreeProcessor) processFormalTag(node *ASTNode, content string) string 
 }
 
 func (tp *TreeProcessor) processCapitalizeTag(node *ASTNode, content string) string {
-	// Process content directly - capitalize first letter only
+	// Process content directly - capitalize first letter, lowercase the rest (AIML spec)
 	if content == "" {
 		return content
 	}
 
-	// Capitalize first letter, keep rest as-is
-	return strings.ToUpper(string(content[0])) + content[1:]
+	// Convert to rune slice to handle Unicode properly
+	runes := []rune(content)
+	if len(runes) == 0 {
+		return ""
+	}
+
+	// Special case: if input consists of single-character tokens separated by spaces
+	tokens := strings.Fields(content)
+	if len(tokens) > 1 {
+		allSingle := true
+		for _, t := range tokens {
+			if len([]rune(t)) != 1 {
+				allSingle = false
+				break
+			}
+		}
+		if allSingle {
+			for i := range tokens {
+				tokens[i] = strings.ToUpper(tokens[i])
+			}
+			return strings.Join(tokens, " ")
+		}
+	}
+
+	// Capitalize first character, lowercase the rest
+	runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+	for i := 1; i < len(runes); i++ {
+		runes[i] = []rune(strings.ToLower(string(runes[i])))[0]
+	}
+
+	return string(runes)
 }
 
 func (tp *TreeProcessor) processExplodeTag(node *ASTNode, content string) string {

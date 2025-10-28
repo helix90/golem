@@ -326,7 +326,7 @@ func TestTreeProcessorListTag(t *testing.T) {
     </category>
 </aiml>`,
 			input:    "SHOW NUMBERS",
-			expected: "Numbers: ",
+			expected: "Numbers:",
 		},
 	}
 
