@@ -740,19 +740,14 @@ func (tp *TreeProcessor) processBotTag(node *ASTNode, content string) string {
 
 func (tp *TreeProcessor) processStarTag(node *ASTNode, content string) string {
 	// Process star tag - wildcard reference
-	var index int
+	// <star/> without index always refers to star1 (first wildcard)
+	// <star index="2"/> refers to star2 (second wildcard), etc.
+	index := 1
 	if idx, exists := node.Attributes["index"]; exists {
 		// Explicit index provided
 		if parsed, err := strconv.Atoi(idx); err == nil {
 			index = parsed
-		} else {
-			index = 1 // Default to 1 if parsing fails
 		}
-	} else {
-		// No explicit index - auto-increment for AIML spec compliance
-		// First <star/> is star1, second is star2, etc.
-		tp.starCounter++
-		index = tp.starCounter
 	}
 
 	key := fmt.Sprintf("star%d", index)
@@ -1965,8 +1960,15 @@ func (tp *TreeProcessor) processJoinTag(node *ASTNode, content string) string {
 }
 
 func (tp *TreeProcessor) processUniqueTag(node *ASTNode, content string) string {
+	// Build tag with attributes
+	tag := "<unique"
+	if delimiter, exists := node.Attributes["delimiter"]; exists {
+		tag += fmt.Sprintf(` delimiter="%s"`, delimiter)
+	}
+	tag += fmt.Sprintf(">%s</unique>", content)
+
 	// Use the existing unique processing method
-	return tp.golem.processUniqueTagsWithContext(fmt.Sprintf("<unique>%s</unique>", content), tp.ctx)
+	return tp.golem.processUniqueTagsWithContext(tag, tp.ctx)
 }
 
 func (tp *TreeProcessor) processIndentTag(node *ASTNode, content string) string {

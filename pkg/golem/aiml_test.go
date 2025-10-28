@@ -5328,19 +5328,19 @@ func TestAIML2Wildcards(t *testing.T) {
 </category>
 <category>
 <pattern># HELLO #</pattern>
-<template>Hash wildcard: <star/> HELLO <star/>!</template>
+<template>Hash wildcard: <star index="1"/> HELLO <star index="2"/>!</template>
 </category>
 <category>
 <pattern>_ HELLO _</pattern>
-<template>Underscore wildcard: <star/> HELLO <star/>!</template>
+<template>Underscore wildcard: <star index="1"/> HELLO <star index="2"/>!</template>
 </category>
 <category>
 <pattern>^ HELLO ^</pattern>
-<template>Caret wildcard: <star/> HELLO <star/>!</template>
+<template>Caret wildcard: <star index="1"/> HELLO <star index="2"/>!</template>
 </category>
 <category>
 <pattern>* HELLO *</pattern>
-<template>Asterisk wildcard: <star/> HELLO <star/>!</template>
+<template>Asterisk wildcard: <star index="1"/> HELLO <star index="2"/>!</template>
 </category>
 <category>
 <pattern>HELLO ^</pattern>
@@ -6015,7 +6015,7 @@ func TestUniqueTagIntegration(t *testing.T) {
 	}{
 		{"unique hello world hello test", "hello world test"},
 		{"unique comma apple,banana,apple,cherry,banana", "apple,banana,cherry"},
-		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/>"},
+		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:demo case P:tests cases Sh:case test Le:9 Co:2 Sp:test case Jo:test,case In: test case De:test case Un:test case"},
 		{"nested unique user", "hello user world test"},
 	}
 
