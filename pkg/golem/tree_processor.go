@@ -74,8 +74,21 @@ func (tp *TreeProcessor) ProcessTemplate(template string, wildcards map[string]s
 	tp.ctx = ctx
 	result := tp.processNode(ast)
 
-	// Trim all leading and trailing whitespace from final output (AIML spec)
-	return strings.TrimSpace(result), nil
+	// Smart whitespace trimming:
+	// 1. Always trim trailing whitespace
+	// 2. Trim leading whitespace, but preserve leading spaces/tabs if there's no leading newline
+	//    (this allows indent tags to work while removing template formatting whitespace)
+	result = strings.TrimRight(result, " \t\n\r")
+
+	// If result starts with newline, trim all leading whitespace (template formatting)
+	// Otherwise, just trim leading newlines but keep leading spaces/tabs (indent tag output)
+	if len(result) > 0 && (result[0] == '\n' || result[0] == '\r') {
+		result = strings.TrimLeft(result, " \t\n\r")
+	} else {
+		result = strings.TrimLeft(result, "\n\r")
+	}
+
+	return result, nil
 }
 
 // processNode processes a single AST node
@@ -1904,13 +1917,30 @@ func (tp *TreeProcessor) processCountTag(node *ASTNode, content string) string {
 }
 
 func (tp *TreeProcessor) processSplitTag(node *ASTNode, content string) string {
+	// Build tag with attributes
+	tag := "<split"
+	if delimiter, exists := node.Attributes["delimiter"]; exists {
+		tag += fmt.Sprintf(` delimiter="%s"`, delimiter)
+	}
+	if limit, exists := node.Attributes["limit"]; exists {
+		tag += fmt.Sprintf(` limit="%s"`, limit)
+	}
+	tag += fmt.Sprintf(">%s</split>", content)
+
 	// Use the existing split processing method
-	return tp.golem.processSplitTagsWithContext(fmt.Sprintf("<split>%s</split>", content), tp.ctx)
+	return tp.golem.processSplitTagsWithContext(tag, tp.ctx)
 }
 
 func (tp *TreeProcessor) processJoinTag(node *ASTNode, content string) string {
+	// Build tag with attributes
+	tag := "<join"
+	if delimiter, exists := node.Attributes["delimiter"]; exists {
+		tag += fmt.Sprintf(` delimiter="%s"`, delimiter)
+	}
+	tag += fmt.Sprintf(">%s</join>", content)
+
 	// Use the existing join processing method
-	return tp.golem.processJoinTagsWithContext(fmt.Sprintf("<join>%s</join>", content), tp.ctx)
+	return tp.golem.processJoinTagsWithContext(tag, tp.ctx)
 }
 
 func (tp *TreeProcessor) processUniqueTag(node *ASTNode, content string) string {
@@ -1919,13 +1949,33 @@ func (tp *TreeProcessor) processUniqueTag(node *ASTNode, content string) string 
 }
 
 func (tp *TreeProcessor) processIndentTag(node *ASTNode, content string) string {
+	// Build tag with attributes
+	tag := "<indent"
+	if level, exists := node.Attributes["level"]; exists {
+		tag += fmt.Sprintf(` level="%s"`, level)
+	}
+	if char, exists := node.Attributes["char"]; exists {
+		tag += fmt.Sprintf(` char="%s"`, char)
+	}
+	tag += fmt.Sprintf(">%s</indent>", content)
+
 	// Use the existing indent processing method
-	return tp.golem.processIndentTagsWithContext(fmt.Sprintf("<indent>%s</indent>", content), tp.ctx)
+	return tp.golem.processIndentTagsWithContext(tag, tp.ctx)
 }
 
 func (tp *TreeProcessor) processDedentTag(node *ASTNode, content string) string {
+	// Build tag with attributes
+	tag := "<dedent"
+	if level, exists := node.Attributes["level"]; exists {
+		tag += fmt.Sprintf(` level="%s"`, level)
+	}
+	if char, exists := node.Attributes["char"]; exists {
+		tag += fmt.Sprintf(` char="%s"`, char)
+	}
+	tag += fmt.Sprintf(">%s</dedent>", content)
+
 	// Use the existing dedent processing method
-	return tp.golem.processDedentTagsWithContext(fmt.Sprintf("<dedent>%s</dedent>", content), tp.ctx)
+	return tp.golem.processDedentTagsWithContext(tag, tp.ctx)
 }
 
 func (tp *TreeProcessor) processRepeatTag(node *ASTNode, content string) string {
