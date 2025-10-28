@@ -74,18 +74,17 @@ func (tp *TreeProcessor) ProcessTemplate(template string, wildcards map[string]s
 	tp.ctx = ctx
 	result := tp.processNode(ast)
 
-	// Smart trimming: preserve intentional indentation; collapse whitespace-only to empty
+	// Smart trimming: preserve meaningful spaces; collapse whitespace-only to empty
 	// This matches the behavior of the consolidated template processor
 	finalResult := result
 	if len(result) > 0 {
 		// Collapse whitespace-only output to empty
 		if strings.TrimSpace(result) == "" {
 			finalResult = ""
-		} else if result[0] != ' ' && result[0] != '\t' {
-			// If it doesn't start with intentional indentation, trim normally
-			finalResult = strings.TrimSpace(result)
+		} else {
+			// Trim leading and trailing newlines/tabs, but preserve spaces
+			finalResult = strings.Trim(result, "\n\r\t")
 		}
-		// If it starts with space/tab and has non-whitespace content, preserve it (intentional indentation)
 	}
 
 	return finalResult, nil
@@ -823,6 +822,13 @@ func (tp *TreeProcessor) processSRTag(node *ASTNode, content string) string {
 			}
 		}
 
+		// Clear all existing star variables first
+		for k := range tp.ctx.Session.Variables {
+			if strings.HasPrefix(k, "star") {
+				delete(tp.ctx.Session.Variables, k)
+			}
+		}
+
 		// Set new wildcards from the matched pattern
 		for k, v := range wildcards {
 			tp.ctx.Session.Variables[k] = v
@@ -833,6 +839,13 @@ func (tp *TreeProcessor) processSRTag(node *ASTNode, content string) string {
 		for k, v := range tp.ctx.Wildcards {
 			if strings.HasPrefix(k, "star") {
 				oldWildcards[k] = v
+			}
+		}
+
+		// Clear all existing star variables first
+		for k := range tp.ctx.Wildcards {
+			if strings.HasPrefix(k, "star") {
+				delete(tp.ctx.Wildcards, k)
 			}
 		}
 

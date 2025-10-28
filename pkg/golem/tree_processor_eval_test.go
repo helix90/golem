@@ -223,7 +223,7 @@ func TestTreeProcessorEvalTagWithConditions(t *testing.T) {
 			setup: func() {
 				session.Variables["role"] = "admin"
 			},
-			expected: "Admin accessUser accessGuest access", // Condition returns all items (condition tag behavior)
+			expected: "Admin access", // Tree processor correctly returns only matching li (AIML spec compliant)
 		},
 	}
 

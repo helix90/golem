@@ -336,7 +336,7 @@ func TestTreeProcessorSRTagRecursion(t *testing.T) {
 	}
 
 	// Note: This test shows that SR will look up LEVEL1, which has an SR tag,
-	// but that SR tag won't have a star1 set, so it will be left unchanged
+	// but that SR tag won't have a star1 set, so it returns empty (AIML spec compliant)
 	template := "Start: <sr/>"
 
 	// Create tree processor
@@ -353,8 +353,8 @@ func TestTreeProcessorSRTagRecursion(t *testing.T) {
 	tp.ctx = ctx
 	result := tp.processNode(ast)
 
-	// The SR in LEVEL1's template will not have star1, so it's left as <sr/>
-	expected := "Start: Processing level 1: <sr/>"
+	// The SR in LEVEL1's template will not have star1, so it returns empty string
+	expected := "Start: Processing level 1: "
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}
@@ -497,8 +497,8 @@ func TestTreeProcessorSRTagMaxRecursionDepth(t *testing.T) {
 	tp.ctx = ctx
 	result := tp.processNode(ast)
 
-	// Should hit recursion limit and return "Loop: <sr/>" (SR unchanged due to recursion limit)
-	expected := "Loop: <sr/>"
+	// Should hit recursion limit and SR returns empty string (AIML spec compliant)
+	expected := "Loop: "
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}

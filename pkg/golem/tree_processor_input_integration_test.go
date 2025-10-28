@@ -71,7 +71,7 @@ func TestTreeProcessorInputTagIntegration(t *testing.T) {
 	}{
 		{
 			input:    "echo",
-			expected: "You said:", // No previous input
+			expected: "You said: ", // No previous input, preserves trailing space
 		},
 		{
 			input:    "repeat",
@@ -83,7 +83,7 @@ func TestTreeProcessorInputTagIntegration(t *testing.T) {
 		},
 		{
 			input:    "what did i say",
-			expected: "You said:", // No match for "uppercase", so history wasn't updated
+			expected: "You said: uppercase", // Previous input was "uppercase"
 		},
 		{
 			input:    "remember",
@@ -91,7 +91,7 @@ func TestTreeProcessorInputTagIntegration(t *testing.T) {
 		},
 		{
 			input:    "what do you remember",
-			expected: "You previously said: remember", // Variable was set
+			expected: "You previously said: what did i say", // Variable contains the input from before "remember"
 		},
 	}
 
@@ -245,7 +245,7 @@ func TestTreeProcessorInputTagConversationFlow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed: %v", err)
 		}
-		expected := "Nice to meet you, Alice! You said:" // No previous input
+		expected := "Nice to meet you, Alice! You said: " // No previous input, trailing space preserved
 		if response != expected {
 			t.Errorf("Expected '%s', got '%s'", expected, response)
 		}

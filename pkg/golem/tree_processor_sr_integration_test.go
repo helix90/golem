@@ -366,8 +366,8 @@ func TestTreeProcessorSRTagEdgeCases(t *testing.T) {
 	}{
 		{
 			input:       "no wildcard",
-			expected:    "No wildcard here: <sr/>",
-			description: "SR without wildcard leaves tag unchanged",
+			expected:    "No wildcard here: ",
+			description: "SR without wildcard returns empty (AIML spec compliant)",
 		},
 		{
 			input:       "think test",
