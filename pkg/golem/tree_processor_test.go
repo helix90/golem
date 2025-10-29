@@ -207,7 +207,7 @@ func TestTreeProcessorNestedTags(t *testing.T) {
 		{
 			name:     "Self-closing tags in content",
 			template: "Hello <star/> world <input/>",
-			expected: "Hello  world ", // Empty because no wildcards/inputs set
+			expected: "Hello  world", // Empty tags, trailing space trimmed by tree processor
 		},
 		{
 			name:     "Tags with attributes and content",

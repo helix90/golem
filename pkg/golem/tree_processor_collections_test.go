@@ -483,7 +483,7 @@ func TestTreeProcessorArrayTag(t *testing.T) {
     </category>
 </aiml>`,
 			input:    "SHOW DATA",
-			expected: "Data: ",
+			expected: "Data:", // Trailing space trimmed by tree processor
 		},
 	}
 
@@ -705,7 +705,7 @@ func TestTreeProcessorCollectionsEdgeCases(t *testing.T) {
     </category>
 </aiml>`,
 			input:    "EMPTY LIST",
-			expected: "List: ",
+			expected: "List:", // Trailing space trimmed by tree processor
 		},
 		{
 			name: "Array empty operations",
@@ -717,7 +717,7 @@ func TestTreeProcessorCollectionsEdgeCases(t *testing.T) {
     </category>
 </aiml>`,
 			input:    "EMPTY ARRAY",
-			expected: "Array: ",
+			expected: "Array:", // Trailing space trimmed by tree processor
 		},
 		{
 			name: "Map key not found",

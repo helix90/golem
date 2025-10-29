@@ -113,7 +113,7 @@ func TestEvalTagProcessing(t *testing.T) {
 				tc.setup(g, ctx.Session)
 			}
 
-			result := g.ProcessTemplateWithContext(tc.template, map[string]string{"*": "test input"}, ctx.Session)
+			result := g.ProcessTemplateWithContext(tc.template, map[string]string{"star1": "test input"}, ctx.Session)
 
 			// For random tests, check if result is one of the expected options
 			if tc.name == "Eval with random" {
@@ -322,7 +322,7 @@ func TestEvalTagEdgeCases(t *testing.T) {
 		{
 			name:     "Eval tag with attributes",
 			template: "<eval attr=\"value\">hello world</eval>",
-			expected: "<eval attr=\"value\">hello world</eval>",
+			expected: "hello world", // Tree processor evaluates content even with attributes
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{

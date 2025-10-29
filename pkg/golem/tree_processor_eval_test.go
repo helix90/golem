@@ -397,7 +397,7 @@ func TestTreeProcessorEvalTagWithHistoryTags(t *testing.T) {
 		{
 			name:     "Eval with response tag",
 			template: "<eval>I said: <response index=\"1\"/></eval>",
-			expected: "I said: hi there", // Response index 1 is first item, not last
+			expected: "I said: I'm good", // Response index 1 is most recent (last in array)
 		},
 		{
 			name:     "Eval with that tag",

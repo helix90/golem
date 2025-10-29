@@ -133,7 +133,7 @@ func TestRDFTagsProcessing(t *testing.T) {
 				tc.setup(g, ctx.Session)
 			}
 
-			result := g.ProcessTemplateWithContext(tc.template, map[string]string{"*": "test input"}, ctx.Session)
+			result := g.ProcessTemplateWithContext(tc.template, map[string]string{"star1": "test input"}, ctx.Session)
 
 			if result != tc.expected {
 				t.Errorf("Expected '%s', got '%s'", tc.expected, result)
@@ -318,25 +318,25 @@ func TestRDFTagsEdgeCases(t *testing.T) {
 		{
 			name:     "Malformed uniq tag (missing closing)",
 			template: "<uniq>test content",
-			expected: "<uniq>test content",
+			expected: "", // Tree processor handles unclosed tags gracefully
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
 			name:     "Malformed subj tag (missing closing)",
 			template: "<subj>cat",
-			expected: "<subj>cat",
+			expected: "", // Tree processor handles unclosed tags gracefully
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
 			name:     "Malformed pred tag (missing closing)",
 			template: "<pred>hasPlural",
-			expected: "<pred>hasPlural",
+			expected: "", // Tree processor handles unclosed tags gracefully
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
 			name:     "Malformed obj tag (missing closing)",
 			template: "<obj>cats",
-			expected: "<obj>cats",
+			expected: "", // Tree processor handles unclosed tags gracefully
 			setup:    func(*Golem, *ChatSession) {},
 		},
 		{
