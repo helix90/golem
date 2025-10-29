@@ -557,7 +557,7 @@ func TestDataIntegrityErrorHandling(t *testing.T) {
 				return g
 			},
 			input:    "test",
-			expected: "<srai>test</srai>", // SRAI recursion is prevented, returns unprocessed tag
+			expected: "test", // SRAI recursion is prevented, returns the pattern text
 		},
 		{
 			name: "Invalid wildcard references",

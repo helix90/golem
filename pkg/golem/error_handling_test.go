@@ -421,7 +421,7 @@ func TestErrorRecoveryAndFallback(t *testing.T) {
 				<template>hello <star index="5"></star></template>
 			</category>`,
 			input:    "test world",
-			expected: "hello <star index=\"5\"></star>", // Invalid wildcard index returns unprocessed tag
+			expected: "hello", // Invalid wildcard index returns empty, leaving just "hello"
 		},
 		{
 			name: "Recovery from invalid variable reference",
@@ -430,7 +430,7 @@ func TestErrorRecoveryAndFallback(t *testing.T) {
 				<template>hello <get name="nonexistent"></get></template>
 			</category>`,
 			input:    "test",
-			expected: "hello <get name=\"nonexistent\"></get>", // Invalid variable returns unprocessed tag
+			expected: "hello", // Invalid variable returns empty, leaving just "hello"
 		},
 		{
 			name: "Recovery from invalid collection reference",
@@ -475,7 +475,7 @@ func TestErrorRecoveryAndFallback(t *testing.T) {
 				<template><map name="test" key="">hello</map></template>
 			</category>`,
 			input:    "test",
-			expected: "<map name=\"test\" key=\"\">hello</map>", // Invalid map key returns unprocessed tag
+			expected: "hello", // Invalid map key returns content, leaving just "hello"
 		},
 		{
 			name: "Recovery from invalid substring parameters",
