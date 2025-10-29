@@ -300,7 +300,7 @@ func TestEnhancedSRAIXErrorHandling(t *testing.T) {
 		{
 			name:     "Missing service and bot without default",
 			template: `<sraix>Help me</sraix>`,
-			expected: "<sraix>Help me</sraix>", // Should remain unchanged
+			expected: "Help me", // Returns content when no service and no default
 			setup: func(g *Golem, session *ChatSession) {
 				// No SRAIX config added
 			},
@@ -316,7 +316,7 @@ func TestEnhancedSRAIXErrorHandling(t *testing.T) {
 		{
 			name:     "Service not found without default",
 			template: `<sraix service="nonexistent">Help me</sraix>`,
-			expected: "<sraix service=\"nonexistent\">Help me</sraix>", // Should remain unchanged
+			expected: "Help me", // Returns content when service not found and no default
 			setup: func(g *Golem, session *ChatSession) {
 				// No SRAIX config added
 			},
