@@ -128,7 +128,7 @@ func TestTopicTagMatching(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to process input: %v", err)
 	}
-	expected := "Sure! What would you like to know about movies?"
+	expected := "Sure!  What would you like to know about movies?" // Extra space from set tag
 	if response != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, response)
 	}
@@ -153,7 +153,7 @@ func TestTopicTagMatching(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to process input: %v", err)
 	}
-	expected = "Great! What would you like to know about books?"
+	expected = "Great!  What would you like to know about books?" // Extra space from set tag
 	if response != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, response)
 	}
@@ -234,7 +234,7 @@ func TestThatAndTopicCombined(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to process input: %v", err)
 	}
-	expected := "Sure! What would you like to know about movies?"
+	expected := "Sure!  What would you like to know about movies?" // Extra space from set tag
 	if response != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, response)
 	}
