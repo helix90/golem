@@ -169,7 +169,7 @@ func TestEnhancedSRAIXTags(t *testing.T) {
 			tc.setup(g, session)
 
 			// Process the template
-			result := g.ProcessTemplateWithSession(tc.template, map[string]string{"star": "cats"}, session)
+			result := g.ProcessTemplateWithSession(tc.template, map[string]string{"star1": "cats"}, session)
 
 			// For tests where we expect the service to work, we need to mock the HTTP response
 			// For now, we'll just check that the processing doesn't crash and returns something
