@@ -2297,7 +2297,7 @@ func (tp *TreeProcessor) processRequestTag(node *ASTNode, content string) string
 }
 
 func (tp *TreeProcessor) processResponseTag(node *ASTNode, content string) string {
-	// Response tag - previous response
+	// Response tag - previous response (index 1 = most recent)
 	index := 1
 	if idx, exists := node.Attributes["index"]; exists {
 		if parsed, err := strconv.Atoi(idx); err == nil {
@@ -2306,9 +2306,9 @@ func (tp *TreeProcessor) processResponseTag(node *ASTNode, content string) strin
 	}
 
 	if tp.ctx != nil && tp.ctx.Session != nil {
-		if tp.ctx.Session.ResponseHistory != nil && index <= len(tp.ctx.Session.ResponseHistory) {
-			return tp.ctx.Session.ResponseHistory[index-1]
-		}
+		// Use GetResponseByIndex which handles the index conversion correctly
+		// (1-based where 1 is most recent, stored at end of array)
+		return tp.ctx.Session.GetResponseByIndex(index)
 	}
 	return ""
 }

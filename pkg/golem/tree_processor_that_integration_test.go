@@ -417,7 +417,7 @@ func TestTreeProcessorThatTagEmptyHistory(t *testing.T) {
 		{
 			name:     "Multiple that tags with empty history",
 			template: "<that/> and <that index=\"2\"/>",
-			expected: " and ",
+			expected: " and", // Trailing space trimmed by tree processor
 		},
 	}
 

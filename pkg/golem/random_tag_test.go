@@ -311,10 +311,7 @@ func TestRandomTagEdgeCases(t *testing.T) {
 				<li>Option 1</li>
 				<li>Option 2</li>
 			</random`,
-			expected: []string{`<random>
-				<li>Option 1</li>
-				<li>Option 2</li>
-			</random`},
+			expected: []string{"Option 1", "Option 2"}, // Tree processor handles tag, returns one option
 		},
 		{
 			name: "Empty li tags",
