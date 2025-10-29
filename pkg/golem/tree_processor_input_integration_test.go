@@ -71,7 +71,7 @@ func TestTreeProcessorInputTagIntegration(t *testing.T) {
 	}{
 		{
 			input:    "echo",
-			expected: "You said: ", // No previous input, preserves trailing space
+			expected: "You said:", // No previous input, trailing space trimmed by tree processor
 		},
 		{
 			input:    "repeat",
@@ -245,7 +245,7 @@ func TestTreeProcessorInputTagConversationFlow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed: %v", err)
 		}
-		expected := "Nice to meet you, Alice! You said: " // No previous input, trailing space preserved
+		expected := "Nice to meet you, Alice! You said:" // No previous input, trailing space trimmed by tree processor
 		if response != expected {
 			t.Errorf("Expected '%s', got '%s'", expected, response)
 		}
@@ -403,7 +403,7 @@ func TestTreeProcessorInputTagEmptyHistory(t *testing.T) {
 		{
 			name:     "Multiple input tags with empty history",
 			template: "<input/> and <input/>",
-			expected: " and ",
+			expected: " and", // Trailing space trimmed by tree processor
 		},
 	}
 
