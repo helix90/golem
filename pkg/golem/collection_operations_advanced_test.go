@@ -518,7 +518,7 @@ func TestSetOperationsAdvanced(t *testing.T) {
 		{
 			name:     "Get variable value",
 			template: `<get name="myvar"></get>`,
-			expected: "<get name=\"myvar\"></get>",
+			expected: "", // Variable doesn't exist in fresh test instance
 			setup:    func() {},
 		},
 	}
