@@ -354,7 +354,8 @@ func TestTreeProcessorSRTagRecursion(t *testing.T) {
 	result := tp.processNode(ast)
 
 	// The SR in LEVEL1's template will not have star1, so it returns empty string
-	expected := "Start: Processing level 1: "
+	// Tree processor trims trailing whitespace
+	expected := "Start: Processing level 1:"
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}
@@ -498,7 +499,8 @@ func TestTreeProcessorSRTagMaxRecursionDepth(t *testing.T) {
 	result := tp.processNode(ast)
 
 	// Should hit recursion limit and SR returns empty string (AIML spec compliant)
-	expected := "Loop: "
+	// Tree processor trims trailing whitespace
+	expected := "Loop:"
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}
