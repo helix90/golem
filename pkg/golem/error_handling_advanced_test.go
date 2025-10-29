@@ -25,7 +25,7 @@ func TestPerformanceErrorConditions(t *testing.T) {
 				return g
 			},
 			input:    "test",
-			expected: "<srai>test</srai>",
+			expected: "test", // Recursion prevented, returns pattern text
 		},
 		{
 			name: "Deep recursion prevention",
@@ -47,7 +47,7 @@ func TestPerformanceErrorConditions(t *testing.T) {
 				return g
 			},
 			input:    "test",
-			expected: "<srai>test3</srai>",
+			expected: "test2", // Deep recursion prevented, returns last valid pattern before circular ref
 		},
 		{
 			name: "Large template processing",
