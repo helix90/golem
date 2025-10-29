@@ -323,6 +323,10 @@ func (tp *TreeProcessor) processSelfClosingTag(node *ASTNode) string {
 		return tp.processThatTag(node, "")
 	case "bot":
 		return tp.processBotTag(node, "")
+	case "repeat":
+		return tp.processRepeatTag(node, "")
+	case "topic":
+		return tp.processTopicTag(node, "")
 	default:
 		// Unknown self-closing tag, return as-is
 		attrStr := ""
@@ -561,6 +565,12 @@ func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 
 	// Set the variable in context
 	if tp.ctx != nil {
+		// Special handling for "topic" - update session topic
+		if name == "topic" && tp.ctx.Session != nil {
+			tp.ctx.Session.SetSessionTopic(value)
+			tp.ctx.Topic = value // Update context topic as well
+		}
+
 		// Set in session variables if session exists
 		if tp.ctx.Session != nil {
 			if tp.ctx.Session.Variables == nil {
@@ -2002,7 +2012,19 @@ func (tp *TreeProcessor) processDedentTag(node *ASTNode, content string) string 
 }
 
 func (tp *TreeProcessor) processRepeatTag(node *ASTNode, content string) string {
-	// Use the existing repeat processing method
+	// <repeat/> returns the most recent user request from history
+	// <repeat times="3"/> repeats it 3 times
+	if tp.ctx == nil || tp.ctx.Session == nil {
+		return ""
+	}
+
+	// Get the most recent request (index 1)
+	requestValue := tp.ctx.Session.GetRequestByIndex(1)
+	if requestValue == "" {
+		return ""
+	}
+
+	// Check for times attribute
 	times := 1
 	if t, exists := node.Attributes["times"]; exists {
 		if parsed, err := strconv.Atoi(t); err == nil {
@@ -2010,7 +2032,20 @@ func (tp *TreeProcessor) processRepeatTag(node *ASTNode, content string) string 
 		}
 	}
 
-	return tp.golem.processRepeatTagsWithContext(fmt.Sprintf(`<repeat times="%d">%s</repeat>`, times, content), tp.ctx)
+	// Repeat the request value
+	if times <= 0 {
+		return ""
+	}
+	if times == 1 {
+		return requestValue
+	}
+
+	// Repeat multiple times with spaces between
+	result := make([]string, times)
+	for i := 0; i < times; i++ {
+		result[i] = requestValue
+	}
+	return strings.Join(result, " ")
 }
 
 func (tp *TreeProcessor) processFirstTag(node *ASTNode, content string) string {

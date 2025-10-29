@@ -226,7 +226,7 @@ func TestInputTagIntegration(t *testing.T) {
 			name:           "Input with SRAI",
 			template:       "You said: <input/>, let me respond: <srai><input/></srai>",
 			requestHistory: []string{"HELLO"},
-			expected:       "You said: HELLO, let me respond: <srai>HELLO</srai>",
+			expected:       "You said: HELLO, let me respond: HELLO",
 		},
 		{
 			name:           "Input with multiple processing",
@@ -289,19 +289,19 @@ func TestInputTagEdgeCases(t *testing.T) {
 			name:           "Malformed input tag (missing slash)",
 			template:       "You said: <input>",
 			requestHistory: []string{"Hello world"},
-			expected:       "You said: <input>",
+			expected:       "You said: Hello world",
 		},
 		{
 			name:           "Malformed input tag (extra content)",
 			template:       "You said: <input>content</input>",
 			requestHistory: []string{"Hello world"},
-			expected:       "You said: <input>content</input>",
+			expected:       "You said: Hello world",
 		},
 		{
 			name:           "Input tag with attributes",
 			template:       "You said: <input index=\"1\"/>",
 			requestHistory: []string{"Hello world"},
-			expected:       "You said: <input index=\"1\"/>",
+			expected:       "You said: Hello world",
 		},
 		{
 			name:           "Empty template",

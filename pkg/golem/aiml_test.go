@@ -5510,19 +5510,19 @@ func TestWildcardPriority(t *testing.T) {
 </category>
 <category>
 <pattern># HELLO #</pattern>
-<template>Hash wildcard: <star/> HELLO <star/>!</template>
+<template>Hash wildcard: <star index="1"/> HELLO <star index="2"/>!</template>
 </category>
 <category>
 <pattern>_ HELLO _</pattern>
-<template>Underscore wildcard: <star/> HELLO <star/>!</template>
+<template>Underscore wildcard: <star index="1"/> HELLO <star index="2"/>!</template>
 </category>
 <category>
 <pattern>^ HELLO ^</pattern>
-<template>Caret wildcard: <star/> HELLO <star/>!</template>
+<template>Caret wildcard: <star index="1"/> HELLO <star index="2"/>!</template>
 </category>
 <category>
 <pattern>* HELLO *</pattern>
-<template>Asterisk wildcard: <star/> HELLO <star/>!</template>
+<template>Asterisk wildcard: <star index="1"/> HELLO <star index="2"/>!</template>
 </category>
 </aiml>`
 
@@ -6217,7 +6217,7 @@ func TestRepeatTagIntegration(t *testing.T) {
 		{"repeat hello world", "You said: user input"},
 		{"repeat uppercase test case", "You said: REPEAT HELLO WORLD"},
 		{"repeat formal test case", "You said: Repeat Uppercase Test Case"},
-		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/> Rp:repeat formal test case"},
+		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:demo case P:tests cases Sh:case test Le:9 Co:2 Sp:test case Jo:test,case In: test case De:test case Un:test case Rp:repeat formal test case"},
 		{"nested repeat user input", "You said: mixed formatting test case and I heard: user input"},
 	}
 
@@ -6413,10 +6413,10 @@ func TestThatTagIntegration(t *testing.T) {
 		expected string
 	}{
 		{"that hello world", "You said: user input"},
-		{"that uppercase test case", "You said: You said: user input"},
-		{"that formal test case", "You said: You said: You said: user input"},
-		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/> Rp:that formal test case Th:You said: You said: You said: user input"},
-		{"nested that user input", "You said: U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/> Rp:that formal test case Th:You said: You said: You said: user input and I heard: user input"},
+		{"that uppercase test case", "You said: YOU SAID: USER INPUT"},
+		{"that formal test case", "You said: You Said: You Said: User Input"},
+		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:demo case P:tests cases Sh:case test Le:9 Co:2 Sp:test case Jo:test,case In: test case De:test case Un:test case Rp:that formal test case Th:You said: You Said: You Said: User Input"},
+		{"nested that user input", "You said: U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:demo case P:tests cases Sh:case test Le:9 Co:2 Sp:test case Jo:test,case In: test case De:test case Un:test case Rp:that formal test case Th:You said: You Said: You Said: User Input and I heard: user input"},
 	}
 
 	for _, tt := range tests {
@@ -6606,7 +6606,7 @@ func TestTopicTagIntegration(t *testing.T) {
 		{"topic uppercase test case", "Current topic: WEATHER"},
 		{"topic formal test case", "Current topic: Weather"},
 		{"set topic sports", "Topic set to: sports"},
-		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:<star/> P:<star/>s Sh:<star/> Le:7 Co:0 Sp:<star/> Jo:<star/> In: <star/> De:<star/> Un:<star/> Rp: Th: To:weather"},
+		{"mixed formatting test case", "U:TEST CASE L:test case F:Test Case E:t e s t   c a s e C:Test case R:esac tset A:TC T:test case S:tes Re:demo case P:tests cases Sh:case test Le:9 Co:2 Sp:test case Jo:test,case In: test case De:test case Un:test case Rp: Th: To:weather"},
 		{"nested topic user input", "Current topic: weather and I heard: user input"},
 	}
 
