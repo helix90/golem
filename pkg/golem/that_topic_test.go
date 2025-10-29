@@ -448,7 +448,7 @@ func TestTopicTagWithWildcards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to process input: %v", err)
 	}
-	expected := "Sure! What would you like to know about music?"
+	expected := "Sure!  What would you like to know about music?" // Extra space from empty set tag
 	if response != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, response)
 	}

@@ -756,7 +756,7 @@ func TestTextProcessingWithWildcards(t *testing.T) {
 		},
 		{
 			name:     "Multiple wildcards",
-			template: "<person><star/> and <gender><star/></gender></person>",
+			template: "<person><star/> and <gender><star index=\"2\"/></gender></person>",
 			expected: "you are going to your house and She is coming with her friends",
 		},
 	}
