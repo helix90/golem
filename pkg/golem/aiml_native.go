@@ -2113,7 +2113,8 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	response, err := g.treeProcessor.ProcessTemplate(template, wildcards, ctx)
 	if err != nil {
 		g.LogError("Error in tree-based template processing: %v", err)
-		return template // Return original template on error
+		// NEVER return templates with XML tags - return error message instead
+		return "[Error processing template]"
 	}
 	return response
 }
