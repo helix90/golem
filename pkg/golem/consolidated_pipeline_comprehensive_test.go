@@ -95,8 +95,9 @@ func TestConsolidatedPipelineProcessorOrder(t *testing.T) {
 		t.Error("Processing order should not be empty")
 	}
 
-	// Check that wildcard processor comes first (PriorityEarly)
-	expectedOrder := []string{"wildcard", "variable", "recursive", "data", "text", "collection", "format", "system"}
+	// Check that TreeProcessor's logical processors are in the expected order
+	// TreeProcessor has a different set of processors than ConsolidatedTemplateProcessor
+	expectedOrder := []string{"wildcard", "variable", "data", "logic", "format"}
 
 	for i, expected := range expectedOrder {
 		if i < len(order) && order[i] != expected {

@@ -2106,28 +2106,13 @@ func (g *Golem) getCachedRegex(pattern string, cacheType string) *regexp.Regexp 
 // 7. Collection processing (map, list, array tags)
 // 8. System processing (size, version, id, that, request, response tags)
 func (g *Golem) processTemplateWithContext(template string, wildcards map[string]string, ctx *VariableContext) string {
-	// Check if tree-based processing is enabled
-	if g.useTreeProcessing {
-		if g.treeProcessor == nil {
-			g.treeProcessor = NewTreeProcessor(g)
-		}
-		response, err := g.treeProcessor.ProcessTemplate(template, wildcards, ctx)
-		if err != nil {
-			g.LogError("Error in tree-based template processing: %v", err)
-			// Fall back to regex-based processing on error
-			g.LogWarn("Falling back to regex-based processing due to tree processing error")
-		} else {
-			return response
-		}
+	// Use tree-based AST processing (now the only method)
+	if g.treeProcessor == nil {
+		g.treeProcessor = NewTreeProcessor(g)
 	}
-
-	// Use consolidated pipeline (regex-based processing)
-	if g.consolidatedProcessor == nil {
-		g.consolidatedProcessor = NewConsolidatedTemplateProcessor(g)
-	}
-	response, err := g.consolidatedProcessor.ProcessTemplate(template, wildcards, ctx)
+	response, err := g.treeProcessor.ProcessTemplate(template, wildcards, ctx)
 	if err != nil {
-		g.LogError("Error in consolidated template processing: %v", err)
+		g.LogError("Error in tree-based template processing: %v", err)
 		return template // Return original template on error
 	}
 	return response

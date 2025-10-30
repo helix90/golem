@@ -105,9 +105,9 @@ func TestSetTagEnhancedAddOperations(t *testing.T) {
 	}
 
 	// Verify item was added
-	set := g.aimlKB.Sets["fruits"]
-	if len(set) != 1 || set[0] != "apple" {
-		t.Errorf("Expected set to contain ['apple'], got %v", set)
+	setCollection := g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 1 || setCollection.Items[0] != "apple" {
+		t.Errorf("Expected set to contain ['apple'], got %v", setCollection)
 	}
 
 	// Test 2: Add multiple items
@@ -118,9 +118,9 @@ func TestSetTagEnhancedAddOperations(t *testing.T) {
 	}
 
 	// Verify both items are in set
-	set = g.aimlKB.Sets["fruits"]
-	if len(set) != 2 {
-		t.Errorf("Expected set to have 2 items, got %d", len(set))
+	setCollection = g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 2 {
+		t.Errorf("Expected set to have 2 items, got %d", len(setCollection.Items))
 	}
 
 	// Test 3: Add duplicate item (should not add)
@@ -131,9 +131,9 @@ func TestSetTagEnhancedAddOperations(t *testing.T) {
 	}
 
 	// Verify duplicate was not added
-	set = g.aimlKB.Sets["fruits"]
-	if len(set) != 2 {
-		t.Errorf("Expected set to still have 2 items, got %d", len(set))
+	setCollection = g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 2 {
+		t.Errorf("Expected set to still have 2 items, got %d", len(setCollection.Items))
 	}
 
 	// Test 4: Insert operation (same as add)
@@ -144,9 +144,9 @@ func TestSetTagEnhancedAddOperations(t *testing.T) {
 	}
 
 	// Verify item was inserted
-	set = g.aimlKB.Sets["fruits"]
-	if len(set) != 3 {
-		t.Errorf("Expected set to have 3 items, got %d", len(set))
+	setCollection = g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 3 {
+		t.Errorf("Expected set to have 3 items, got %d", len(setCollection.Items))
 	}
 
 	// Test 5: Show all fruits
@@ -207,9 +207,9 @@ func TestSetTagEnhancedRemoveOperations(t *testing.T) {
 	}
 
 	// Verify setup
-	set := g.aimlKB.Sets["fruits"]
-	if len(set) != 3 {
-		t.Errorf("Expected set to have 3 items after setup, got %d", len(set))
+	setCollection := g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 3 {
+		t.Errorf("Expected set to have 3 items after setup, got %d", len(setCollection.Items))
 	}
 
 	// Test 1: Remove existing item
@@ -220,9 +220,9 @@ func TestSetTagEnhancedRemoveOperations(t *testing.T) {
 	}
 
 	// Verify item was removed
-	set = g.aimlKB.Sets["fruits"]
-	if len(set) != 2 {
-		t.Errorf("Expected set to have 2 items, got %d", len(set))
+	setCollection = g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 2 {
+		t.Errorf("Expected set to have 2 items, got %d", len(setCollection.Items))
 	}
 
 	// Test 2: Remove non-existent item
@@ -233,9 +233,9 @@ func TestSetTagEnhancedRemoveOperations(t *testing.T) {
 	}
 
 	// Verify set unchanged
-	set = g.aimlKB.Sets["fruits"]
-	if len(set) != 2 {
-		t.Errorf("Expected set to still have 2 items, got %d", len(set))
+	setCollection = g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 2 {
+		t.Errorf("Expected set to still have 2 items, got %d", len(setCollection.Items))
 	}
 
 	// Test 3: Delete operation (same as remove)
@@ -246,9 +246,9 @@ func TestSetTagEnhancedRemoveOperations(t *testing.T) {
 	}
 
 	// Verify item was deleted
-	set = g.aimlKB.Sets["fruits"]
-	if len(set) != 1 || set[0] != "orange" {
-		t.Errorf("Expected set to contain ['orange'], got %v", set)
+	setCollection = g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 1 || setCollection.Items[0] != "orange" {
+		t.Errorf("Expected set to contain ['orange'], got %v", setCollection.Items)
 	}
 
 	// Test 4: Show remaining fruits
@@ -301,9 +301,9 @@ func TestSetTagEnhancedClearOperation(t *testing.T) {
 	}
 
 	// Verify setup
-	set := g.aimlKB.Sets["fruits"]
-	if len(set) != 3 {
-		t.Errorf("Expected set to have 3 items after setup, got %d", len(set))
+	setCollection := g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 3 {
+		t.Errorf("Expected set to have 3 items after setup, got %d", len(setCollection.Items))
 	}
 
 	// Test clear operation
@@ -314,9 +314,9 @@ func TestSetTagEnhancedClearOperation(t *testing.T) {
 	}
 
 	// Verify set was cleared
-	set = g.aimlKB.Sets["fruits"]
-	if len(set) != 0 {
-		t.Errorf("Expected set to be empty, got %v", set)
+	setCollection = g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 0 {
+		t.Errorf("Expected set to be empty, got %v", setCollection.Items)
 	}
 
 	// Test show empty set
@@ -557,9 +557,9 @@ func TestSetTagEnhancedWithWildcards(t *testing.T) {
 	}
 
 	// Verify wildcard was processed and added
-	set := g.aimlKB.Sets["fruits"]
-	if len(set) != 1 || set[0] != "apple" {
-		t.Errorf("Expected set to contain ['apple'], got %v", set)
+	setCollection := g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 1 || setCollection.Items[0] != "apple" {
+		t.Errorf("Expected set to contain ['apple'], got %v", setCollection)
 	}
 
 	// Test 2: Variable assignment with wildcard
@@ -624,9 +624,9 @@ func TestSetTagEnhancedEdgeCases(t *testing.T) {
 	}
 
 	// Verify empty content was not added
-	set := g.aimlKB.Sets["fruits"]
-	if len(set) != 0 {
-		t.Errorf("Expected empty set, got %v", set)
+	setCollection := g.aimlKB.SetCollections["fruits"]
+	if setCollection != nil && len(setCollection.Items) != 0 {
+		t.Errorf("Expected empty set, got %v", setCollection.Items)
 	}
 
 	// Test 2: Whitespace content
@@ -637,13 +637,15 @@ func TestSetTagEnhancedEdgeCases(t *testing.T) {
 	}
 
 	// Verify whitespace was trimmed and not added
-	set = g.aimlKB.Sets["fruits"]
-	if len(set) != 0 {
-		t.Errorf("Expected empty set, got %v", set)
+	setCollection = g.aimlKB.SetCollections["fruits"]
+	if setCollection != nil && len(setCollection.Items) != 0 {
+		t.Errorf("Expected empty set, got %v", setCollection.Items)
 	}
 
 	// Debug: Print actual set contents
-	t.Logf("Set contents after whitespace test: %v", set)
+	if setCollection != nil {
+		t.Logf("Set contents after whitespace test: %v", setCollection.Items)
+	}
 
 	// Test 3: Special characters in set names and content
 	response, _ = g.ProcessInput("ADD SPECIAL", session)
@@ -653,9 +655,9 @@ func TestSetTagEnhancedEdgeCases(t *testing.T) {
 	}
 
 	// Verify special characters were handled
-	set = g.aimlKB.Sets["fruits-123"]
-	if len(set) != 1 || set[0] != "apple-pie" {
-		t.Errorf("Expected set to contain ['apple-pie'], got %v", set)
+	setCollection = g.aimlKB.SetCollections["fruits-123"]
+	if setCollection == nil || len(setCollection.Items) != 1 || setCollection.Items[0] != "apple-pie" {
+		t.Errorf("Expected set to contain ['apple-pie'], got %v", setCollection)
 	}
 
 	// Test 4: Show special set
@@ -765,9 +767,9 @@ func TestSetTagEnhancedIntegration(t *testing.T) {
 	}
 
 	// Verify set was populated
-	set := g.aimlKB.Sets["fruits"]
-	if len(set) != 1 || set[0] != "apple" {
-		t.Errorf("Expected set to contain ['apple'], got %v", set)
+	setCollection := g.aimlKB.SetCollections["fruits"]
+	if setCollection == nil || len(setCollection.Items) != 1 || setCollection.Items[0] != "apple" {
+		t.Errorf("Expected set to contain ['apple'], got %v", setCollection)
 	}
 
 	// Test show fruits
@@ -811,9 +813,9 @@ func TestSetTagEnhancedPerformance(t *testing.T) {
 	}
 
 	// Verify all items were added
-	set := g.aimlKB.Sets["numbers"]
-	if len(set) != 10 {
-		t.Errorf("Expected 10 items, got %d", len(set))
+	setCollection := g.aimlKB.SetCollections["numbers"]
+	if setCollection == nil || len(setCollection.Items) != 10 {
+		t.Errorf("Expected 10 items, got %d", len(setCollection.Items))
 	}
 
 	// Test size operation

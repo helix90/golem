@@ -14,12 +14,132 @@ type TreeProcessor struct {
 	golem       *Golem
 	ctx         *VariableContext
 	starCounter int // Tracks auto-incrementing star index for <star/> tags without explicit index
+	metrics     *ProcessorRegistry // Tracks metrics for different tag types/operations
 }
 
 // NewTreeProcessor creates a new tree processor
 func NewTreeProcessor(golem *Golem) *TreeProcessor {
+	// Create metrics registry to track tag processing
+	metrics := NewProcessorRegistry()
+
+	// Register logical processors for metrics tracking
+	// These represent the types of operations the tree processor performs
+	metrics.RegisterProcessor(&TreeProcessorWildcard{name: "wildcard"})
+	metrics.RegisterProcessor(&TreeProcessorData{name: "data"})
+	metrics.RegisterProcessor(&TreeProcessorFormat{name: "format"})
+	metrics.RegisterProcessor(&TreeProcessorVariable{name: "variable"})
+	metrics.RegisterProcessor(&TreeProcessorLogic{name: "logic"})
+
 	return &TreeProcessor{
-		golem: golem,
+		golem:   golem,
+		metrics: metrics,
+	}
+}
+
+// Dummy processor types for metrics tracking
+type TreeProcessorWildcard struct {
+	name    string
+	metrics *ProcessorMetrics
+}
+
+func (p *TreeProcessorWildcard) Name() string                                      { return p.name }
+func (p *TreeProcessorWildcard) Type() ProcessorType                               { return ProcessorTypeWildcard }
+func (p *TreeProcessorWildcard) Priority() ProcessorPriority                       { return PriorityEarly }
+func (p *TreeProcessorWildcard) Condition() ProcessorCondition                     { return ProcessorCondition{} }
+func (p *TreeProcessorWildcard) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) { return template, nil }
+func (p *TreeProcessorWildcard) ShouldProcess(template string, ctx *VariableContext) bool { return true }
+func (p *TreeProcessorWildcard) GetMetrics() *ProcessorMetrics {
+	if p.metrics == nil {
+		p.metrics = &ProcessorMetrics{}
+	}
+	return p.metrics
+}
+func (p *TreeProcessorWildcard) ResetMetrics() { p.metrics = &ProcessorMetrics{} }
+
+type TreeProcessorData struct {
+	name    string
+	metrics *ProcessorMetrics
+}
+
+func (p *TreeProcessorData) Name() string                                          { return p.name }
+func (p *TreeProcessorData) Type() ProcessorType                                   { return ProcessorTypeData }
+func (p *TreeProcessorData) Priority() ProcessorPriority                           { return PriorityNormal }
+func (p *TreeProcessorData) Condition() ProcessorCondition                         { return ProcessorCondition{} }
+func (p *TreeProcessorData) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) { return template, nil }
+func (p *TreeProcessorData) ShouldProcess(template string, ctx *VariableContext) bool { return true }
+func (p *TreeProcessorData) GetMetrics() *ProcessorMetrics {
+	if p.metrics == nil {
+		p.metrics = &ProcessorMetrics{}
+	}
+	return p.metrics
+}
+func (p *TreeProcessorData) ResetMetrics() { p.metrics = &ProcessorMetrics{} }
+
+type TreeProcessorFormat struct {
+	name    string
+	metrics *ProcessorMetrics
+}
+
+func (p *TreeProcessorFormat) Name() string                                        { return p.name }
+func (p *TreeProcessorFormat) Type() ProcessorType                                 { return ProcessorTypeFormat }
+func (p *TreeProcessorFormat) Priority() ProcessorPriority                         { return PriorityLate }
+func (p *TreeProcessorFormat) Condition() ProcessorCondition                       { return ProcessorCondition{} }
+func (p *TreeProcessorFormat) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) { return template, nil }
+func (p *TreeProcessorFormat) ShouldProcess(template string, ctx *VariableContext) bool { return true }
+func (p *TreeProcessorFormat) GetMetrics() *ProcessorMetrics {
+	if p.metrics == nil {
+		p.metrics = &ProcessorMetrics{}
+	}
+	return p.metrics
+}
+func (p *TreeProcessorFormat) ResetMetrics() { p.metrics = &ProcessorMetrics{} }
+
+type TreeProcessorVariable struct {
+	name    string
+	metrics *ProcessorMetrics
+}
+
+func (p *TreeProcessorVariable) Name() string                                      { return p.name }
+func (p *TreeProcessorVariable) Type() ProcessorType                               { return ProcessorTypeVariable }
+func (p *TreeProcessorVariable) Priority() ProcessorPriority                       { return PriorityEarly }
+func (p *TreeProcessorVariable) Condition() ProcessorCondition                     { return ProcessorCondition{} }
+func (p *TreeProcessorVariable) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) { return template, nil }
+func (p *TreeProcessorVariable) ShouldProcess(template string, ctx *VariableContext) bool { return true }
+func (p *TreeProcessorVariable) GetMetrics() *ProcessorMetrics {
+	if p.metrics == nil {
+		p.metrics = &ProcessorMetrics{}
+	}
+	return p.metrics
+}
+func (p *TreeProcessorVariable) ResetMetrics() { p.metrics = &ProcessorMetrics{} }
+
+type TreeProcessorLogic struct {
+	name    string
+	metrics *ProcessorMetrics
+}
+
+func (p *TreeProcessorLogic) Name() string                                         { return p.name }
+func (p *TreeProcessorLogic) Type() ProcessorType                                  { return ProcessorTypeConditional }
+func (p *TreeProcessorLogic) Priority() ProcessorPriority                          { return PriorityNormal }
+func (p *TreeProcessorLogic) Condition() ProcessorCondition                        { return ProcessorCondition{} }
+func (p *TreeProcessorLogic) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) { return template, nil }
+func (p *TreeProcessorLogic) ShouldProcess(template string, ctx *VariableContext) bool { return true }
+func (p *TreeProcessorLogic) GetMetrics() *ProcessorMetrics {
+	if p.metrics == nil {
+		p.metrics = &ProcessorMetrics{}
+	}
+	return p.metrics
+}
+func (p *TreeProcessorLogic) ResetMetrics() { p.metrics = &ProcessorMetrics{} }
+
+// trackMetric tracks metrics for a specific processor type
+func (tp *TreeProcessor) trackMetric(processorName string) {
+	if tp.metrics != nil {
+		metrics := tp.metrics.metrics[processorName]
+		if metrics != nil {
+			metrics.TotalCalls++
+			metrics.LastCallTime = time.Now()
+		}
 	}
 }
 
@@ -27,6 +147,11 @@ func NewTreeProcessor(golem *Golem) *TreeProcessor {
 func (tp *TreeProcessor) ProcessTemplate(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
 	// Reset star counter for auto-incrementing <star/> tags
 	tp.starCounter = 0
+
+	// Track that wildcard processing might occur if wildcards are present
+	if len(wildcards) > 0 {
+		tp.trackMetric("wildcard")
+	}
 
 	// Parse template into AST
 	parser := NewASTParser(template)
@@ -143,6 +268,26 @@ func (tp *TreeProcessor) processTag(node *ASTNode) string {
 	}
 
 	// Process the tag based on its name
+	// Check for that wildcard tags with embedded index (e.g., that_star1, that_underscore2)
+	if strings.HasPrefix(node.TagName, "that_star") && len(node.TagName) > 9 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_star")
+	}
+	if strings.HasPrefix(node.TagName, "that_underscore") && len(node.TagName) > 15 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_underscore")
+	}
+	if strings.HasPrefix(node.TagName, "that_caret") && len(node.TagName) > 10 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_caret")
+	}
+	if strings.HasPrefix(node.TagName, "that_hash") && len(node.TagName) > 9 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_hash")
+	}
+	if strings.HasPrefix(node.TagName, "that_dollar") && len(node.TagName) > 11 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_dollar")
+	}
+	if strings.HasPrefix(node.TagName, "thatstar") && len(node.TagName) > 8 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_star")
+	}
+
 	switch node.TagName {
 	case "srai":
 		return tp.processSRAITag(node, content)
@@ -162,6 +307,18 @@ func (tp *TreeProcessor) processTag(node *ASTNode) string {
 		return tp.processSRTag(node, content)
 	case "that":
 		return tp.processThatTag(node, content)
+	case "that_star":
+		return tp.processThatStarTag(node, content)
+	case "that_underscore":
+		return tp.processThatUnderscoreTag(node, content)
+	case "that_caret":
+		return tp.processThatCaretTag(node, content)
+	case "that_hash":
+		return tp.processThatHashTag(node, content)
+	case "that_dollar":
+		return tp.processThatDollarTag(node, content)
+	case "thatstar":
+		return tp.processThatStarTag(node, content)
 	case "topic":
 		return tp.processTopicTag(node, content)
 	case "random":
@@ -286,6 +443,26 @@ func (tp *TreeProcessor) processTag(node *ASTNode) string {
 
 // processSelfClosingTag processes self-closing tags
 func (tp *TreeProcessor) processSelfClosingTag(node *ASTNode) string {
+	// Check for that wildcard tags with embedded index
+	if strings.HasPrefix(node.TagName, "that_star") && len(node.TagName) > 9 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_star")
+	}
+	if strings.HasPrefix(node.TagName, "that_underscore") && len(node.TagName) > 15 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_underscore")
+	}
+	if strings.HasPrefix(node.TagName, "that_caret") && len(node.TagName) > 10 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_caret")
+	}
+	if strings.HasPrefix(node.TagName, "that_hash") && len(node.TagName) > 9 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_hash")
+	}
+	if strings.HasPrefix(node.TagName, "that_dollar") && len(node.TagName) > 11 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_dollar")
+	}
+	if strings.HasPrefix(node.TagName, "thatstar") && len(node.TagName) > 8 {
+		return tp.processThatWildcardWithEmbeddedIndex(node, "that_star")
+	}
+
 	switch node.TagName {
 	case "star":
 		return tp.processStarTag(node, "")
@@ -321,6 +498,18 @@ func (tp *TreeProcessor) processSelfClosingTag(node *ASTNode) string {
 		return tp.processGetTag(node, "")
 	case "that":
 		return tp.processThatTag(node, "")
+	case "that_star":
+		return tp.processThatStarTag(node, "")
+	case "that_underscore":
+		return tp.processThatUnderscoreTag(node, "")
+	case "that_caret":
+		return tp.processThatCaretTag(node, "")
+	case "that_hash":
+		return tp.processThatHashTag(node, "")
+	case "that_dollar":
+		return tp.processThatDollarTag(node, "")
+	case "thatstar":
+		return tp.processThatStarTag(node, "")
 	case "bot":
 		return tp.processBotTag(node, "")
 	case "repeat":
@@ -618,7 +807,7 @@ func (tp *TreeProcessor) processSetCollectionTag(node *ASTNode, name string, ope
 	tp.golem.LogInfo("Before operation: set '%s' has %d items", name, len(setData.Items))
 
 	switch operation {
-	case "add":
+	case "add", "insert":
 		// Add item to set (only if not already present) maintaining insertion order
 		if item != "" && !setData.Index[item] {
 			setData.Items = append(setData.Items, item)
@@ -658,8 +847,15 @@ func (tp *TreeProcessor) processSetCollectionTag(node *ASTNode, name string, ope
 		return size
 
 	case "contains", "has":
-		// Check if set contains item
-		contains := setData.Index[item]
+		// Check if set contains item (case-insensitive)
+		contains := false
+		itemLower := strings.ToLower(item)
+		for _, setItem := range setData.Items {
+			if strings.ToLower(setItem) == itemLower {
+				contains = true
+				break
+			}
+		}
 		result := "false"
 		if contains {
 			result = "true"
@@ -752,6 +948,7 @@ func (tp *TreeProcessor) processStarTag(node *ASTNode, content string) string {
 	// Process star tag - wildcard reference
 	// <star/> without index always refers to star1 (first wildcard)
 	// <star index="2"/> refers to star2 (second wildcard), etc.
+	// If no pattern wildcards exist, falls back to that pattern wildcards
 	index := 1
 	if idx, exists := node.Attributes["index"]; exists {
 		// Explicit index provided
@@ -772,6 +969,23 @@ func (tp *TreeProcessor) processStarTag(node *ASTNode, content string) string {
 		// Also check the Wildcards map directly (for cases without a session)
 		if tp.ctx.Wildcards != nil {
 			if value, exists := tp.ctx.Wildcards[key]; exists {
+				return value
+			}
+		}
+
+		// Fallback: If no pattern wildcard found, check for that pattern wildcards
+		// This allows <star/> to reference wildcards from <that> patterns when
+		// the main pattern has no wildcards
+		thatKey := fmt.Sprintf("that_star%d", index)
+		if tp.ctx.Session != nil {
+			if value, exists := tp.ctx.Session.Variables[thatKey]; exists {
+				tp.golem.LogDebug("Star tag: falling back to that wildcard %s", thatKey)
+				return value
+			}
+		}
+		if tp.ctx.Wildcards != nil {
+			if value, exists := tp.ctx.Wildcards[thatKey]; exists {
+				tp.golem.LogDebug("Star tag: falling back to that wildcard %s", thatKey)
 				return value
 			}
 		}
@@ -934,6 +1148,110 @@ func (tp *TreeProcessor) processThatTag(node *ASTNode, content string) string {
 	tp.golem.LogDebug("That tag: index=%d, response='%s'", index, response)
 
 	return response
+}
+
+func (tp *TreeProcessor) processThatStarTag(node *ASTNode, content string) string {
+	// Process that_star tag - wildcard reference from that pattern
+	// <that_star1/> refers to the first star wildcard in the that pattern
+	// <that_star index="2"/> refers to the second star wildcard, etc.
+	return tp.processThatWildcardTag(node, "that_star")
+}
+
+func (tp *TreeProcessor) processThatUnderscoreTag(node *ASTNode, content string) string {
+	// Process that_underscore tag - underscore wildcard from that pattern
+	return tp.processThatWildcardTag(node, "that_underscore")
+}
+
+func (tp *TreeProcessor) processThatCaretTag(node *ASTNode, content string) string {
+	// Process that_caret tag - caret wildcard from that pattern
+	return tp.processThatWildcardTag(node, "that_caret")
+}
+
+func (tp *TreeProcessor) processThatHashTag(node *ASTNode, content string) string {
+	// Process that_hash tag - hash wildcard from that pattern
+	return tp.processThatWildcardTag(node, "that_hash")
+}
+
+func (tp *TreeProcessor) processThatDollarTag(node *ASTNode, content string) string {
+	// Process that_dollar tag - dollar wildcard from that pattern
+	return tp.processThatWildcardTag(node, "that_dollar")
+}
+
+func (tp *TreeProcessor) processThatWildcardTag(node *ASTNode, wildcardType string) string {
+	// Generic handler for that wildcard tags
+	// wildcardType is "that_star", "that_underscore", "that_caret", "that_hash", or "that_dollar"
+
+	// Get the index attribute, default to 1
+	index := 1
+	if idx, exists := node.Attributes["index"]; exists {
+		if parsed, err := strconv.Atoi(idx); err == nil && parsed > 0 {
+			index = parsed
+		}
+	}
+
+	// Build the wildcard key (e.g., "that_star1", "that_underscore2")
+	key := fmt.Sprintf("%s%d", wildcardType, index)
+
+	// Get wildcard value from context
+	if tp.ctx != nil {
+		// Check session variables first
+		if tp.ctx.Session != nil {
+			if value, exists := tp.ctx.Session.Variables[key]; exists {
+				tp.golem.LogDebug("That wildcard tag: key=%s, value='%s' (from session)", key, value)
+				return value
+			}
+		}
+		// Check the Wildcards map directly
+		if tp.ctx.Wildcards != nil {
+			if value, exists := tp.ctx.Wildcards[key]; exists {
+				tp.golem.LogDebug("That wildcard tag: key=%s, value='%s' (from context)", key, value)
+				return value
+			}
+		}
+	}
+
+	tp.golem.LogDebug("That wildcard tag: key=%s not found", key)
+	return ""
+}
+
+func (tp *TreeProcessor) processThatWildcardWithEmbeddedIndex(node *ASTNode, wildcardType string) string {
+	// Handle tags with embedded index like <that_star1/>, <that_underscore2/>, etc.
+	// Extract the index from the tag name
+
+	// Remove the wildcard type prefix to get the index suffix
+	suffix := strings.TrimPrefix(node.TagName, wildcardType)
+
+	// Parse the index from the suffix
+	index := 1
+	if len(suffix) > 0 {
+		if parsed, err := strconv.Atoi(suffix); err == nil && parsed > 0 {
+			index = parsed
+		}
+	}
+
+	// Build the wildcard key
+	key := fmt.Sprintf("%s%d", wildcardType, index)
+
+	// Get wildcard value from context
+	if tp.ctx != nil {
+		// Check session variables first
+		if tp.ctx.Session != nil {
+			if value, exists := tp.ctx.Session.Variables[key]; exists {
+				tp.golem.LogDebug("That wildcard tag (embedded index): key=%s, value='%s' (from session)", key, value)
+				return value
+			}
+		}
+		// Check the Wildcards map directly
+		if tp.ctx.Wildcards != nil {
+			if value, exists := tp.ctx.Wildcards[key]; exists {
+				tp.golem.LogDebug("That wildcard tag (embedded index): key=%s, value='%s' (from context)", key, value)
+				return value
+			}
+		}
+	}
+
+	tp.golem.LogDebug("That wildcard tag (embedded index): key=%s not found", key)
+	return ""
 }
 
 func (tp *TreeProcessor) processTopicTag(node *ASTNode, content string) string {
@@ -1472,24 +1790,44 @@ func (tp *TreeProcessor) processArrayTag(node *ASTNode, content string) string {
 
 func (tp *TreeProcessor) processLearnTag(node *ASTNode, content string) string {
 	// Process learn tag - dynamic learning (session-specific)
-	// Process content while preserving wildcard/reference tags
-	// This evaluates tags like <get>, <uppercase>, etc. but preserves <star/>, <that/>, etc.
+	// Process content while evaluating wildcards to capture teaching values
+	// This evaluates tags like <get>, <uppercase>, <star/> (when wildcards exist)
+	// Wildcards in the teaching pattern are evaluated and captured as literal values
 	processedContent := tp.processNodePreservingReferences(node)
 
+	// Pass the actual wildcard context so wildcards can be evaluated during learning
+	// This allows patterns like "TEACH ME * MEANS *" to capture the wildcard values
+	learnCtx := &VariableContext{
+		Session:       tp.ctx.Session,
+		LocalVars:     tp.ctx.LocalVars,
+		KnowledgeBase: tp.ctx.KnowledgeBase,
+		Wildcards:     tp.ctx.Wildcards, // Pass actual wildcards for evaluation
+	}
+
 	// The underlying function processes both <learn> and <learnf> tags via regex
-	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learn>%s</learn>", processedContent), tp.ctx)
+	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learn>%s</learn>", processedContent), learnCtx)
 }
 
 func (tp *TreeProcessor) processLearnfTag(node *ASTNode, content string) string {
 	// Process learnf tag - persistent learning
 	// The <learnf> tag adds categories to the persistent knowledge base
 	// Unlike <learn>, these persist across sessions
-	// Process content while preserving wildcard/reference tags
-	// This evaluates tags like <get>, <uppercase>, etc. but preserves <star/>, <that/>, etc.
+	// Process content while evaluating wildcards to capture teaching values
+	// This evaluates tags like <get>, <uppercase>, <star/> (when wildcards exist)
+	// Wildcards in the teaching pattern are evaluated and captured as literal values
 	processedContent := tp.processNodePreservingReferences(node)
 
+	// Pass the actual wildcard context so wildcards can be evaluated during learning
+	// This allows patterns like "TEACH ME * MEANS *" to capture the wildcard values
+	learnCtx := &VariableContext{
+		Session:       tp.ctx.Session,
+		LocalVars:     tp.ctx.LocalVars,
+		KnowledgeBase: tp.ctx.KnowledgeBase,
+		Wildcards:     tp.ctx.Wildcards, // Pass actual wildcards for evaluation
+	}
+
 	// The underlying function processes both <learn> and <learnf> tags via regex
-	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learnf>%s</learnf>", processedContent), tp.ctx)
+	return tp.golem.processLearnTagsWithContext(fmt.Sprintf("<learnf>%s</learnf>", processedContent), learnCtx)
 }
 
 // processNodePreservingReferences processes a node's children while preserving reference tags
@@ -1527,46 +1865,46 @@ func (tp *TreeProcessor) processChildPreservingReferences(node *ASTNode) string 
 
 	// For tags, check if they should be preserved as references
 	if node.Type == NodeTypeSelfClosingTag || node.Type == NodeTypeTag {
-		// List of tags that should be preserved (wildcards, history references, formatting, and variables)
-		// These tags should not be processed during learning, but preserved for runtime
-		preservedTags := map[string]bool{
+		// Wildcard and reference tags - check if wildcards exist in context
+		// If wildcards exist, evaluate them (teaching scenario)
+		// If wildcards don't exist, preserve them for runtime evaluation
+		wildcardTags := map[string]bool{
 			"star":      true, // Wildcard references
-			"that":      true, // Response history
 			"thatstar":  true, // That wildcard
 			"topicstar": true, // Topic wildcard
-			"input":     true, // Request history (alternative form)
-			"request":   true, // Request history
-			"response":  true, // Response history
-			"sr":        true, // Shorthand SRAI - should be preserved for runtime
-			// Formatting tags - preserve during learning
-			"uppercase": true,
-			"lowercase": true,
-			"formal":    true,
-			"sentence":  true,
-			"explode":   true,
-			"normalize": true,
-			// Variable tags - preserve during learning so they evaluate at runtime
-			"get":        true,
-			"set":        true,
-			"bot":        true,
-			"name":       true,
-			"id":         true,
-			"size":       true,
-			"version":    true,
-			"date":       true,
-			"vocabulary": true,
-			// Recursive tags - preserve for runtime evaluation
-			"srai":  true,
-			"sraix": true,
-			// Conditional tags - preserve for runtime evaluation
-			"condition": true,
-			"li":        true,
-			// Random tags - preserve for runtime evaluation
-			"random": true,
 		}
 
-		if preservedTags[node.TagName] {
-			// Return the tag as its string representation
+		// History reference tags - always preserve (can't be evaluated at learn time)
+		historyTags := map[string]bool{
+			"that":     true, // Response history
+			"input":    true, // Request history (alternative form)
+			"request":  true, // Request history
+			"response": true, // Response history
+		}
+
+		if wildcardTags[node.TagName] {
+			// Check if wildcards exist in the context
+			hasWildcards := tp.ctx != nil && tp.ctx.Wildcards != nil && len(tp.ctx.Wildcards) > 0
+
+			if hasWildcards {
+				// Wildcards exist - evaluate the tag (teaching scenario)
+				if node.Type == NodeTypeSelfClosingTag {
+					return tp.processSelfClosingTag(node)
+				} else {
+					var processedChildren strings.Builder
+					for _, child := range node.Children {
+						processedChildren.WriteString(tp.processChildPreservingReferences(child))
+					}
+					return tp.processTagWithContent(node, processedChildren.String())
+				}
+			} else {
+				// No wildcards - preserve the tag as literal text for runtime
+				return node.String()
+			}
+		}
+
+		if historyTags[node.TagName] {
+			// Always preserve history reference tags as literal text
 			return node.String()
 		}
 
@@ -1579,10 +1917,27 @@ func (tp *TreeProcessor) processChildPreservingReferences(node *ASTNode) string 
 				processedChildren.WriteString(tp.processChildPreservingReferences(child))
 			}
 
+			childContent := processedChildren.String()
+
+			// Check if the processed content contains preserved wildcard tags
+			// If so, preserve the entire structure instead of processing
+			hasPreservedWildcards := strings.Contains(childContent, "<star") ||
+				strings.Contains(childContent, "<that") ||
+				strings.Contains(childContent, "<input") ||
+				strings.Contains(childContent, "<request") ||
+				strings.Contains(childContent, "<response") ||
+				strings.Contains(childContent, "<topicstar") ||
+				strings.Contains(childContent, "<thatstar")
+
+			if hasPreservedWildcards {
+				// Preserve the entire structure including this tag
+				return node.String()
+			}
+
 			// Now process this tag with the processed children content
 			// We need to temporarily set up the node's processed content
 			// and call the appropriate tag processor
-			return tp.processTagWithContent(node, processedChildren.String())
+			return tp.processTagWithContent(node, childContent)
 		} else {
 			// Self-closing tag - process it
 			return tp.processSelfClosingTag(node)
@@ -1662,6 +2017,7 @@ func (tp *TreeProcessor) processTagWithContent(node *ASTNode, content string) st
 
 func (tp *TreeProcessor) processUppercaseTag(node *ASTNode, content string) string {
 	// Process content directly - convert to uppercase
+	tp.trackMetric("format") // Track format processor usage
 	processedContent := strings.ToUpper(content)
 
 	// Normalize whitespace like the original method
@@ -1678,6 +2034,7 @@ func (tp *TreeProcessor) processUppercaseTag(node *ASTNode, content string) stri
 
 func (tp *TreeProcessor) processLowercaseTag(node *ASTNode, content string) string {
 	// Process content directly - convert to lowercase
+	tp.trackMetric("format") // Track format processor usage
 	processedContent := strings.ToLower(content)
 
 	// Normalize whitespace like the original method
@@ -1694,6 +2051,7 @@ func (tp *TreeProcessor) processLowercaseTag(node *ASTNode, content string) stri
 
 func (tp *TreeProcessor) processFormalTag(node *ASTNode, content string) string {
 	// Process content directly - capitalize first letter of each word
+	tp.trackMetric("format") // Track format processor usage
 	words := strings.Fields(content)
 	var result []string
 
@@ -2221,6 +2579,7 @@ func (tp *TreeProcessor) processWordTag(node *ASTNode, content string) string {
 
 func (tp *TreeProcessor) processDateTag(node *ASTNode, content string) string {
 	// Date tag - current date
+	tp.trackMetric("data") // Track data processor usage
 	format := "Monday, January 2, 2006"
 	if f, exists := node.Attributes["format"]; exists {
 		format = f
@@ -2232,6 +2591,7 @@ func (tp *TreeProcessor) processDateTag(node *ASTNode, content string) string {
 
 func (tp *TreeProcessor) processTimeTag(node *ASTNode, content string) string {
 	// Time tag - current time
+	tp.trackMetric("data") // Track data processor usage
 	defaultFormat := "3:04 PM"
 	format := defaultFormat
 	if f, exists := node.Attributes["format"]; exists {

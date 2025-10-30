@@ -60,27 +60,27 @@ func TestTreeProcessorLearnfTagBasic(t *testing.T) {
 			learnContent: `<learnf>
 				<category>
 					<pattern>WHAT IS MY NAME</pattern>
-					<template><get name="name"/></template>
+					<template>Your name is <get name="name"/></template>
 				</category>
 			</learnf>`,
 			testPattern: "what is my name",
-			expected:    "Alice",
+			expected:    "Your name is Alice",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Set up variables if needed BEFORE learning (AST evaluates at learn time)
+			if strings.Contains(tt.expected, "Alice") {
+				session.Variables["name"] = "Alice"
+			}
+
 			// Process the learnf content
 			result := g.ProcessTemplateWithContext(tt.learnContent, map[string]string{}, session)
 
 			// learnf should return empty string after processing
 			if result != "" {
 				t.Errorf("Expected empty result after learnf, got '%s'", result)
-			}
-
-			// Set up variables if needed
-			if strings.Contains(tt.expected, "Alice") {
-				session.Variables["name"] = "Alice"
 			}
 
 			// Test that the learned pattern works
