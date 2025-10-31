@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -314,4 +315,137 @@ func listFiles(dirPath, extension string) ([]string, error) {
 	})
 
 	return files, err
+}
+
+// ConfigureFromProperties configures SRAIX services from AIML properties
+// Properties should be named like:
+//   sraix.servicename.baseurl = https://api.example.com
+//   sraix.servicename.apikey = your-api-key
+//   sraix.servicename.method = POST
+//   sraix.servicename.timeout = 30
+//   sraix.servicename.responseformat = json
+//   sraix.servicename.responsepath = data.response
+//   sraix.servicename.fallback = Service unavailable
+//   sraix.servicename.header.Authorization = Bearer TOKEN
+//   sraix.servicename.header.Content-Type = application/json
+func (sm *SRAIXManager) ConfigureFromProperties(properties map[string]string) error {
+	// Group properties by service name
+	serviceProps := make(map[string]map[string]string)
+
+	for key, value := range properties {
+		// Only process properties starting with "sraix."
+		if !strings.HasPrefix(key, "sraix.") {
+			continue
+		}
+
+		// Parse the property key: sraix.servicename.property
+		parts := strings.SplitN(key, ".", 3)
+		if len(parts) < 3 {
+			sm.logger.Printf("Warning: Invalid SRAIX property format: %s (expected sraix.servicename.property)", key)
+			continue
+		}
+
+		serviceName := parts[1]
+		propertyName := parts[2]
+
+		if serviceName == "" {
+			sm.logger.Printf("Warning: Empty service name in SRAIX property: %s", key)
+			continue
+		}
+
+		// Initialize service properties map if needed
+		if serviceProps[serviceName] == nil {
+			serviceProps[serviceName] = make(map[string]string)
+		}
+
+		serviceProps[serviceName][propertyName] = value
+	}
+
+	// Create SRAIX configs from grouped properties
+	for serviceName, props := range serviceProps {
+		config, err := sm.buildConfigFromProperties(serviceName, props)
+		if err != nil {
+			sm.logger.Printf("Warning: Failed to build SRAIX config for service '%s': %v", serviceName, err)
+			continue
+		}
+
+		if err := sm.AddConfig(config); err != nil {
+			sm.logger.Printf("Warning: Failed to add SRAIX config for service '%s': %v", serviceName, err)
+			continue
+		}
+
+		if sm.verbose {
+			sm.logger.Printf("Configured SRAIX service from properties: %s -> %s", serviceName, config.BaseURL)
+		}
+	}
+
+	return nil
+}
+
+// buildConfigFromProperties builds a SRAIXConfig from property map
+func (sm *SRAIXManager) buildConfigFromProperties(serviceName string, props map[string]string) (*SRAIXConfig, error) {
+	config := &SRAIXConfig{
+		Name:    serviceName,
+		Headers: make(map[string]string),
+	}
+
+	// Parse standard properties
+	for key, value := range props {
+		switch {
+		case key == "baseurl":
+			config.BaseURL = value
+		case key == "apikey":
+			// API key can be set as a header or used differently based on the service
+			// By default, add it as Authorization header
+			config.Headers["Authorization"] = value
+		case key == "method":
+			config.Method = strings.ToUpper(value)
+		case key == "timeout":
+			timeout, err := strconv.Atoi(value)
+			if err != nil {
+				sm.logger.Printf("Warning: Invalid timeout value for service '%s': %s", serviceName, value)
+			} else {
+				config.Timeout = timeout
+			}
+		case key == "responseformat":
+			config.ResponseFormat = value
+		case key == "responsepath":
+			config.ResponsePath = value
+		case key == "fallback":
+			config.FallbackResponse = value
+		case key == "includewildcards":
+			include, err := strconv.ParseBool(value)
+			if err != nil {
+				sm.logger.Printf("Warning: Invalid includewildcards value for service '%s': %s", serviceName, value)
+			} else {
+				config.IncludeWildcards = include
+			}
+		case strings.HasPrefix(key, "header."):
+			// Extract header name
+			headerName := strings.TrimPrefix(key, "header.")
+			if headerName != "" {
+				config.Headers[headerName] = value
+			}
+		default:
+			sm.logger.Printf("Warning: Unknown SRAIX property for service '%s': %s", serviceName, key)
+		}
+	}
+
+	// Validate required fields
+	if config.BaseURL == "" {
+		return nil, fmt.Errorf("baseurl is required for SRAIX service '%s'", serviceName)
+	}
+
+	// Set defaults if not specified
+	if config.Method == "" {
+		config.Method = "POST"
+	}
+	if config.Timeout == 0 {
+		config.Timeout = 30
+	}
+	if config.ResponseFormat == "" {
+		config.ResponseFormat = "text"
+	}
+
+	return config, nil
 }

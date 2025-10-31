@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml>
+<!--
+  Example AIML demonstrating SRAIX service usage with property-based configuration
+
+  To use this example:
+  1. Load sraix-config-example.properties as bot properties
+  2. Services will be automatically configured when SetKnowledgeBase is called
+  3. SRAIX tags can reference the configured services by name
+-->
+
+<!-- OpenAI ChatGPT Service Examples -->
+<category>
+<pattern>ASK OPENAI *</pattern>
+<template>
+  <sraix service="openai"><star/></sraix>
+</template>
+</category>
+
+<category>
+<pattern>CHAT *</pattern>
+<template>
+  <sraix service="openai" hint="casual conversation"><star/></sraix>
+</template>
+</category>
+
+<!-- Weather Service Examples -->
+<category>
+<pattern>WEATHER IN *</pattern>
+<template>
+  <sraix service="weather" hint="location"><star/></sraix>
+</template>
+</category>
+
+<category>
+<pattern>WHAT IS THE WEATHER</pattern>
+<template>
+  <sraix service="weather">current weather</sraix>
+</template>
+</category>
+
+<!-- Translation Service Examples -->
+<category>
+<pattern>TRANSLATE * TO SPANISH</pattern>
+<template>
+  <sraix service="translate" hint="en|es"><star/></sraix>
+</template>
+</category>
+
+<category>
+<pattern>TRANSLATE * TO FRENCH</pattern>
+<template>
+  <sraix service="translate" hint="en|fr"><star/></sraix>
+</template>
+</category>
+
+<!-- Custom Service Examples -->
+<category>
+<pattern>QUERY MYSERVICE *</pattern>
+<template>
+  <sraix service="myservice"><star/></sraix>
+</template>
+</category>
+
+<!-- Simple Service Example -->
+<category>
+<pattern>SIMPLE QUERY *</pattern>
+<template>
+  <sraix service="simple"><star/></sraix>
+</template>
+</category>
+
+<!-- Example with fallback handling -->
+<category>
+<pattern>TRY OPENAI *</pattern>
+<template>
+  <think><set var="result"><sraix service="openai"><star/></sraix></set></think>
+  <condition var="result">
+    <li value="AI service temporarily unavailable">I'm having trouble reaching the AI service right now. Please try again later.</li>
+    <li><get var="result"/></li>
+  </condition>
+</template>
+</category>
+
+<!-- Example showing multiple service calls -->
+<category>
+<pattern>COMPARE SERVICES *</pattern>
+<template>
+  OpenAI says: <sraix service="openai"><star/></sraix>
+
+  Simple service says: <sraix service="simple"><star/></sraix>
+</template>
+</category>
+
+</aiml>

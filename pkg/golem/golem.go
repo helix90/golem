@@ -2008,6 +2008,13 @@ func (g *Golem) SetKnowledgeBase(kb *AIMLKnowledgeBase) {
 	// Register properties handler now that we have a knowledge base
 	propertiesHandler := &PropertiesHandler{aimlKB: kb}
 	g.oobMgr.RegisterHandler(propertiesHandler)
+
+	// Configure SRAIX services from properties if SRAIX manager exists
+	if g.sraixMgr != nil && kb != nil && kb.Properties != nil {
+		if err := g.sraixMgr.ConfigureFromProperties(kb.Properties); err != nil {
+			g.LogWarn("Failed to configure SRAIX from properties: %v", err)
+		}
+	}
 }
 
 // GetKnowledgeBase returns the current AIML knowledge base
