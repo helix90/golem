@@ -21,6 +21,11 @@ type SRAIXConfig struct {
 	Name string `json:"name"`
 	// Base URL for the service
 	BaseURL string `json:"base_url"`
+	// URL template with placeholders like {input}, {apikey}, {lat}, {lon}
+	// If set, this overrides BaseURL and standard query param handling
+	URLTemplate string `json:"url_template"`
+	// Query parameter name for GET requests (default: "input")
+	QueryParam string `json:"query_param"`
 	// HTTP method (GET, POST, etc.)
 	Method string `json:"method"`
 	// Headers to include in requests
@@ -104,17 +109,32 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 	}
 
 	// Prepare the request
-	url := config.BaseURL
+	var url string
 	var body io.Reader
 	var contentType string
 
+	// Check if URL template is configured
+	if config.URLTemplate != "" {
+		// Use URL template with placeholder substitution
+		url = sm.substituteURLTemplate(config.URLTemplate, input, wildcards, config.Headers)
+	} else {
+		url = config.BaseURL
+	}
+
 	// Build request body based on method and configuration
 	if config.Method == "GET" {
-		// For GET requests, append input as query parameter
-		if strings.Contains(url, "?") {
-			url += "&input=" + strings.ReplaceAll(input, " ", "+")
-		} else {
-			url += "?input=" + strings.ReplaceAll(input, " ", "+")
+		// Skip query param appending if URL template was used
+		if config.URLTemplate == "" {
+			// For GET requests, append input as query parameter
+			paramName := config.QueryParam
+			if paramName == "" {
+				paramName = "input" // Default parameter name
+			}
+			if strings.Contains(url, "?") {
+				url += "&" + paramName + "=" + strings.ReplaceAll(input, " ", "+")
+			} else {
+				url += "?" + paramName + "=" + strings.ReplaceAll(input, " ", "+")
+			}
 		}
 	} else {
 		// For POST/PUT requests, create JSON body
@@ -228,6 +248,55 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 	}
 
 	return strings.TrimSpace(response), nil
+}
+
+// substituteURLTemplate replaces placeholders in URL template with actual values
+// Supported placeholders:
+//   {input} - the SRAIX input text
+//   {apikey} - API key from headers (Authorization header)
+//   {lat}, {lon} - latitude/longitude from wildcards or parsed from hint
+//   {location} - location name from wildcards
+//   {WILDCARD_NAME} - any wildcard value in uppercase
+func (sm *SRAIXManager) substituteURLTemplate(template, input string, wildcards map[string]string, headers map[string]string) string {
+	result := template
+
+	// URL-encode the input for safe inclusion in URLs
+	encodedInput := strings.ReplaceAll(input, " ", "+")
+
+	// Substitute {input}
+	result = strings.ReplaceAll(result, "{input}", encodedInput)
+
+	// Substitute {apikey} from Authorization header
+	if apikey, exists := headers["Authorization"]; exists {
+		result = strings.ReplaceAll(result, "{apikey}", apikey)
+	}
+
+	// Parse coordinates from hint if present (format: "lat,lon")
+	if hint, exists := wildcards["hint"]; exists && hint != "" {
+		parts := strings.Split(hint, ",")
+		if len(parts) == 2 {
+			// Add parsed lat/lon to wildcards for substitution
+			wildcards["lat"] = strings.TrimSpace(parts[0])
+			wildcards["lon"] = strings.TrimSpace(parts[1])
+		}
+	}
+
+	// Substitute common wildcard placeholders
+	commonWildcards := []string{"lat", "lon", "location", "hint", "botid", "host"}
+	for _, key := range commonWildcards {
+		placeholder := "{" + key + "}"
+		if value, exists := wildcards[key]; exists {
+			result = strings.ReplaceAll(result, placeholder, value)
+		}
+	}
+
+	// Substitute any uppercase wildcard placeholders {WILDCARD_NAME}
+	for key, value := range wildcards {
+		placeholder := "{" + strings.ToUpper(key) + "}"
+		result = strings.ReplaceAll(result, placeholder, value)
+	}
+
+	return result
 }
 
 // extractJSONPath extracts a value from JSON data using dot notation
@@ -394,6 +463,10 @@ func (sm *SRAIXManager) buildConfigFromProperties(serviceName string, props map[
 		switch {
 		case key == "baseurl":
 			config.BaseURL = value
+		case key == "urltemplate":
+			config.URLTemplate = value
+		case key == "queryparam":
+			config.QueryParam = value
 		case key == "apikey":
 			// API key can be set as a header or used differently based on the service
 			// By default, add it as Authorization header
@@ -432,8 +505,8 @@ func (sm *SRAIXManager) buildConfigFromProperties(serviceName string, props map[
 	}
 
 	// Validate required fields
-	if config.BaseURL == "" {
-		return nil, fmt.Errorf("baseurl is required for SRAIX service '%s'", serviceName)
+	if config.BaseURL == "" && config.URLTemplate == "" {
+		return nil, fmt.Errorf("baseurl or urltemplate is required for SRAIX service '%s'", serviceName)
 	}
 
 	// Set defaults if not specified

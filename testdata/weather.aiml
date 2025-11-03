@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aiml>
+<!--
+  Weather Integration using Pirate Weather API
+
+  Features:
+  - Query weather for default user location
+  - Query weather for specified location
+  - Set user's default location
+  - Geocoding support for location names
+
+  Configuration:
+  - Load weather-config.properties for SRAIX service configuration
+  - Set PIRATE_WEATHER_API_KEY environment variable
+
+  Example usage:
+  - "What's the weather?"
+  - "What's the weather in San Francisco?"
+  - "My location is Boston"
+  - "Set my location to Portland Oregon"
+-->
+
+<!-- Set user's default location -->
+<category>
+<pattern>MY LOCATION IS *</pattern>
+<template>
+  <think>
+    <!-- Geocode the location to get coordinates -->
+    <set var="location"><star/></set>
+    <set var="lat"><sraix service="geocode"><get var="location"/></sraix></set>
+    <set var="lon"><sraix service="geocode_lon"><get var="location"/></sraix></set>
+
+    <!-- Store location and coordinates as predicates -->
+    <set name="location"><get var="location"/></set>
+    <set name="latitude"><get var="lat"/></set>
+    <set name="longitude"><get var="lon"/></set>
+  </think>
+
+  <!-- Confirm to user -->
+  <condition var="lat">
+    <li value="Unable to find that location">I couldn't find that location. Please try again with a city name or address.</li>
+    <li>I've set your location to <get name="location"/> (coordinates: <get name="latitude"/>, <get name="longitude"/>).</li>
+  </condition>
+</template>
+</category>
+
+<category>
+<pattern>SET MY LOCATION TO *</pattern>
+<template><srai>MY LOCATION IS <star/></srai></template>
+</category>
+
+<category>
+<pattern>SET LOCATION *</pattern>
+<template><srai>MY LOCATION IS <star/></srai></template>
+</category>
+
+<!-- Query weather for user's default location -->
+<category>
+<pattern>WHAT IS THE WEATHER</pattern>
+<template>
+  <think>
+    <set var="lat"><get name="latitude"/></set>
+    <set var="lon"><get name="longitude"/></set>
+  </think>
+
+  <!-- Check if location is set -->
+  <condition var="lat">
+    <li value=""><li value="0.0"><li value="0">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li></li></li>
+    <li>
+      <!-- Call weather API with stored coordinates passed via hint -->
+      <think><set var="coords"><get var="lat"/>,<get var="lon"/></set></think>
+      The weather in <get name="location"/> is currently: <sraix service="weather" hint="{<get var="coords"/>}">weather</sraix>
+    </li>
+  </condition>
+</template>
+</category>
+
+<category>
+<pattern>WEATHER</pattern>
+<template><srai>WHAT IS THE WEATHER</srai></template>
+</category>
+
+<category>
+<pattern>WHAT IS THE WEATHER LIKE</pattern>
+<template><srai>WHAT IS THE WEATHER</srai></template>
+</category>
+
+<category>
+<pattern>HOW IS THE WEATHER</pattern>
+<template><srai>WHAT IS THE WEATHER</srai></template>
+</category>
+
+<!-- Query weather for a specific location -->
+<category>
+<pattern>WHAT IS THE WEATHER IN *</pattern>
+<template>
+  <think>
+    <!-- Geocode the location -->
+    <set var="location"><star/></set>
+    <set var="lat"><sraix service="geocode"><get var="location"/></sraix></set>
+    <set var="lon"><sraix service="geocode_lon"><get var="location"/></sraix></set>
+  </think>
+
+  <!-- Check if geocoding succeeded -->
+  <condition var="lat">
+    <li value="Unable to find that location">I couldn't find weather information for <get var="location"/>. Please check the location name and try again.</li>
+    <li>
+      <!-- Call weather API with geocoded coordinates passed via hint -->
+      <think><set var="coords"><get var="lat"/>,<get var="lon"/></set></think>
+      The weather in <get var="location"/> is currently: <sraix service="weather" hint="{<get var="coords"/>}">weather</sraix>
+    </li>
+  </condition>
+</template>
+</category>
+
+<category>
+<pattern>WEATHER IN *</pattern>
+<template><srai>WHAT IS THE WEATHER IN <star/></srai></template>
+</category>
+
+<category>
+<pattern>WHAT IS THE WEATHER LIKE IN *</pattern>
+<template><srai>WHAT IS THE WEATHER IN <star/></srai></template>
+</category>
+
+<category>
+<pattern>HOW IS THE WEATHER IN *</pattern>
+<template><srai>WHAT IS THE WEATHER IN <star/></srai></template>
+</category>
+
+<!-- Weather forecast queries -->
+<category>
+<pattern>WEATHER FORECAST</pattern>
+<template>
+  <think>
+    <set var="lat"><get name="latitude"/></set>
+    <set var="lon"><get name="longitude"/></set>
+  </think>
+
+  <condition var="lat">
+    <li value=""><li value="0.0"><li value="0">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li></li></li>
+    <li>
+      <think><set var="coords"><get var="lat"/>,<get var="lon"/></set></think>
+      Here's the weather forecast for <get name="location"/>: <sraix service="weather" hint="{<get var="coords"/>}">weather</sraix>
+    </li>
+  </condition>
+</template>
+</category>
+
+<category>
+<pattern>WEATHER FORECAST FOR *</pattern>
+<template><srai>WHAT IS THE WEATHER IN <star/></srai></template>
+</category>
+
+<!-- Temperature queries -->
+<category>
+<pattern>WHAT IS THE TEMPERATURE</pattern>
+<template><srai>WHAT IS THE WEATHER</srai></template>
+</category>
+
+<category>
+<pattern>WHAT IS THE TEMPERATURE IN *</pattern>
+<template><srai>WHAT IS THE WEATHER IN <star/></srai></template>
+</category>
+
+<!-- Location info queries -->
+<category>
+<pattern>WHAT IS MY LOCATION</pattern>
+<template>
+  <condition name="location">
+    <li value="">You haven't set your location yet. Tell me your location by saying "My location is [city name]".</li>
+    <li>Your location is set to <get name="location"/> (coordinates: <get name="latitude"/>, <get name="longitude"/>).</li>
+  </condition>
+</template>
+</category>
+
+<category>
+<pattern>WHERE AM I</pattern>
+<template><srai>WHAT IS MY LOCATION</srai></template>
+</category>
+
+<!-- Clear location -->
+<category>
+<pattern>CLEAR MY LOCATION</pattern>
+<template>
+  <think>
+    <set name="location"></set>
+    <set name="latitude">0.0</set>
+    <set name="longitude">0.0</set>
+  </think>
+  Your location has been cleared.
+</template>
+</category>
+
+</aiml>
