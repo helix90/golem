@@ -64,12 +64,14 @@
   </think>
 
   <!-- Check if location is set -->
-  <condition var="lat">
-    <li value=""><li value="0.0"><li value="0">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li></li></li>
+  <condition>
+    <li var="lat" value="">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li>
+    <li var="lat" value="0.0">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li>
+    <li var="lat" value="0">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li>
     <li>
       <!-- Call weather API with stored coordinates passed via hint -->
       <think><set var="coords"><get var="lat"/>,<get var="lon"/></set></think>
-      The weather in <get name="location"/> is currently: <sraix service="weather" hint="{<get var="coords"/>}">weather</sraix>
+      The weather in <get name="location"/> is currently: <sraix service="weather" hint="<get var="coords"/>">weather</sraix>
     </li>
   </condition>
 </template>
@@ -107,7 +109,7 @@
     <li>
       <!-- Call weather API with geocoded coordinates passed via hint -->
       <think><set var="coords"><get var="lat"/>,<get var="lon"/></set></think>
-      The weather in <get var="location"/> is currently: <sraix service="weather" hint="{<get var="coords"/>}">weather</sraix>
+      The weather in <get var="location"/> is currently: <sraix service="weather" hint="<get var="coords"/>">weather</sraix>
     </li>
   </condition>
 </template>
@@ -137,11 +139,13 @@
     <set var="lon"><get name="longitude"/></set>
   </think>
 
-  <condition var="lat">
-    <li value=""><li value="0.0"><li value="0">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li></li></li>
+  <condition>
+    <li var="lat" value="">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li>
+    <li var="lat" value="0.0">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li>
+    <li var="lat" value="0">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li>
     <li>
       <think><set var="coords"><get var="lat"/>,<get var="lon"/></set></think>
-      Here's the weather forecast for <get name="location"/>: <sraix service="weather" hint="{<get var="coords"/>}">weather</sraix>
+      Here's the weather forecast for <get name="location"/>: <sraix service="weather" hint="<get var="coords"/>">weather</sraix>
     </li>
   </condition>
 </template>
