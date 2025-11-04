@@ -163,6 +163,47 @@ See `ARCHITECTURE.md` for detailed explanation of state persistence patterns.
 - **`/examples-module/`** - Comprehensive demos with documentation
 - **`/testdata/`** - Primary test data (sample.aiml, bot.properties, loader tests)
 
+### Configuration File Formats
+
+**Properties Files (.properties)**:
+All `.properties` files must use JSON array format:
+```json
+[
+  ["key1", "value1"],
+  ["key2", "value2"]
+]
+```
+
+**NOT** Java properties format (`key=value`) or flat JSON objects. Keys starting with underscore (e.g., `"_comment"`) are ignored and can be used for documentation.
+
+**Bot Properties** (`bot.properties`):
+- Contains bot identity, personality, capabilities, and settings
+- Automatically loaded from directories via `LoadPropertiesFromDirectory()`
+- Merged into `AIMLKnowledgeBase.Properties`
+
+**SRAIX Configuration** (e.g., `weather-config.properties`, `sraix-config-example.properties`):
+- Configure external SRAIX services via properties
+- Property format: `sraix.servicename.property`
+- Available properties: `baseurl`, `urltemplate`, `method`, `timeout`, `responseformat`, `responsepath`, `fallback`, `includewildcards`, `header.<HeaderName>`, `apikey`
+- URL template placeholders:
+  - `${ENV_VAR}` - Environment variables (e.g., `${PIRATE_WEATHER_API_KEY}`)
+  - `{input}` - The SRAIX input text
+  - `{apikey}` - API key from headers (Authorization header)
+  - `{lat}`, `{lon}` - Automatically from session variables `latitude`/`longitude`
+  - `{location}` - Location name from wildcards
+  - `{WILDCARD_NAME}` - Any wildcard value in uppercase
+- Automatically configured via `ConfigureFromProperties()` when knowledge base is set
+- Example: `export PIRATE_WEATHER_API_KEY="your-key"` then use `${PIRATE_WEATHER_API_KEY}` in URL templates
+
+**Loading Files**:
+```go
+// Load all files from directory (AIML, maps, sets, properties)
+g.LoadAIMLFromDirectory("testdata")
+
+// Properties are automatically loaded and merged
+// SRAIX services are automatically configured from properties
+```
+
 ## Key Implementation Patterns
 
 ### Tree Processing System (THE CRITICAL FEATURE)

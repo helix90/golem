@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<aiml>
+<aiml version="2.0">
 <!--
   Weather Integration using Pirate Weather API
 
@@ -61,6 +61,7 @@
   <think>
     <set var="lat"><get name="latitude"/></set>
     <set var="lon"><get name="longitude"/></set>
+    <set name="_coords"><get var="lat"/>,<get var="lon"/></set>
   </think>
 
   <!-- Check if location is set -->
@@ -69,12 +70,16 @@
     <li var="lat" value="0.0">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li>
     <li var="lat" value="0">You haven't set your location yet. Please tell me your location first by saying "My location is [city name]".</li>
     <li>
-      <!-- Call weather API with stored coordinates passed via hint -->
-      <think><set var="coords"><get var="lat"/>,<get var="lon"/></set></think>
-      The weather in <get name="location"/> is currently: <sraix service="weather" hint="<get var="coords"/>">weather</sraix>
+      <!-- Call weather API with stored coordinates -->
+      <srai>CALL WEATHER API</srai>
     </li>
   </condition>
 </template>
+</category>
+
+<category>
+<pattern>CALL WEATHER API</pattern>
+<template>The weather in <get name="location"/> is currently: <sraix service="weather">weather</sraix></template>
 </category>
 
 <category>
@@ -101,15 +106,18 @@
     <set var="location"><star/></set>
     <set var="lat"><sraix service="geocode"><get var="location"/></sraix></set>
     <set var="lon"><sraix service="geocode_lon"><get var="location"/></sraix></set>
+    <!-- Store geocoded coordinates as temporary session predicates for SRAIX -->
+    <set name="latitude"><get var="lat"/></set>
+    <set name="longitude"><get var="lon"/></set>
+    <set name="location"><get var="location"/></set>
   </think>
 
   <!-- Check if geocoding succeeded -->
   <condition var="lat">
     <li value="Unable to find that location">I couldn't find weather information for <get var="location"/>. Please check the location name and try again.</li>
     <li>
-      <!-- Call weather API with geocoded coordinates passed via hint -->
-      <think><set var="coords"><get var="lat"/>,<get var="lon"/></set></think>
-      The weather in <get var="location"/> is currently: <sraix service="weather" hint="<get var="coords"/>">weather</sraix>
+      <!-- Call weather API - lat/lon will be passed automatically from session predicates -->
+      The weather in <get var="location"/> is currently: <sraix service="weather">weather</sraix>
     </li>
   </condition>
 </template>

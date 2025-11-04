@@ -662,6 +662,29 @@ func (tp *TreeProcessor) processSRAIXTag(node *ASTNode, content string) string {
 		requestParams["hint"] = hintText
 	}
 
+	// Add lat/lon from session predicates if available (for weather and location-based services)
+	if tp.ctx != nil && tp.ctx.Session != nil && tp.ctx.Session.Variables != nil {
+		hasLat := false
+		hasLon := false
+
+		if lat, exists := tp.ctx.Session.Variables["latitude"]; exists && lat != "" {
+			requestParams["lat"] = lat
+			hasLat = true
+		}
+		if lon, exists := tp.ctx.Session.Variables["longitude"]; exists && lon != "" {
+			requestParams["lon"] = lon
+			hasLon = true
+		}
+
+		// Only use _coords as fallback if we don't have individual lat/lon
+		// (because _coords in hint will override lat/lon in substituteURLTemplate)
+		if !hasLat || !hasLon {
+			if coords, exists := tp.ctx.Session.Variables["_coords"]; exists && coords != "" {
+				requestParams["hint"] = coords
+			}
+		}
+	}
+
 	// Make the external service request
 	response, err := tp.golem.sraixMgr.ProcessSRAIX(targetService, sraixContent, requestParams)
 	if err != nil {
@@ -776,36 +799,52 @@ func (tp *TreeProcessor) evaluateAttributeValue(value string) string {
 
 func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 	// Process set tag - can be either variable assignment OR collection operations
-	name, exists := node.Attributes["name"]
-	if !exists {
+	// Check for both 'name' (session predicates) and 'var' (local variables)
+	name, nameExists := node.Attributes["name"]
+	varName, varExists := node.Attributes["var"]
+
+	if !nameExists && !varExists {
 		return content
 	}
 
-	// Evaluate the name if it contains AIML tags (like <star/>)
-	name = tp.evaluateAttributeValue(name)
-
-	// Check if this is a collection operation (has operation attribute)
-	operation, hasOperation := node.Attributes["operation"]
-
-	if hasOperation {
-		// Distinguish between variable operations and Set collection operations
-		// Variable operations: assign (explicit variable assignment)
-		// Set collection operations: add, remove, delete, clear, size, length, contains, has, get
-		if operation == "assign" {
-			// Explicit variable assignment - treat as no-operation case below
-			hasOperation = false
-		} else {
-			// This is a Set collection operation
-			return tp.processSetCollectionTag(node, name, operation, content)
-		}
+	// Determine which attribute to use and whether this is a local variable
+	isLocalVar := false
+	varKey := ""
+	if varExists {
+		isLocalVar = true
+		varKey = varName
+	} else {
+		varKey = name
 	}
 
-	// No operation attribute - check if a Set collection with this name already exists
-	// If yes, treat it as "get" operation; if no, treat as variable assignment
-	if tp.ctx != nil && tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.SetCollections != nil {
-		if _, exists := tp.ctx.KnowledgeBase.SetCollections[name]; exists {
-			// Set collection exists, treat this as a "get" operation
-			return tp.processSetCollectionTag(node, name, "get", content)
+	// Evaluate the name/var if it contains AIML tags (like <star/>)
+	varKey = tp.evaluateAttributeValue(varKey)
+
+	// Local variables don't support collection operations, skip collection logic for them
+	if !isLocalVar {
+		// Check if this is a collection operation (has operation attribute)
+		operation, hasOperation := node.Attributes["operation"]
+
+		if hasOperation {
+			// Distinguish between variable operations and Set collection operations
+			// Variable operations: assign (explicit variable assignment)
+			// Set collection operations: add, remove, delete, clear, size, length, contains, has, get
+			if operation == "assign" {
+				// Explicit variable assignment - treat as no-operation case below
+				hasOperation = false
+			} else {
+				// This is a Set collection operation
+				return tp.processSetCollectionTag(node, varKey, operation, content)
+			}
+		}
+
+		// No operation attribute - check if a Set collection with this name already exists
+		// If yes, treat it as "get" operation; if no, treat as variable assignment
+		if tp.ctx != nil && tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.SetCollections != nil {
+			if _, exists := tp.ctx.KnowledgeBase.SetCollections[varKey]; exists {
+				// Set collection exists, treat this as a "get" operation
+				return tp.processSetCollectionTag(node, varKey, "get", content)
+			}
 		}
 	}
 
@@ -815,30 +854,39 @@ func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 
 	// Set the variable in context
 	if tp.ctx != nil {
-		// Special handling for "topic" - update session topic
-		if name == "topic" && tp.ctx.Session != nil {
-			tp.ctx.Session.SetSessionTopic(value)
-			tp.ctx.Topic = value // Update context topic as well
-		}
-
-		// Set in session variables if session exists
-		if tp.ctx.Session != nil {
-			if tp.ctx.Session.Variables == nil {
-				tp.ctx.Session.Variables = make(map[string]string)
-			}
-			tp.ctx.Session.Variables[name] = value
-		} else if tp.ctx.KnowledgeBase != nil {
-			// No session - set in knowledge base variables (global)
-			if tp.ctx.KnowledgeBase.Variables == nil {
-				tp.ctx.KnowledgeBase.Variables = make(map[string]string)
-			}
-			tp.ctx.KnowledgeBase.Variables[name] = value
-		} else {
-			// Fallback to local variables as last resort
+		// Local variables are stored in LocalVars
+		if isLocalVar {
 			if tp.ctx.LocalVars == nil {
 				tp.ctx.LocalVars = make(map[string]string)
 			}
-			tp.ctx.LocalVars[name] = value
+			tp.ctx.LocalVars[varKey] = value
+		} else {
+			// Session predicates are stored in Session.Variables
+			// Special handling for "topic" - update session topic
+			if varKey == "topic" && tp.ctx.Session != nil {
+				tp.ctx.Session.SetSessionTopic(value)
+				tp.ctx.Topic = value // Update context topic as well
+			}
+
+			// Set in session variables if session exists
+			if tp.ctx.Session != nil {
+				if tp.ctx.Session.Variables == nil {
+					tp.ctx.Session.Variables = make(map[string]string)
+				}
+				tp.ctx.Session.Variables[varKey] = value
+			} else if tp.ctx.KnowledgeBase != nil {
+				// No session - set in knowledge base variables (global)
+				if tp.ctx.KnowledgeBase.Variables == nil {
+					tp.ctx.KnowledgeBase.Variables = make(map[string]string)
+				}
+				tp.ctx.KnowledgeBase.Variables[varKey] = value
+				} else {
+				// Fallback to local variables as last resort
+				if tp.ctx.LocalVars == nil {
+					tp.ctx.LocalVars = make(map[string]string)
+				}
+				tp.ctx.LocalVars[varKey] = value
+			}
 		}
 	}
 
@@ -939,45 +987,70 @@ func (tp *TreeProcessor) processSetCollectionTag(node *ASTNode, name string, ope
 
 func (tp *TreeProcessor) processGetTag(node *ASTNode, content string) string {
 	// Process get tag - variable retrieval
-	name, exists := node.Attributes["name"]
-	if !exists {
+	// Check for both 'name' (session predicates) and 'var' (local variables)
+	name, nameExists := node.Attributes["name"]
+	varName, varExists := node.Attributes["var"]
+
+	if !nameExists && !varExists {
 		return content
 	}
 
-	// Evaluate the name if it contains AIML tags (like <star/>)
-	name = tp.evaluateAttributeValue(name)
+	// Determine which attribute to use and whether this is a local variable
+	isLocalVar := false
+	varKey := ""
+	if varExists {
+		isLocalVar = true
+		varKey = varName
+	} else {
+		varKey = name
+	}
+
+	// Evaluate the name/var if it contains AIML tags (like <star/>)
+	varKey = tp.evaluateAttributeValue(varKey)
 
 	// Get the variable value from context
 	if tp.ctx != nil {
-		// Check local variables first
+		// If explicitly asking for local variable, check only LocalVars
+		if isLocalVar {
+			if tp.ctx.LocalVars != nil {
+				if value, exists := tp.ctx.LocalVars[varKey]; exists {
+					return value
+				}
+			}
+			// Local variable not found, return empty
+			return ""
+		}
+
+		// For session predicates (name attribute), check in order:
+		// 1. Local variables (for compatibility)
 		if tp.ctx.LocalVars != nil {
-			if value, exists := tp.ctx.LocalVars[name]; exists {
+			if value, exists := tp.ctx.LocalVars[varKey]; exists {
 				return value
 			}
 		}
-		// Check session variables
+		// 2. Session variables
 		if tp.ctx.Session != nil && tp.ctx.Session.Variables != nil {
-			if value, exists := tp.ctx.Session.Variables[name]; exists {
+			if value, exists := tp.ctx.Session.Variables[varKey]; exists {
 				return value
 			}
 		}
-		// Check topic variables
+		// 3. Topic variables
 		if tp.ctx.Topic != "" && tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.TopicVars != nil {
 			if topicVars, exists := tp.ctx.KnowledgeBase.TopicVars[tp.ctx.Topic]; exists {
-				if value, exists := topicVars[name]; exists {
+				if value, exists := topicVars[varKey]; exists {
 					return value
 				}
 			}
 		}
-		// Check global variables (from knowledge base)
+		// 4. Global variables (from knowledge base)
 		if tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.Variables != nil {
-			if value, exists := tp.ctx.KnowledgeBase.Variables[name]; exists {
+			if value, exists := tp.ctx.KnowledgeBase.Variables[varKey]; exists {
 				return value
 			}
 		}
-		// Check bot properties
+		// 5. Bot properties
 		if tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.Properties != nil {
-			if value, exists := tp.ctx.KnowledgeBase.Properties[name]; exists {
+			if value, exists := tp.ctx.KnowledgeBase.Properties[varKey]; exists {
 				return value
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -67,8 +68,8 @@ func (sm *SRAIXManager) AddConfig(config *SRAIXConfig) error {
 	if config.Name == "" {
 		return fmt.Errorf("SRAIX config name cannot be empty")
 	}
-	if config.BaseURL == "" {
-		return fmt.Errorf("SRAIX config base URL cannot be empty")
+	if config.BaseURL == "" && config.URLTemplate == "" {
+		return fmt.Errorf("SRAIX config base URL or URL template is required")
 	}
 	if config.Method == "" {
 		config.Method = "POST" // Default to POST
@@ -85,7 +86,11 @@ func (sm *SRAIXManager) AddConfig(config *SRAIXConfig) error {
 
 	sm.configs[config.Name] = config
 	if sm.verbose {
-		sm.logger.Printf("Added SRAIX config: %s -> %s", config.Name, config.BaseURL)
+		url := config.BaseURL
+		if url == "" {
+			url = config.URLTemplate
+		}
+		sm.logger.Printf("Added SRAIX config: %s -> %s", config.Name, url)
 	}
 	return nil
 }
@@ -227,11 +232,11 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 	case "json":
 		if config.ResponsePath != "" {
 			// Extract specific field from JSON response
-			var jsonData map[string]interface{}
+			var jsonData interface{}
 			if err := json.Unmarshal(responseBody, &jsonData); err != nil {
 				return "", fmt.Errorf("failed to parse JSON response: %v", err)
 			}
-			// Simple JSON path extraction (supports dot notation like "data.message")
+			// JSON path extraction (supports dot notation and array indices like "0.lat")
 			response = sm.extractJSONPath(jsonData, config.ResponsePath)
 		}
 	case "xml":
@@ -257,8 +262,22 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 //   {lat}, {lon} - latitude/longitude from wildcards or parsed from hint
 //   {location} - location name from wildcards
 //   {WILDCARD_NAME} - any wildcard value in uppercase
+//   ${ENV_VAR} - environment variable (e.g., ${PIRATE_WEATHER_API_KEY})
 func (sm *SRAIXManager) substituteURLTemplate(template, input string, wildcards map[string]string, headers map[string]string) string {
 	result := template
+
+	// First, substitute environment variables ${ENV_VAR}
+	// Match ${VARNAME} pattern and replace with os.Getenv(VARNAME)
+	envVarPattern := regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
+	result = envVarPattern.ReplaceAllStringFunc(result, func(match string) string {
+		// Extract variable name from ${VARNAME}
+		varName := match[2 : len(match)-1] // Remove ${ and }
+		envValue := os.Getenv(varName)
+		if envValue == "" && sm.verbose {
+			sm.logger.Printf("Warning: Environment variable %s is not set", varName)
+		}
+		return envValue
+	})
 
 	// URL-encode the input for safe inclusion in URLs
 	encodedInput := strings.ReplaceAll(input, " ", "+")
@@ -300,26 +319,57 @@ func (sm *SRAIXManager) substituteURLTemplate(template, input string, wildcards 
 }
 
 // extractJSONPath extracts a value from JSON data using dot notation
-func (sm *SRAIXManager) extractJSONPath(data map[string]interface{}, path string) string {
+func (sm *SRAIXManager) extractJSONPath(data interface{}, path string) string {
 	parts := strings.Split(path, ".")
-	current := data
+	var current interface{} = data
 
 	for i, part := range parts {
 		if i == len(parts)-1 {
 			// Last part, return the value
-			if val, ok := current[part]; ok {
-				if str, ok := val.(string); ok {
-					return str
+			switch v := current.(type) {
+			case map[string]interface{}:
+				if val, ok := v[part]; ok {
+					if str, ok := val.(string); ok {
+						return str
+					}
+					return fmt.Sprintf("%v", val)
 				}
-				return fmt.Sprintf("%v", val)
+			case []interface{}:
+				// If current is an array and part is a number, index into it
+				var index int
+				if n, err := fmt.Sscanf(part, "%d", &index); err == nil && n == 1 {
+					if index >= 0 && index < len(v) {
+						if str, ok := v[index].(string); ok {
+							return str
+						}
+						return fmt.Sprintf("%v", v[index])
+					}
+				}
 			}
 			return ""
 		}
 
 		// Navigate deeper
-		if next, ok := current[part].(map[string]interface{}); ok {
-			current = next
-		} else {
+		switch v := current.(type) {
+		case map[string]interface{}:
+			if next, ok := v[part]; ok {
+				current = next
+			} else {
+				return ""
+			}
+		case []interface{}:
+			// If current is an array and part is a number, index into it
+			var index int
+			if n, err := fmt.Sscanf(part, "%d", &index); err == nil && n == 1 {
+				if index >= 0 && index < len(v) {
+					current = v[index]
+				} else {
+					return ""
+				}
+			} else {
+				return ""
+			}
+		default:
 			return ""
 		}
 	}
