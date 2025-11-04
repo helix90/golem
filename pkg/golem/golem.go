@@ -1582,8 +1582,12 @@ func (g *Golem) loadAllRelatedFiles(filePath string) error {
 		}
 	}
 
-	// Set the knowledge base
-	g.aimlKB = aimlKB
+	g.LogInfo("About to set knowledge base with %d properties", len(aimlKB.Properties))
+
+	// Set the knowledge base using SetKnowledgeBase to trigger SRAIX configuration
+	g.SetKnowledgeBase(aimlKB)
+
+	g.LogInfo("Knowledge base set successfully")
 
 	// Print summary
 	fmt.Printf("Successfully loaded all related files from directory: %s\n", dir)
@@ -1619,14 +1623,13 @@ func (g *Golem) loadCommand(args []string) error {
 
 	// Check if it's a directory
 	if fileInfo.IsDir() {
-		// Load all AIML files from directory
-		kb, err := g.LoadAIMLFromDirectory(absPath)
+		// Load all related files from directory (AIML, maps, sets, properties, etc.)
+		// Use loadAllRelatedFiles which properly triggers SRAIX configuration
+		dummyFilePath := filepath.Join(absPath, "dummy.aiml")
+		err := g.loadAllRelatedFiles(dummyFilePath)
 		if err != nil {
-			return fmt.Errorf("failed to load AIML files from directory: %v", err)
+			return fmt.Errorf("failed to load files from directory: %v", err)
 		}
-		g.aimlKB = kb
-		fmt.Printf("Successfully loaded AIML files from directory: %s\n", absPath)
-		fmt.Printf("Loaded %d categories\n", len(kb.Categories))
 	} else if strings.HasSuffix(strings.ToLower(absPath), ".aiml") {
 		// Load single AIML file and all related files from the same directory
 		err := g.loadAllRelatedFiles(absPath)
@@ -2011,9 +2014,15 @@ func (g *Golem) SetKnowledgeBase(kb *AIMLKnowledgeBase) {
 
 	// Configure SRAIX services from properties if SRAIX manager exists
 	if g.sraixMgr != nil && kb != nil && kb.Properties != nil {
+		g.LogInfo("Configuring SRAIX from %d properties...", len(kb.Properties))
 		if err := g.sraixMgr.ConfigureFromProperties(kb.Properties); err != nil {
 			g.LogWarn("Failed to configure SRAIX from properties: %v", err)
+		} else {
+			g.LogInfo("SRAIX configuration complete")
 		}
+	} else {
+		g.LogInfo("Skipping SRAIX configuration: sraixMgr=%v, kb=%v, properties=%v",
+			g.sraixMgr != nil, kb != nil, kb != nil && kb.Properties != nil)
 	}
 }
 
