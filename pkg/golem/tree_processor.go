@@ -646,8 +646,8 @@ func (tp *TreeProcessor) processSRAIXTag(node *ASTNode, content string) string {
 		if defaultResponse != "" {
 			return defaultResponse
 		}
-		// Provide intelligent fallback based on query pattern
-		return tp.generateSRAIXFallback(sraixContent, serviceName, botName)
+		// Return content when no service and no default (AIML2 spec behavior)
+		return sraixContent
 	}
 
 	// Build request parameters
@@ -693,8 +693,8 @@ func (tp *TreeProcessor) processSRAIXTag(node *ASTNode, content string) string {
 		if defaultResponse != "" {
 			return defaultResponse
 		}
-		// Provide intelligent fallback based on query pattern
-		return tp.generateSRAIXFallback(sraixContent, serviceName, botName)
+		// Return content when service fails and no default (AIML2 spec behavior)
+		return sraixContent
 	}
 
 	tp.golem.LogInfo("SRAIX result: service='%s', input='%s' -> '%s'", targetService, sraixContent, response)
