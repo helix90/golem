@@ -20,7 +20,7 @@ if [ ! -f "./build/golem" ]; then
 fi
 
 echo "Binary: $(file build/golem | head -c 100)"
-echo "API Key: ${PIRATE_WEATHER_API_KEY:0:10}..."
+echo "API Key: ${PIRATE_WEATHER_API_KEY}..."
 echo ""
 
 # Create test commands
