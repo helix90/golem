@@ -6323,7 +6323,7 @@ func (g *Golem) loadDefaultProperties(kb *AIMLKnowledgeBase) error {
 	// Set default properties
 	defaultProps := map[string]string{
 		"name":              "Golem",
-		"version":           "1.0.0",
+		"version":           GetVersion(),
 		"master":            "User",
 		"birthplace":        "Go",
 		"birthday":          "2025-09-23",

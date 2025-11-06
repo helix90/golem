@@ -1,6 +1,7 @@
 package golem
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -115,8 +116,9 @@ func TestBuiltInOOBHandlers(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
-	if response != "Golem v1.0.0" {
-		t.Errorf("Expected 'Golem v1.0.0', got '%s'", response)
+	expectedVersion := fmt.Sprintf("Golem v%s", GetVersion())
+	if response != expectedVersion {
+		t.Errorf("Expected '%s', got '%s'", expectedVersion, response)
 	}
 
 	// Test SessionInfoHandler
@@ -147,7 +149,7 @@ func TestBuiltInOOBHandlers(t *testing.T) {
 	kb := NewAIMLKnowledgeBase()
 	kb.Properties = map[string]string{
 		"name":    "Golem",
-		"version": "1.0.0",
+		"version": GetVersion(),
 	}
 	propertiesHandler := &PropertiesHandler{aimlKB: kb}
 

@@ -97,7 +97,7 @@ func (h *SystemInfoHandler) Process(message string, session *ChatSession) (strin
 		infoType := strings.Join(parts[2:], " ")
 		switch infoType {
 		case "VERSION":
-			return "Golem v1.0.0", nil
+			return fmt.Sprintf("Golem v%s", GetVersion()), nil
 		case "STATUS":
 			return "Running", nil
 		case "HANDLERS":
@@ -106,7 +106,7 @@ func (h *SystemInfoHandler) Process(message string, session *ChatSession) (strin
 			return fmt.Sprintf("Unknown system info request: %s", infoType), nil
 		}
 	}
-	return "System Info: Golem v1.0.0, Status: Running", nil
+	return fmt.Sprintf("System Info: Golem v%s, Status: Running", GetVersion()), nil
 }
 
 func (h *SystemInfoHandler) GetName() string {

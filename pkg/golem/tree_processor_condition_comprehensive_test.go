@@ -622,7 +622,7 @@ func TestConditionTagVariableTypes(t *testing.T) {
 	kb := NewAIMLKnowledgeBase()
 	kb.Properties = map[string]string{
 		"bot_name": "Golem",
-		"version":  "1.5.0",
+		"version":  GetVersion(),
 	}
 	kb.Variables = map[string]string{
 		"global_var": "global_value",

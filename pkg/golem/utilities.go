@@ -3,12 +3,64 @@ package golem
 import (
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 )
+
+// GetVersion reads the version string from the VERSION file
+// Returns "1.0.0" as default if the file cannot be read
+func GetVersion() string {
+	// Try to find the VERSION file starting from the current directory and walking up
+	versionFile := findVersionFile()
+	if versionFile == "" {
+		return "1.0.0" // Default fallback
+	}
+
+	content, err := os.ReadFile(versionFile)
+	if err != nil {
+		return "1.0.0" // Default fallback if read fails
+	}
+
+	version := strings.TrimSpace(string(content))
+	if version == "" {
+		return "1.0.0" // Default if file is empty
+	}
+
+	return version
+}
+
+// findVersionFile searches for the VERSION file starting from the current directory
+// and walking up to the project root
+func findVersionFile() string {
+	// Start from current directory and walk up
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	// Try up to 5 levels up from current directory
+	for i := 0; i < 5; i++ {
+		versionPath := filepath.Join(currentDir, "VERSION")
+		if _, err := os.Stat(versionPath); err == nil {
+			return versionPath
+		}
+
+		// Go up one directory
+		parentDir := filepath.Dir(currentDir)
+		if parentDir == currentDir {
+			// Reached root, stop
+			break
+		}
+		currentDir = parentDir
+	}
+
+	return ""
+}
 
 // Utilities provides general utility functions
 type Utilities struct {
@@ -179,7 +231,7 @@ func (u *Utilities) LoadDefaultProperties(kb *AIMLKnowledgeBase) error {
 	// Set default properties
 	defaultProps := map[string]string{
 		"name":        "Golem",
-		"version":     "1.0.0",
+		"version":     GetVersion(),
 		"language":    "en",
 		"encoding":    "UTF-8",
 		"author":      "Golem AI",

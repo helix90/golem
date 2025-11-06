@@ -318,8 +318,9 @@ func TestProperties(t *testing.T) {
 		t.Errorf("Expected name 'Golem', got '%s'", kb.GetProperty("name"))
 	}
 
-	if kb.GetProperty("version") != "1.0.0" {
-		t.Errorf("Expected version '1.0.0', got '%s'", kb.GetProperty("version"))
+	expectedVersion := GetVersion()
+	if kb.GetProperty("version") != expectedVersion {
+		t.Errorf("Expected version '%s', got '%s'", expectedVersion, kb.GetProperty("version"))
 	}
 
 	// Test property setting
@@ -4058,8 +4059,9 @@ func TestBotTagProcessing(t *testing.T) {
 	}
 
 	// Set up test properties
+	currentVersion := GetVersion()
 	g.aimlKB.Properties["name"] = "GolemBot"
-	g.aimlKB.Properties["version"] = "1.0.0"
+	g.aimlKB.Properties["version"] = currentVersion
 	g.aimlKB.Properties["author"] = "Test Author"
 	g.aimlKB.Properties["language"] = "en"
 
@@ -4076,7 +4078,7 @@ func TestBotTagProcessing(t *testing.T) {
 		{
 			name:     "Multiple bot properties",
 			template: "I am <bot name=\"name\"/> version <bot name=\"version\"/> by <bot name=\"author\"/>.",
-			expected: "I am GolemBot version 1.0.0 by Test Author.",
+			expected: fmt.Sprintf("I am GolemBot version %s by Test Author.", currentVersion),
 		},
 		{
 			name:     "Bot property with other content",
@@ -4096,7 +4098,7 @@ func TestBotTagProcessing(t *testing.T) {
 		{
 			name:     "Mixed bot and get tags",
 			template: "I am <bot name=\"name\"/> and my version is <get name=\"version\"/>.",
-			expected: "I am GolemBot and my version is 1.0.0.",
+			expected: fmt.Sprintf("I am GolemBot and my version is %s.", currentVersion),
 		},
 	}
 
@@ -4322,7 +4324,7 @@ func TestPersonTagIntegration(t *testing.T) {
 
 	// Set up test properties
 	g.aimlKB.Properties["name"] = "TestBot"
-	g.aimlKB.Properties["version"] = "1.0.0"
+	g.aimlKB.Properties["version"] = GetVersion()
 
 	// Create test categories with person tags
 	categories := []Category{
