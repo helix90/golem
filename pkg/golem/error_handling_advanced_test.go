@@ -1,6 +1,7 @@
 package golem
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -181,14 +182,15 @@ func TestConcurrentAccessErrors(t *testing.T) {
 			// Test concurrent access
 			done := make(chan bool, 10)
 			for i := 0; i < 10; i++ {
-				go func() {
-					ctx := g.createSession("test_session")
+				go func(index int) {
+					// Each goroutine gets its own unique session to avoid concurrent map writes
+					ctx := g.createSession(fmt.Sprintf("test_session_%d", index))
 					response, _ := g.ProcessInput("test", ctx)
 					if response != tt.expected && response != "" {
 						t.Errorf("Expected %q or empty string, got %q", tt.expected, response)
 					}
 					done <- true
-				}()
+				}(i)
 			}
 
 			// Wait for all goroutines to complete
