@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -44,8 +45,14 @@ type SRAIXConfig struct {
 	IncludeWildcards bool `json:"include_wildcards"`
 }
 
+// maxSRAIXResponseSize limits how much of a service's response is read
+const maxSRAIXResponseSize = 1 << 20
+
 // SRAIXManager manages external service configurations and HTTP client
 type SRAIXManager struct {
+	// mu guards configs, which are added when a knowledge base is loaded
+	// while sessions may be making SRAIX requests
+	mu      sync.RWMutex
 	configs map[string]*SRAIXConfig
 	client  *http.Client
 	logger  *log.Logger
@@ -72,6 +79,7 @@ func (sm *SRAIXManager) AddConfig(config *SRAIXConfig) error {
 	if config.BaseURL == "" && config.URLTemplate == "" {
 		return fmt.Errorf("SRAIX config base URL or URL template is required")
 	}
+	config.Method = strings.ToUpper(config.Method)
 	if config.Method == "" {
 		config.Method = "POST" // Default to POST
 	}
@@ -85,7 +93,9 @@ func (sm *SRAIXManager) AddConfig(config *SRAIXConfig) error {
 		config.Headers = make(map[string]string)
 	}
 
+	sm.mu.Lock()
 	sm.configs[config.Name] = config
+	sm.mu.Unlock()
 	if sm.verbose {
 		target := config.BaseURL
 		if target == "" {
@@ -98,13 +108,21 @@ func (sm *SRAIXManager) AddConfig(config *SRAIXConfig) error {
 
 // GetConfig retrieves a SRAIX service configuration
 func (sm *SRAIXManager) GetConfig(name string) (*SRAIXConfig, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
 	config, exists := sm.configs[name]
 	return config, exists
 }
 
 // ListConfigs returns all configured SRAIX services
 func (sm *SRAIXManager) ListConfigs() map[string]*SRAIXConfig {
-	return sm.configs
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	configs := make(map[string]*SRAIXConfig, len(sm.configs))
+	for name, config := range sm.configs {
+		configs[name] = config
+	}
+	return configs
 }
 
 // ProcessSRAIX processes a SRAIX tag by making an external HTTP request
@@ -229,10 +247,13 @@ func (sm *SRAIXManager) doRequest(req *http.Request, config *SRAIXConfig) (strin
 	}
 	defer resp.Body.Close()
 
-	// Read response body
-	responseBody, err := io.ReadAll(resp.Body)
+	// Read response body, up to the size limit
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxSRAIXResponseSize+1))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response body: %v", err)
+	}
+	if len(responseBody) > maxSRAIXResponseSize {
+		return "", fmt.Errorf("SRAIX response exceeds %d bytes", maxSRAIXResponseSize)
 	}
 
 	// Check for HTTP errors

@@ -216,3 +216,63 @@ func TestSRAIXExplicitHintKept(t *testing.T) {
 		t.Errorf("Expected hint 'explicit', got %q", got)
 	}
 }
+
+// Responses over the size limit must be rejected, not read into memory.
+func TestSRAIXResponseSizeLimit(t *testing.T) {
+	_, srv := newSRAIXRecorder(t, strings.Repeat("x", maxSRAIXResponseSize+1))
+	sm := NewSRAIXManager(log.New(&bytes.Buffer{}, "", 0), false)
+	if err := sm.AddConfig(&SRAIXConfig{Name: "svc", BaseURL: srv.URL, Method: "GET"}); err != nil {
+		t.Fatalf("Failed to add config: %v", err)
+	}
+	if _, err := sm.ProcessSRAIX("svc", "hello", map[string]string{}); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("Expected a size limit error, got %v", err)
+	}
+}
+
+// A lowercase method from a JSON config must be treated like an uppercase one.
+func TestSRAIXLowercaseMethod(t *testing.T) {
+	rec, srv := newSRAIXRecorder(t, "answer")
+	sm := NewSRAIXManager(log.New(&bytes.Buffer{}, "", 0), false)
+	if err := sm.AddConfig(&SRAIXConfig{Name: "svc", BaseURL: srv.URL, Method: "get"}); err != nil {
+		t.Fatalf("Failed to add config: %v", err)
+	}
+	if _, err := sm.ProcessSRAIX("svc", "hello there", map[string]string{}); err != nil {
+		t.Fatalf("SRAIX failed: %v", err)
+	}
+	req := rec.last(t)
+	if req.Method != http.MethodGet || req.URL.Query().Get("input") != "hello there" {
+		t.Errorf("Expected GET with input query, got %s %s", req.Method, req.URL)
+	}
+}
+
+// Adding configs while sessions make SRAIX requests must not race.
+func TestSRAIXConcurrentConfigs(t *testing.T) {
+	_, srv := newSRAIXRecorder(t, "answer")
+	sm := NewSRAIXManager(log.New(&bytes.Buffer{}, "", 0), false)
+	if err := sm.AddConfig(&SRAIXConfig{Name: "svc", BaseURL: srv.URL, Method: "GET"}); err != nil {
+		t.Fatalf("Failed to add config: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			sm.AddConfig(&SRAIXConfig{Name: strings.Repeat("s", i+2), BaseURL: srv.URL})
+			_ = sm.ListConfigs()
+		}(i)
+		go func() {
+			defer wg.Done()
+			if _, err := sm.ProcessSRAIX("svc", "hello", map[string]string{}); err != nil {
+				t.Errorf("SRAIX failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	configs := sm.ListConfigs()
+	delete(configs, "svc")
+	if _, exists := sm.GetConfig("svc"); !exists {
+		t.Error("Changing the ListConfigs result changed the manager's configs")
+	}
+}

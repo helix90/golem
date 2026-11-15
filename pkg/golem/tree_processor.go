@@ -650,8 +650,7 @@ func (tp *TreeProcessor) processSRAIXTag(node *ASTNode, content string) string {
 		if defaultResponse != "" {
 			return defaultResponse
 		}
-		// Provide intelligent fallback based on query pattern
-		return tp.generateSRAIXFallback(sraixContent, serviceName, botName)
+		return sraixContent
 	}
 
 	tp.golem.LogInfo("Processing SRAIX: service='%s', bot='%s', botid='%s', host='%s', default='%s', hint='%s', content='%s'",
@@ -735,59 +734,6 @@ func (tp *TreeProcessor) processSRAIXTag(node *ASTNode, content string) string {
 
 	tp.golem.LogInfo("SRAIX result: service='%s', input='%s' -> '%s'", targetService, sraixContent, response)
 	return response
-}
-
-// generateSRAIXFallback generates an intelligent fallback response when SRAIX services are unavailable
-func (tp *TreeProcessor) generateSRAIXFallback(query, serviceName, botName string) string {
-	queryUpper := strings.ToUpper(query)
-
-	// Pattern-based fallback responses
-	switch {
-	case strings.HasPrefix(queryUpper, "FAVORITE "):
-		item := strings.TrimPrefix(queryUpper, "FAVORITE ")
-		return fmt.Sprintf("I don't have a specific favorite %s, but I appreciate many things!", strings.ToLower(item))
-
-	case strings.HasPrefix(queryUpper, "WHO IS ") || strings.HasPrefix(queryUpper, "WHO WAS "):
-		return "I don't have detailed information about that person at the moment."
-
-	case strings.HasPrefix(queryUpper, "WHAT IS "):
-		return "I don't have that information available right now."
-
-	case strings.HasPrefix(queryUpper, "WHERE IS ") || strings.HasPrefix(queryUpper, "WHERE ARE "):
-		return "I don't have location information available at the moment."
-
-	case strings.HasPrefix(queryUpper, "WHEN IS ") || strings.HasPrefix(queryUpper, "WHEN WAS ") || strings.HasPrefix(queryUpper, "WHEN DID "):
-		return "I don't have that date or time information available."
-
-	case strings.HasPrefix(queryUpper, "WHY "):
-		return "That's an interesting question that I don't have enough information to answer properly."
-
-	case strings.HasPrefix(queryUpper, "HOW "):
-		return "I don't have detailed instructions for that at the moment."
-
-	case strings.HasPrefix(queryUpper, "DEFINE "):
-		word := strings.TrimPrefix(queryUpper, "DEFINE ")
-		return fmt.Sprintf("I don't have a definition for '%s' available.", strings.ToLower(word))
-
-	case strings.HasPrefix(queryUpper, "WEATHER "):
-		return "I don't have access to weather information at the moment."
-
-	case strings.HasPrefix(queryUpper, "JOKE") || strings.HasPrefix(queryUpper, "LIMERICK"):
-		return "I don't have any jokes or limericks available right now."
-
-	case strings.HasPrefix(queryUpper, "RECOMMEND "):
-		return "I don't have recommendation services available at the moment."
-
-	default:
-		// Generic fallback
-		if serviceName != "" {
-			return fmt.Sprintf("I'm unable to access the '%s' service at the moment.", serviceName)
-		}
-		if botName != "" {
-			return fmt.Sprintf("I'm unable to connect to the '%s' bot at the moment.", botName)
-		}
-		return "I don't have access to external services to answer that question."
-	}
 }
 
 func (tp *TreeProcessor) processThinkTag(_ *ASTNode, content string) string {
