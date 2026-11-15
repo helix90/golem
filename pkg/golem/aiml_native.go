@@ -81,6 +81,17 @@ type AIMLKnowledgeBase struct {
 	mu sync.RWMutex
 }
 
+// removeCategory removes the category at index i. Patterns entries point into
+// Categories, so removing an element shifts later categories under their
+// pointers; the index is rebuilt to keep every key on its own category.
+func (kb *AIMLKnowledgeBase) removeCategory(i int) {
+	kb.Categories = append(kb.Categories[:i], kb.Categories[i+1:]...)
+	kb.Patterns = make(map[string]*Category, len(kb.Categories))
+	for j := range kb.Categories {
+		kb.Patterns[categoryKey(kb.Categories[j])] = &kb.Categories[j]
+	}
+}
+
 // lookupVariable looks up varKey in the topic's variables, then global
 // variables, then bot properties
 func (kb *AIMLKnowledgeBase) lookupVariable(topic string, varKey string) (string, bool) {
@@ -10399,12 +10410,8 @@ func (g *Golem) removeSessionCategory(category Category, ctx *VariableContext) e
 	// Remove from categories slice
 	for i, cat := range g.aimlKB.Categories {
 		// Match based on pattern, that, and topic
-		if NormalizePattern(cat.Pattern) == normalizedPattern &&
-			cat.That == category.That &&
-			cat.Topic == category.Topic &&
-			cat.ThatIndex == category.ThatIndex {
-			// Remove the category by slicing it out
-			g.aimlKB.Categories = append(g.aimlKB.Categories[:i], g.aimlKB.Categories[i+1:]...)
+		if categoryKey(cat) == key {
+			g.aimlKB.removeCategory(i)
 			g.LogInfo("Removed session category: %s", key)
 
 			// Update session learning statistics
@@ -10442,12 +10449,8 @@ func (g *Golem) removePersistentCategory(category Category) error {
 	// Remove from categories slice
 	for i, cat := range g.aimlKB.Categories {
 		// Match based on pattern, that, and topic
-		if NormalizePattern(cat.Pattern) == normalizedPattern &&
-			cat.That == category.That &&
-			cat.Topic == category.Topic &&
-			cat.ThatIndex == category.ThatIndex {
-			// Remove the category by slicing it out
-			g.aimlKB.Categories = append(g.aimlKB.Categories[:i], g.aimlKB.Categories[i+1:]...)
+		if categoryKey(cat) == key {
+			g.aimlKB.removeCategory(i)
 			g.LogInfo("Removed persistent category: %s", key)
 
 			// Remove from persistent storage if available

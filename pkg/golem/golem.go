@@ -1306,13 +1306,10 @@ func (g *Golem) ClearSessionLearning(sessionID string) error {
 
 	// Remove all session-learned categories from knowledge base
 	for _, category := range session.LearnedCategories {
-		normalizedPattern := NormalizePattern(category.Pattern)
-		delete(g.aimlKB.Patterns, categoryKey(category))
-
-		// Remove from categories slice
+		key := categoryKey(category)
 		for i, cat := range g.aimlKB.Categories {
-			if NormalizePattern(cat.Pattern) == normalizedPattern {
-				g.aimlKB.Categories = append(g.aimlKB.Categories[:i], g.aimlKB.Categories[i+1:]...)
+			if categoryKey(cat) == key {
+				g.aimlKB.removeCategory(i)
 				break
 			}
 		}

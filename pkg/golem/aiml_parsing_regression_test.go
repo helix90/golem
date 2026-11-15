@@ -380,3 +380,71 @@ func TestConcurrentSessionsIsolated(t *testing.T) {
 		t.Error(e)
 	}
 }
+
+// Removing a category must not shift other patterns onto the wrong category.
+func TestUnlearnKeepsOtherCategories(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>FORGET A</pattern><template><unlearn><category><pattern>AAA</pattern><template>a</template></category></unlearn>forgot</template></category>
+<category><pattern>AAA</pattern><template>a</template></category>
+<category><pattern>BBB</pattern><template>b</template></category>
+<category><pattern>CCC</pattern><template>c</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	session := g.CreateSession("test")
+	if _, err := g.ProcessInput("forget a", session); err != nil {
+		t.Fatalf("Failed to process input: %v", err)
+	}
+	if response, err := g.ProcessInput("aaa", session); err == nil {
+		t.Errorf("Expected AAA to be unlearned, got '%s'", response)
+	}
+	for input, want := range map[string]string{"bbb": "b", "ccc": "c"} {
+		response, err := g.ProcessInput(input, session)
+		if err != nil || response != want {
+			t.Errorf("ProcessInput(%q): expected '%s', got '%s' (err=%v)", input, want, response, err)
+		}
+	}
+}
+
+// ClearSessionLearning removes only the categories the session learned.
+func TestClearSessionLearningRemovesOnlyLearned(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>ASK</pattern><template>Do you like cats?</template></category>
+<category><pattern>YES</pattern><that>DO YOU LIKE CATS</that><template>cats yes</template></category>
+<category><pattern>TEACH</pattern><template><learn><category><pattern>YES</pattern><template>learned yes</template></category></learn>ok</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	session := g.CreateSession("test")
+	if _, err := g.ProcessInput("teach", session); err != nil {
+		t.Fatalf("Failed to process input: %v", err)
+	}
+	if err := g.ClearSessionLearning("test"); err != nil {
+		t.Fatalf("ClearSessionLearning failed: %v", err)
+	}
+
+	var patterns []string
+	for _, category := range g.GetKnowledgeBase().Categories {
+		patterns = append(patterns, categoryKey(category))
+	}
+	if len(patterns) != 3 || patterns[1] != "YES|THAT:DO YOU LIKE CATS" {
+		t.Errorf("Expected the original 3 categories to remain, got %v", patterns)
+	}
+
+	if response, err := g.ProcessInput("yes", session); err == nil && response == "learned yes" {
+		t.Errorf("Expected learned YES to be removed, got '%s'", response)
+	}
+	if _, err := g.ProcessInput("ask", session); err != nil {
+		t.Fatalf("Failed to process input: %v", err)
+	}
+	response, err := g.ProcessInput("yes", session)
+	if err != nil || response != "cats yes" {
+		t.Errorf("Expected file category 'cats yes' to remain, got '%s' (err=%v)", response, err)
+	}
+}
