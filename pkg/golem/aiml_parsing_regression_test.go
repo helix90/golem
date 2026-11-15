@@ -1,8 +1,10 @@
 package golem
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -336,5 +338,45 @@ func TestASTNodeStringAttributes(t *testing.T) {
 		if got := root.String(); got != want {
 			t.Fatalf("Expected %s, got %s", want, got)
 		}
+	}
+}
+
+// Concurrent sessions must not see each other's template context, and
+// template tags that modify shared knowledge base data must not race.
+func TestConcurrentSessionsIsolated(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>MY NAME IS *</pattern><template><think><set name="name"><star/></set><list name="seen" operation="add"><star/></list><map name="names" key="<star/>" operation="set"><star/></map><array name="ids" operation="add"><star/></array></think>Hi <get name="name"/></template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	const sessions = 50
+	var wg sync.WaitGroup
+	errs := make(chan string, sessions)
+	for i := 0; i < sessions; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			name := fmt.Sprintf("user%d", i)
+			session := g.CreateSession(name)
+			for j := 0; j < 20; j++ {
+				response, err := g.ProcessInput("my name is "+name, session)
+				if err != nil {
+					errs <- fmt.Sprintf("%s: %v", name, err)
+					return
+				}
+				if response != "Hi "+name || session.Variables["name"] != name {
+					errs <- fmt.Sprintf("%s: got response %q, name %q", name, response, session.Variables["name"])
+					return
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		t.Error(e)
 	}
 }

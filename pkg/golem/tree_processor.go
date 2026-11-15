@@ -150,11 +150,7 @@ func (p *TreeProcessorLogic) ResetMetrics() { p.metrics = &ProcessorMetrics{} }
 // trackMetric tracks metrics for a specific processor type
 func (tp *TreeProcessor) trackMetric(processorName string) {
 	if tp.metrics != nil {
-		metrics := tp.metrics.metrics[processorName]
-		if metrics != nil {
-			metrics.TotalCalls++
-			metrics.LastCallTime = time.Now()
-		}
+		tp.metrics.recordCall(processorName)
 	}
 }
 
@@ -846,11 +842,9 @@ func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 
 		// No operation attribute - check if a Set collection with this name already exists
 		// If yes, treat it as "get" operation; if no, treat as variable assignment
-		if tp.ctx != nil && tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.SetCollections != nil {
-			if _, exists := tp.ctx.KnowledgeBase.SetCollections[varKey]; exists {
-				// Set collection exists, treat this as a "get" operation
-				return tp.processSetCollectionTag(node, varKey, "get", content)
-			}
+		if tp.ctx != nil && tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.hasSetCollection(varKey) {
+			// Set collection exists, treat this as a "get" operation
+			return tp.processSetCollectionTag(node, varKey, "get", content)
 		}
 	}
 
@@ -882,10 +876,7 @@ func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 				tp.ctx.Session.Variables[varKey] = value
 			} else if tp.ctx.KnowledgeBase != nil {
 				// No session - set in knowledge base variables (global)
-				if tp.ctx.KnowledgeBase.Variables == nil {
-					tp.ctx.KnowledgeBase.Variables = make(map[string]string)
-				}
-				tp.ctx.KnowledgeBase.Variables[varKey] = value
+				tp.ctx.KnowledgeBase.setVariable(varKey, value)
 			} else {
 				// Fallback to local variables as last resort
 				if tp.ctx.LocalVars == nil {
@@ -908,6 +899,8 @@ func (tp *TreeProcessor) processSetCollectionTag(_ *ASTNode, name string, operat
 		tp.golem.LogInfo("Set collection: no knowledge base available")
 		return ""
 	}
+	tp.ctx.KnowledgeBase.mu.Lock()
+	defer tp.ctx.KnowledgeBase.mu.Unlock()
 
 	// Get or create the set
 	if tp.ctx.KnowledgeBase.SetCollections[name] == nil {
@@ -1040,23 +1033,9 @@ func (tp *TreeProcessor) processGetTag(node *ASTNode, content string) string {
 				return value
 			}
 		}
-		// 3. Topic variables
-		if tp.ctx.Topic != "" && tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.TopicVars != nil {
-			if topicVars, exists := tp.ctx.KnowledgeBase.TopicVars[tp.ctx.Topic]; exists {
-				if value, exists := topicVars[varKey]; exists {
-					return value
-				}
-			}
-		}
-		// 4. Global variables (from knowledge base)
-		if tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.Variables != nil {
-			if value, exists := tp.ctx.KnowledgeBase.Variables[varKey]; exists {
-				return value
-			}
-		}
-		// 5. Bot properties
-		if tp.ctx.KnowledgeBase != nil && tp.ctx.KnowledgeBase.Properties != nil {
-			if value, exists := tp.ctx.KnowledgeBase.Properties[varKey]; exists {
+		// 3-5. Topic variables, global variables (from knowledge base), bot properties
+		if tp.ctx.KnowledgeBase != nil {
+			if value, exists := tp.ctx.KnowledgeBase.lookupVariable(tp.ctx.Topic, varKey); exists {
 				return value
 			}
 		}
@@ -1552,6 +1531,9 @@ func (tp *TreeProcessor) processMapTag(node *ASTNode, content string) string {
 
 	tp.golem.LogInfo("Map tag: name='%s', key='%s', operation='%s', content='%s'", name, key, operation, content)
 
+	tp.ctx.KnowledgeBase.mu.Lock()
+	defer tp.ctx.KnowledgeBase.mu.Unlock()
+
 	// Get or create the map
 	if tp.ctx.KnowledgeBase.Maps[name] == nil {
 		tp.ctx.KnowledgeBase.Maps[name] = make(map[string]string)
@@ -1698,6 +1680,8 @@ func (tp *TreeProcessor) processListTag(node *ASTNode, content string) string {
 		tp.golem.LogInfo("List processing: no knowledge base available")
 		return ""
 	}
+	tp.ctx.KnowledgeBase.mu.Lock()
+	defer tp.ctx.KnowledgeBase.mu.Unlock()
 
 	// Get or create the list
 	if tp.ctx.KnowledgeBase.Lists[name] == nil {
@@ -1841,6 +1825,8 @@ func (tp *TreeProcessor) processArrayTag(node *ASTNode, content string) string {
 		tp.golem.LogInfo("Array processing: no knowledge base available")
 		return ""
 	}
+	tp.ctx.KnowledgeBase.mu.Lock()
+	defer tp.ctx.KnowledgeBase.mu.Unlock()
 
 	// Get or create the array
 	if tp.ctx.KnowledgeBase.Arrays[name] == nil {

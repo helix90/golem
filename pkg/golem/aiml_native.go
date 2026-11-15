@@ -74,6 +74,48 @@ type AIMLKnowledgeBase struct {
 	Arrays         map[string][]string                   // Arrays: arrayName -> []values
 	SetCollections map[string]*SetCollection             // SetCollections: setName -> ordered unique values
 	Substitutions  map[string]map[string]string          // Substitutions: substitutionName -> pattern -> replacement
+
+	// mu guards the data that template tags read and modify at runtime
+	// (Variables, TopicVars, Properties, Maps, Lists, Arrays, SetCollections),
+	// since sessions may process templates concurrently
+	mu sync.RWMutex
+}
+
+// lookupVariable looks up varKey in the topic's variables, then global
+// variables, then bot properties
+func (kb *AIMLKnowledgeBase) lookupVariable(topic string, varKey string) (string, bool) {
+	kb.mu.RLock()
+	defer kb.mu.RUnlock()
+	if topic != "" {
+		if value, exists := kb.TopicVars[topic][varKey]; exists {
+			return value, true
+		}
+	}
+	if value, exists := kb.Variables[varKey]; exists {
+		return value, true
+	}
+	if value, exists := kb.Properties[varKey]; exists {
+		return value, true
+	}
+	return "", false
+}
+
+// setVariable sets a global variable
+func (kb *AIMLKnowledgeBase) setVariable(varKey string, value string) {
+	kb.mu.Lock()
+	defer kb.mu.Unlock()
+	if kb.Variables == nil {
+		kb.Variables = make(map[string]string)
+	}
+	kb.Variables[varKey] = value
+}
+
+// hasSetCollection reports whether a set collection with this name exists
+func (kb *AIMLKnowledgeBase) hasSetCollection(name string) bool {
+	kb.mu.RLock()
+	defer kb.mu.RUnlock()
+	_, exists := kb.SetCollections[name]
+	return exists
 }
 
 // NewAIMLKnowledgeBase creates a new knowledge base
@@ -2164,7 +2206,11 @@ func (g *Golem) processTemplateWithContext(template string, wildcards map[string
 	if g.treeProcessor == nil {
 		g.treeProcessor = NewTreeProcessor(g)
 	}
-	response, err := g.treeProcessor.ProcessTemplate(template, wildcards, ctx)
+	// TreeProcessor holds per-call state (ctx, starCounter), so each call gets
+	// its own; sharing one across concurrent sessions mixed up their contexts.
+	// Only the metrics registry is shared.
+	tp := &TreeProcessor{golem: g, metrics: g.treeProcessor.metrics}
+	response, err := tp.ProcessTemplate(template, wildcards, ctx)
 	if err != nil {
 		g.LogError("Error in tree-based template processing: %v", err)
 		// NEVER return templates with XML tags - return error message instead

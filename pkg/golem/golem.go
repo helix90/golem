@@ -1117,10 +1117,7 @@ func New(verbose bool) *Golem {
 	// Create pattern matching cache
 	patternMatchingCache := NewPatternMatchingCache(2000, 3600) // 2000 results, 1 hour TTL
 
-	// Create tree processor (will be initialized after Golem is created)
-	var treeProcessor *TreeProcessor
-
-	return &Golem{
+	g := &Golem{
 		verbose:                    verbose,
 		logLevel:                   logLevel,
 		logger:                     logger,
@@ -1142,9 +1139,12 @@ func New(verbose bool) *Golem {
 		templateTagProcessingCache: templateTagProcessingCache,
 		patternMatchingCache:       patternMatchingCache,
 		persistentLearning:         persistentLearning,
-		treeProcessor:              treeProcessor,
 		useTreeProcessing:          true, // Tree-based AST processing is now the default (correct AIML behavior)
 	}
+	// Created up front so concurrent template processing never races to
+	// initialize it
+	g.treeProcessor = NewTreeProcessor(g)
+	return g
 }
 
 // LogError logs an error message
