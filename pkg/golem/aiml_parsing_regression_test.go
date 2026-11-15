@@ -485,3 +485,65 @@ func TestPatternIndexPointsIntoCategories(t *testing.T) {
 	}
 	assertIndexPointsIntoCategories(t, g.GetKnowledgeBase())
 }
+
+// Learning and unlearning in some sessions must not race with matching in
+// others, and must never make other sessions see the wrong category.
+func TestConcurrentLearnAndMatch(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>HELLO</pattern><template>hi</template></category>
+<category><pattern>TEACH *</pattern><template><learn><category><pattern><eval><star/></eval></pattern><template>learned</template></category></learn>ok</template></category>
+<category><pattern>FORGET *</pattern><template><unlearn><category><pattern><eval><star/></eval></pattern><template>learned</template></category></unlearn>ok</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	const learners, readers = 10, 10
+	var wg sync.WaitGroup
+	errs := make(chan string, learners+readers)
+	for i := 0; i < learners; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			session := g.CreateSession(fmt.Sprintf("learner%d", i))
+			for j := 0; j < 20; j++ {
+				word := fmt.Sprintf("WORD%dX%d", i, j)
+				if _, err := g.ProcessInput("teach "+word, session); err != nil {
+					errs <- fmt.Sprintf("teach %s: %v", word, err)
+					return
+				}
+				if response, err := g.ProcessInput(word, session); err != nil || response != "learned" {
+					errs <- fmt.Sprintf("%s after learning: got %q, %v", word, response, err)
+					return
+				}
+				if _, err := g.ProcessInput("forget "+word, session); err != nil {
+					errs <- fmt.Sprintf("forget %s: %v", word, err)
+					return
+				}
+			}
+		}(i)
+	}
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			session := g.CreateSession(fmt.Sprintf("reader%d", i))
+			for j := 0; j < 100; j++ {
+				if response, err := g.ProcessInput("hello", session); err != nil || response != "hi" {
+					errs <- fmt.Sprintf("reader%d: got %q, %v", i, response, err)
+					return
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		t.Error(e)
+	}
+
+	if count := g.aimlKB.categoryCount(); count != 3 {
+		t.Errorf("Expected 3 categories after unlearning everything, got %d", count)
+	}
+}

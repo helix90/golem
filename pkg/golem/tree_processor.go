@@ -2720,7 +2720,7 @@ func (tp *TreeProcessor) processTimeTag(node *ASTNode, _ string) string {
 func (tp *TreeProcessor) processSizeTag(_ *ASTNode, _ string) string {
 	// Size tag - knowledge base size
 	if tp.ctx != nil && tp.ctx.KnowledgeBase != nil {
-		return strconv.Itoa(len(tp.ctx.KnowledgeBase.Categories))
+		return strconv.Itoa(tp.ctx.KnowledgeBase.categoryCount())
 	}
 	return "0"
 }

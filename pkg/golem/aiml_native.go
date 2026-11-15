@@ -79,14 +79,83 @@ type AIMLKnowledgeBase struct {
 	// (Variables, TopicVars, Properties, Maps, Lists, Arrays, SetCollections),
 	// since sessions may process templates concurrently
 	mu sync.RWMutex
+
+	// patternsMu guards Categories and Patterns, which <learn> and <unlearn>
+	// modify while other sessions match against them. Matching holds the read
+	// lock; adding and removing categories holds the write lock. It is separate
+	// from mu so that matching never waits on template data tags.
+	patternsMu sync.RWMutex
 }
 
 // removeCategory removes the category at index i. Patterns entries point into
 // Categories, so removing an element shifts later categories under their
 // pointers; the index is rebuilt to keep every key on its own category.
+// The caller must hold patternsMu for writing.
 func (kb *AIMLKnowledgeBase) removeCategory(i int) {
 	kb.Categories = append(kb.Categories[:i], kb.Categories[i+1:]...)
 	kb.rebuildPatternIndex()
+}
+
+// addOrUpdateCategory adds a category, or replaces the category already
+// indexed under the same key. It reports whether an existing category was
+// replaced.
+func (kb *AIMLKnowledgeBase) addOrUpdateCategory(category Category) bool {
+	kb.patternsMu.Lock()
+	defer kb.patternsMu.Unlock()
+
+	key := categoryKey(category)
+	if existing, exists := kb.Patterns[key]; exists {
+		*existing = category
+		return true
+	}
+
+	// When append reallocates, the existing Patterns entries still point into
+	// the old array, so the whole index has to move to the new one
+	oldCap := cap(kb.Categories)
+	kb.Categories = append(kb.Categories, category)
+	if cap(kb.Categories) != oldCap {
+		kb.rebuildPatternIndex()
+	} else {
+		kb.Patterns[key] = &kb.Categories[len(kb.Categories)-1]
+	}
+	return false
+}
+
+// removeCategoryByKey removes the first category with this key. It reports
+// whether a category was found.
+func (kb *AIMLKnowledgeBase) removeCategoryByKey(key string) bool {
+	kb.patternsMu.Lock()
+	defer kb.patternsMu.Unlock()
+
+	for i, cat := range kb.Categories {
+		if categoryKey(cat) == key {
+			kb.removeCategory(i)
+			return true
+		}
+	}
+	return false
+}
+
+// categoryCount returns the number of categories
+func (kb *AIMLKnowledgeBase) categoryCount() int {
+	kb.patternsMu.RLock()
+	defer kb.patternsMu.RUnlock()
+	return len(kb.Categories)
+}
+
+// patternCount returns the number of indexed patterns
+func (kb *AIMLKnowledgeBase) patternCount() int {
+	kb.patternsMu.RLock()
+	defer kb.patternsMu.RUnlock()
+	return len(kb.Patterns)
+}
+
+// snapshotCategories returns a copy of Categories that is safe to use while
+// other sessions learn and unlearn
+func (kb *AIMLKnowledgeBase) snapshotCategories() []Category {
+	kb.patternsMu.RLock()
+	defer kb.patternsMu.RUnlock()
+	return append([]Category(nil), kb.Categories...)
 }
 
 // rebuildPatternIndex rebuilds Patterns from Categories, so that every entry
@@ -1382,8 +1451,23 @@ func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginal(normalize
 	return kb.MatchPatternWithTopicAndThatIndexOriginalCached(nil, normalizedInput, originalInput, topic, that, thatIndex)
 }
 
-// MatchPatternWithTopicAndThatIndexOriginalCached attempts to match user input against AIML patterns with caching support
+// MatchPatternWithTopicAndThatIndexOriginalCached attempts to match user input against AIML patterns with caching support.
+// The returned category is a copy, so it stays valid while other sessions learn and unlearn.
 func (kb *AIMLKnowledgeBase) MatchPatternWithTopicAndThatIndexOriginalCached(g *Golem, normalizedInput string, originalInput string, topic string, that string, thatIndex int) (*Category, map[string]string, error) {
+	kb.patternsMu.RLock()
+	defer kb.patternsMu.RUnlock()
+
+	category, wildcards, err := kb.matchPattern(g, normalizedInput, originalInput, topic, that, thatIndex)
+	if category != nil {
+		matched := *category
+		category = &matched
+	}
+	return category, wildcards, err
+}
+
+// matchPattern does the matching for MatchPatternWithTopicAndThatIndexOriginalCached.
+// The caller must hold patternsMu.
+func (kb *AIMLKnowledgeBase) matchPattern(g *Golem, normalizedInput string, originalInput string, topic string, that string, thatIndex int) (*Category, map[string]string, error) {
 	// Use the already normalized input for matching
 	input := normalizedInput
 
@@ -5158,7 +5242,7 @@ func (g *Golem) processSizeTagsWithContext(template string, ctx *VariableContext
 
 	if len(matches) > 0 {
 		// Get the number of categories
-		size := len(ctx.KnowledgeBase.Categories)
+		size := ctx.KnowledgeBase.categoryCount()
 		sizeStr := strconv.Itoa(size)
 
 		g.LogDebug("Size tag: found %d categories", size)
@@ -6490,6 +6574,8 @@ func (kb *AIMLKnowledgeBase) IsSetMember(setName, word string) bool {
 
 // SetTopic sets the current topic for a category
 func (kb *AIMLKnowledgeBase) SetTopic(pattern, topic string) {
+	kb.patternsMu.Lock()
+	defer kb.patternsMu.Unlock()
 	if category, exists := kb.Patterns[pattern]; exists {
 		category.Topic = strings.ToUpper(topic)
 	}
@@ -6497,6 +6583,8 @@ func (kb *AIMLKnowledgeBase) SetTopic(pattern, topic string) {
 
 // GetTopic returns the topic for a pattern
 func (kb *AIMLKnowledgeBase) GetTopic(pattern string) string {
+	kb.patternsMu.RLock()
+	defer kb.patternsMu.RUnlock()
 	if category, exists := kb.Patterns[pattern]; exists {
 		return category.Topic
 	}
@@ -10226,16 +10314,10 @@ func (g *Golem) addSessionCategory(category Category, ctx *VariableContext) erro
 	// Build the index key including that and topic
 	key := categoryKey(category)
 
-	// Check if category already exists
-	if existingCategory, exists := g.aimlKB.Patterns[key]; exists {
-		g.LogInfo("Updating existing session category: %s", key)
-		// Update existing category
-		*existingCategory = category
+	if g.aimlKB.addOrUpdateCategory(category) {
+		g.LogInfo("Updated existing session category: %s", key)
 	} else {
-		g.LogInfo("Adding new session category: %s", key)
-		// Add new category
-		g.aimlKB.Categories = append(g.aimlKB.Categories, category)
-		g.aimlKB.Patterns[key] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
+		g.LogInfo("Added new session category: %s", key)
 	}
 
 	// Update session learning statistics
@@ -10331,16 +10413,10 @@ func (g *Golem) addPersistentCategory(category Category) error {
 	normalizedPattern := NormalizePattern(category.Pattern)
 	key := categoryKey(category)
 
-	// Check if category already exists
-	if existingCategory, exists := g.aimlKB.Patterns[key]; exists {
-		g.LogInfo("Updating existing persistent category: %s", key)
-		// Update existing category
-		*existingCategory = category
+	if g.aimlKB.addOrUpdateCategory(category) {
+		g.LogInfo("Updated existing persistent category: %s", key)
 	} else {
-		g.LogInfo("Adding new persistent category: %s", key)
-		// Add new category
-		g.aimlKB.Categories = append(g.aimlKB.Categories, category)
-		g.aimlKB.Patterns[key] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
+		g.LogInfo("Added new persistent category: %s", key)
 	}
 
 	// Save to persistent storage if available
@@ -10364,37 +10440,19 @@ func (g *Golem) removeSessionCategory(category Category, ctx *VariableContext) e
 		return fmt.Errorf("no knowledge base available")
 	}
 
-	// Normalize the pattern and build the proper key including that and topic
-	normalizedPattern := NormalizePattern(category.Pattern)
 	key := categoryKey(category)
-
-	// Check if category exists
-	if _, exists := g.aimlKB.Patterns[key]; !exists {
+	if !g.aimlKB.removeCategoryByKey(key) {
 		g.LogInfo("Category not found for removal: %s", key)
 		return fmt.Errorf("category not found: %s", key)
 	}
+	g.LogInfo("Removed session category: %s", key)
 
-	// Remove from patterns map
-	delete(g.aimlKB.Patterns, key)
-
-	// Remove from categories slice
-	for i, cat := range g.aimlKB.Categories {
-		// Match based on pattern, that, and topic
-		if categoryKey(cat) == key {
-			g.aimlKB.removeCategory(i)
-			g.LogInfo("Removed session category: %s", key)
-
-			// Update session learning statistics
-			if ctx.Session != nil && ctx.Session.LearningStats != nil {
-				g.updateSessionLearningStats(ctx.Session, category, "unlearn")
-			}
-
-			return nil
-		}
+	// Update session learning statistics
+	if ctx.Session != nil && ctx.Session.LearningStats != nil {
+		g.updateSessionLearningStats(ctx.Session, category, "unlearn")
 	}
 
-	g.LogInfo("Category not found in categories slice: %s", normalizedPattern)
-	return fmt.Errorf("category not found in categories slice: %s", normalizedPattern)
+	return nil
 }
 
 // removePersistentCategory removes a category from the persistent knowledge base
@@ -10403,42 +10461,24 @@ func (g *Golem) removePersistentCategory(category Category) error {
 		return fmt.Errorf("no knowledge base available")
 	}
 
-	// Normalize the pattern and build the proper key including that and topic
-	normalizedPattern := NormalizePattern(category.Pattern)
 	key := categoryKey(category)
-
-	// Check if category exists
-	if _, exists := g.aimlKB.Patterns[key]; !exists {
+	if !g.aimlKB.removeCategoryByKey(key) {
 		g.LogInfo("Category not found for removal: %s", key)
 		return fmt.Errorf("category not found: %s", key)
 	}
+	g.LogInfo("Removed persistent category: %s", key)
 
-	// Remove from patterns map
-	delete(g.aimlKB.Patterns, key)
-
-	// Remove from categories slice
-	for i, cat := range g.aimlKB.Categories {
-		// Match based on pattern, that, and topic
-		if categoryKey(cat) == key {
-			g.aimlKB.removeCategory(i)
-			g.LogInfo("Removed persistent category: %s", key)
-
-			// Remove from persistent storage if available
-			if g.persistentLearning != nil {
-				if err := g.persistentLearning.RemovePersistentCategory(category); err != nil {
-					g.LogWarn("Failed to remove category from persistent storage: %v", err)
-					// Don't fail the operation, just log the warning
-				} else {
-					g.LogInfo("Category removed from persistent storage: %s", key)
-				}
-			}
-
-			return nil
+	// Remove from persistent storage if available
+	if g.persistentLearning != nil {
+		if err := g.persistentLearning.RemovePersistentCategory(category); err != nil {
+			g.LogWarn("Failed to remove category from persistent storage: %v", err)
+			// Don't fail the operation, just log the warning
+		} else {
+			g.LogInfo("Category removed from persistent storage: %s", key)
 		}
 	}
 
-	g.LogInfo("Category not found in categories slice: %s", normalizedPattern)
-	return fmt.Errorf("category not found in categories slice: %s", normalizedPattern)
+	return nil
 }
 
 // ThatPatternCache represents an enhanced cache for compiled that patterns

@@ -1234,17 +1234,7 @@ func (g *Golem) LoadPersistentCategories() error {
 
 	// Add categories to the knowledge base
 	for _, category := range categories {
-		key := categoryKey(category)
-
-		// Check if category already exists
-		if existingCategory, exists := g.aimlKB.Patterns[key]; exists {
-			// Update existing category
-			*existingCategory = category
-		} else {
-			// Add new category
-			g.aimlKB.Categories = append(g.aimlKB.Categories, category)
-			g.aimlKB.Patterns[key] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
-		}
+		g.aimlKB.addOrUpdateCategory(category)
 	}
 
 	g.LogInfo("Loaded %d persistent categories", len(categories))
@@ -1261,7 +1251,7 @@ func (g *Golem) SavePersistentCategories(source string) error {
 		return fmt.Errorf("no knowledge base available")
 	}
 
-	return g.persistentLearning.SavePersistentCategories(g.aimlKB.Categories, source)
+	return g.persistentLearning.SavePersistentCategories(g.aimlKB.snapshotCategories(), source)
 }
 
 // GetSessionLearningStats returns learning statistics for a session
@@ -1306,13 +1296,7 @@ func (g *Golem) ClearSessionLearning(sessionID string) error {
 
 	// Remove all session-learned categories from knowledge base
 	for _, category := range session.LearnedCategories {
-		key := categoryKey(category)
-		for i, cat := range g.aimlKB.Categories {
-			if categoryKey(cat) == key {
-				g.aimlKB.removeCategory(i)
-				break
-			}
-		}
+		g.aimlKB.removeCategoryByKey(categoryKey(category))
 	}
 
 	// Clear session learning data
@@ -1335,7 +1319,7 @@ func (g *Golem) ClearSessionLearning(sessionID string) error {
 func (g *Golem) GetLearningSummary() map[string]interface{} {
 	summary := map[string]interface{}{
 		"total_sessions":   len(g.sessions),
-		"total_categories": len(g.aimlKB.Categories),
+		"total_categories": g.aimlKB.categoryCount(),
 		"session_stats":    make(map[string]interface{}),
 		"global_stats": map[string]interface{}{
 			"total_learned":     0,
@@ -2690,7 +2674,7 @@ func (g *Golem) generateKnowledgeBaseHash() string {
 	}
 
 	// Create a simple hash based on pattern count and set count
-	patternCount := len(g.aimlKB.Patterns)
+	patternCount := g.aimlKB.patternCount()
 	setCount := 0
 	if g.aimlKB.Sets != nil {
 		setCount = len(g.aimlKB.Sets)
