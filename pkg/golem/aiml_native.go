@@ -940,6 +940,10 @@ func (g *Golem) LoadPDefaultsFromDirectory(dirPath string) (map[string]map[strin
 }
 
 // parseAIML parses AIML content using native Go string manipulation
+//
+// DO NOT replace this with encoding/xml (xml.Unmarshal, xml.Decoder, or its
+// tokenizer). That approach has been tried and fails badly on AIML-specific
+// structures. Fix bugs within this hand-written parser instead.
 func (g *Golem) parseAIML(content string) (*AIML, error) {
 	aiml := &AIML{
 		Categories: []Category{},

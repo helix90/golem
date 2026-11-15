@@ -29,6 +29,10 @@ type ASTNode struct {
 }
 
 // ASTParser handles parsing of AIML templates into AST
+//
+// DO NOT replace this with encoding/xml (xml.Unmarshal, xml.Decoder, or its
+// tokenizer). That approach has been tried and fails badly on AIML-specific
+// structures. Fix bugs within this hand-written parser instead.
 type ASTParser struct {
 	input string
 	pos   int
