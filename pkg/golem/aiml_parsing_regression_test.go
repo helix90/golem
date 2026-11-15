@@ -198,3 +198,98 @@ func TestLoadAIMLFromStringValidates(t *testing.T) {
 		t.Errorf("Expected only the HELLO category, got %+v", categories)
 	}
 }
+
+// A <that> or <topic> inside the template (here, in a category being learned)
+// must not be attributed to the outer category.
+func TestTemplateTagsNotAttributedToCategory(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>TEACH</pattern><template>ok<learn><category><pattern>X</pattern><that>FOO</that><topic>BAR</topic><template>y</template></category></learn></template></category>
+<category><pattern>WHAT TOPIC</pattern><template><thatstar/> <topic/></template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	for _, category := range g.GetKnowledgeBase().Categories {
+		if category.That != "" || category.Topic != "" {
+			t.Errorf("Category %q: expected no that/topic, got that=%q topic=%q", category.Pattern, category.That, category.Topic)
+		}
+	}
+
+	response, err := g.ProcessInput("teach", g.CreateSession("test"))
+	if err != nil {
+		t.Fatalf("Failed to process input: %v", err)
+	}
+	if response != "ok" {
+		t.Errorf("Expected 'ok', got '%s'", response)
+	}
+}
+
+// Categories inside <topic name="..."> blocks get that topic.
+func TestTopicBlocks(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>SET *</pattern><template><think><set name="topic"><star/></set></think>ok</template></category>
+<topic name="sports">
+	<category><pattern>FAVORITE</pattern><template>I like basketball!</template></category>
+</topic>
+<topic name='music'>
+	<category><pattern>FAVORITE</pattern><template>I like jazz!</template></category>
+</topic>
+<category><pattern>FAVORITE</pattern><template>I like many things.</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	session := g.CreateSession("test")
+	steps := []struct{ input, want string }{
+		{"favorite", "I like many things."},
+		{"set sports", "ok"},
+		{"favorite", "I like basketball!"},
+		{"set music", "ok"},
+		{"favorite", "I like jazz!"},
+	}
+	for _, step := range steps {
+		response, err := g.ProcessInput(step.input, session)
+		if err != nil {
+			t.Fatalf("ProcessInput(%q) failed: %v", step.input, err)
+		}
+		if response != step.want {
+			t.Errorf("ProcessInput(%q): expected '%s', got '%s'", step.input, step.want, response)
+		}
+	}
+}
+
+// Attributes may be single-quoted.
+func TestSingleQuotedAttributes(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version='2.0'>
+<category><pattern>YES</pattern><that index='2'>QUESTION</that><template>t</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	categories := g.GetKnowledgeBase().Categories
+	if len(categories) != 1 || categories[0].ThatIndex != 2 {
+		t.Errorf("Expected one category with that index 2, got %+v", categories)
+	}
+}
+
+func FuzzParseAIML(f *testing.F) {
+	seeds := []string{
+		thatCollisionAIML,
+		`<aiml><topic name="a"><category><pattern>X</pattern><template><topic/></template></category></topic></aiml>`,
+		`<aiml><category><pattern>X</pattern><that index='2'>Y</that><template><learn><category><pattern>Z</pattern><template>z</template></category></learn></template></category></aiml>`,
+		`<category><pattern>A</pattern><template x="<">`,
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+	g := New(false)
+	f.Fuzz(func(t *testing.T, input string) {
+		_, _ = g.parseAIML(input)
+	})
+}

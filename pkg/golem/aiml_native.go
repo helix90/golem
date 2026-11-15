@@ -3,6 +3,7 @@ package golem
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"math"
 	"os"
 	"path/filepath"
@@ -21,8 +22,9 @@ var (
 	patternTopicTagRe = regexp.MustCompile(`<topic>([^<]+)</topic>`)
 	whitespaceNormRe  = regexp.MustCompile(`\s+`)
 	// (?s) so comments spanning multiple lines are removed too
-	xmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
-	xmlDeclRe    = regexp.MustCompile(`<\?xml[^>]*\?>`)
+	xmlCommentRe  = regexp.MustCompile(`(?s)<!--.*?-->`)
+	xmlDeclRe     = regexp.MustCompile(`<\?xml[^>]*\?>`)
+	aimlVersionRe = regexp.MustCompile(`<aiml[^>]*version=["']([^"']+)["']`)
 	// Patterns are matched case-insensitively, so accept any letters (including
 	// non-ASCII), digits, wildcards, tag syntax, and common punctuation.
 	emptySetTagRe       = regexp.MustCompile(`<set>\s*</set>`)
@@ -962,112 +964,87 @@ func (g *Golem) parseAIML(content string) (*AIML, error) {
 	content = g.removeXMLDeclaration(content)
 
 	// Extract version
-	versionMatch := regexp.MustCompile(`<aiml[^>]*version=["']([^"']+)["']`).FindStringSubmatch(content)
+	versionMatch := aimlVersionRe.FindStringSubmatch(content)
 	if len(versionMatch) > 1 {
 		aiml.Version = versionMatch[1]
 	} else {
 		aiml.Version = "2.0" // Default version
 	}
 
-	// Find all categories using tag-aware parsing
-	categoryContents := g.extractAllTagContents(content, "category")
-
-	for _, categoryContent := range categoryContents {
-		category, err := g.parseCategory(categoryContent)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse category: %v", err)
-		}
-		aiml.Categories = append(aiml.Categories, category)
+	if err := g.parseCategories(content, "", aiml); err != nil {
+		return nil, err
 	}
 
 	return aiml, nil
 }
 
-// extractAllTagContents extracts all occurrences of a tag using stack-based parsing
-func (g *Golem) extractAllTagContents(input string, tagName string) []string {
-	var results []string
-	openPattern := fmt.Sprintf("<%s", tagName)
-	closePattern := fmt.Sprintf("</%s>", tagName)
+// parseCategories appends the categories in content to aiml, descending into
+// <topic name="..."> blocks. Categories inside a topic block get its name as
+// their topic unless they set their own.
+func (g *Golem) parseCategories(content string, topic string, aiml *AIML) error {
+	// Position of the next <topic tag, cached so that files without topic
+	// blocks aren't rescanned for every category
+	nextTopic := indexOpenTag(content, "topic", 0)
 
-	i := 0
-	for i < len(input) {
-		// Find next opening tag
-		openIdx := strings.Index(input[i:], openPattern)
-		if openIdx == -1 {
-			break
+	for pos := 0; ; {
+		if nextTopic != -1 && nextTopic < pos {
+			nextTopic = indexOpenTag(content, "topic", pos)
 		}
-		openIdx += i
+		category, hasCategory := findTag(content, "category", pos)
 
-		// Find the end of the opening tag
-		i = openIdx + len(openPattern)
-
-		// Skip to the '>' of the opening tag
-		for i < len(input) && input[i] != '>' {
-			i++
-		}
-
-		if i >= len(input) {
-			break
-		}
-		i++ // skip '>'
-
-		// Now find the matching closing tag using a stack
-		contentStart := i
-		depth := 1
-
-		for i < len(input) && depth > 0 {
-			// Check for opening tag
-			if i+len(openPattern) < len(input) && input[i:i+len(openPattern)] == openPattern {
-				// Make sure it's actually a tag
-				nextChar := i + len(openPattern)
-				if nextChar < len(input) && (input[nextChar] == '>' || input[nextChar] == ' ' || input[nextChar] == '/') {
-					depth++
-					i += len(openPattern)
-					continue
+		if nextTopic != -1 && (!hasCategory || nextTopic < category.start) {
+			if block, ok := findTag(content, "topic", nextTopic); ok && !block.selfClosing {
+				blockTopic := strings.TrimSpace(block.attributes["name"])
+				if err := g.parseCategories(content[block.contentStart:block.contentEnd], blockTopic, aiml); err != nil {
+					return err
 				}
+				pos = block.end
+			} else {
+				nextTopic = indexOpenTag(content, "topic", nextTopic+1)
 			}
-
-			// Check for closing tag
-			if i+len(closePattern) <= len(input) && input[i:i+len(closePattern)] == closePattern {
-				depth--
-				if depth == 0 {
-					// Found the matching closing tag
-					content := input[contentStart:i]
-					results = append(results, content)
-					i += len(closePattern)
-					break
-				}
-				i += len(closePattern)
-				continue
-			}
-
-			i++
+			continue
 		}
+
+		if !hasCategory {
+			return nil
+		}
+
+		parsed, err := g.parseCategory(content[category.contentStart:category.contentEnd])
+		if err != nil {
+			return fmt.Errorf("failed to parse category: %v", err)
+		}
+		if parsed.Topic == "" {
+			parsed.Topic = topic
+		}
+		aiml.Categories = append(aiml.Categories, parsed)
+		pos = category.end
 	}
-
-	return results
 }
 
 // parseCategory parses a single category using tag-aware parsing
 func (g *Golem) parseCategory(content string) (Category, error) {
 	category := Category{}
 
-	// Extract pattern using tag-aware parsing
-	if patternContent, found := g.extractTagContent(content, "pattern"); found {
-		category.Pattern = strings.TrimSpace(patternContent)
+	// Extract template using tag-aware parsing (handles nested <template> tags).
+	// Pattern, that, and topic are only looked for outside the template, so
+	// tags inside it (e.g. a category inside <learn>) aren't mistaken for this
+	// category's own.
+	header := content
+	if template, found := findTag(content, "template", 0); found {
+		category.Template = strings.TrimSpace(content[template.contentStart:template.contentEnd])
+		header = content[:template.start] + content[template.end:]
 	}
 
-	// Extract template using tag-aware parsing (handles nested <template> tags)
-	if templateContent, found := g.extractTagContent(content, "template"); found {
-		category.Template = strings.TrimSpace(templateContent)
+	if pattern, found := findTag(header, "pattern", 0); found {
+		category.Pattern = html.UnescapeString(strings.TrimSpace(header[pattern.contentStart:pattern.contentEnd]))
 	}
 
-	// Extract that (optional) with index support using tag-aware parsing
-	if thatContent, found := g.extractTagContentWithAttributes(content, "that"); found {
-		category.That = strings.TrimSpace(thatContent.Content)
+	// Extract that (optional) with index support
+	if that, found := findTag(header, "that", 0); found {
+		category.That = html.UnescapeString(strings.TrimSpace(header[that.contentStart:that.contentEnd]))
 
 		// Parse index attribute if provided
-		if indexStr, hasIndex := thatContent.Attributes["index"]; hasIndex {
+		if indexStr, hasIndex := that.attributes["index"]; hasIndex {
 			if index, err := strconv.Atoi(indexStr); err == nil {
 				// Validate index range (1-10 for reasonable history depth)
 				if index < 1 || index > 10 {
@@ -1087,129 +1064,188 @@ func (g *Golem) parseCategory(content string) (Category, error) {
 		}
 	}
 
-	// Extract topic (optional) using tag-aware parsing
-	if topicContent, found := g.extractTagContent(content, "topic"); found {
-		category.Topic = strings.TrimSpace(topicContent)
+	// Extract topic (optional)
+	if topic, found := findTag(header, "topic", 0); found {
+		category.Topic = html.UnescapeString(strings.TrimSpace(header[topic.contentStart:topic.contentEnd]))
 	}
 
 	return category, nil
 }
 
-// TagContentWithAttributes represents tag content along with its attributes
-type TagContentWithAttributes struct {
-	Content    string
-	Attributes map[string]string
+// tagSpan is the location of an element found by findTag. For a self-closing
+// tag, contentStart, contentEnd, and end are all the index after "/>".
+type tagSpan struct {
+	start        int // index of the opening '<'
+	contentStart int // index just after the opening tag's '>'
+	contentEnd   int // index of the closing tag's '<'
+	end          int // index just after the closing tag's '>'
+	attributes   map[string]string
+	selfClosing  bool
 }
 
-// extractTagContent extracts the content of a tag using stack-based parsing to handle nesting
-func (g *Golem) extractTagContent(input string, tagName string) (string, bool) {
-	result, found := g.extractTagContentWithAttributes(input, tagName)
-	return result.Content, found
-}
-
-// extractTagContentWithAttributes extracts tag content and attributes using stack-based parsing
-func (g *Golem) extractTagContentWithAttributes(input string, tagName string) (TagContentWithAttributes, bool) {
-	result := TagContentWithAttributes{
-		Attributes: make(map[string]string),
+// findTag finds the first <tagName> element at or after from, matching its
+// closing tag by nesting depth. Tag names must match exactly (<that> does not
+// match <thatstar/>), and nested self-closing tags such as <topic/> don't
+// affect the depth.
+func findTag(input string, tagName string, from int) (tagSpan, bool) {
+	start := indexOpenTag(input, tagName, from)
+	if start == -1 {
+		return tagSpan{}, false
 	}
 
-	// Find opening tag
-	openPattern := fmt.Sprintf("<%s", tagName)
-	openIdx := strings.Index(input, openPattern)
-	if openIdx == -1 {
-		return result, false
+	attributes, contentStart, selfClosing, ok := parseOpenTag(input, start+1+len(tagName))
+	if !ok {
+		return tagSpan{}, false
+	}
+	span := tagSpan{
+		start:        start,
+		contentStart: contentStart,
+		attributes:   attributes,
+		selfClosing:  selfClosing,
+	}
+	if selfClosing {
+		span.contentEnd = contentStart
+		span.end = contentStart
+		return span, true
 	}
 
-	// Find the end of the opening tag (the '>' character)
-	i := openIdx + len(openPattern)
-
-	// Parse attributes if any
-	for i < len(input) && input[i] != '>' {
-		// Skip whitespace
-		for i < len(input) && (input[i] == ' ' || input[i] == '\t' || input[i] == '\n' || input[i] == '\r') {
-			i++
-		}
-
-		if i >= len(input) || input[i] == '>' {
+	closeTag := "</" + tagName
+	depth := 1
+	for i := contentStart; i < len(input); {
+		lt := strings.IndexByte(input[i:], '<')
+		if lt == -1 {
 			break
 		}
+		i += lt
 
-		// Parse attribute name
-		attrStart := i
-		for i < len(input) && input[i] != '=' && input[i] != '>' && input[i] != ' ' {
-			i++
-		}
-		attrName := input[attrStart:i]
-
-		// Skip whitespace
-		for i < len(input) && (input[i] == ' ' || input[i] == '\t') {
-			i++
-		}
-
-		if i >= len(input) || input[i] != '=' {
-			continue
-		}
-		i++ // skip '='
-
-		// Skip whitespace
-		for i < len(input) && (input[i] == ' ' || input[i] == '\t') {
-			i++
-		}
-
-		// Parse attribute value
-		if i < len(input) && input[i] == '"' {
-			i++ // skip opening quote
-			valueStart := i
-			for i < len(input) && input[i] != '"' {
-				i++
+		if strings.HasPrefix(input[i:], closeTag) && isTagNameEnd(input, i+len(closeTag)) {
+			gt := strings.IndexByte(input[i:], '>')
+			if gt == -1 {
+				break
 			}
-			attrValue := input[valueStart:i]
-			if i < len(input) {
-				i++ // skip closing quote
-			}
-			result.Attributes[attrName] = attrValue
-		}
-	}
-
-	if i >= len(input) || input[i] != '>' {
-		return result, false
-	}
-	i++ // skip '>'
-
-	// Now find the matching closing tag using a stack
-	contentStart := i
-	depth := 1
-	closePattern := fmt.Sprintf("</%s>", tagName)
-
-	for i < len(input) && depth > 0 {
-		// Check for opening tag
-		if i+len(openPattern) < len(input) && input[i:i+len(openPattern)] == openPattern {
-			// Make sure it's actually a tag (followed by space, '>', or '/')
-			nextChar := i + len(openPattern)
-			if nextChar < len(input) && (input[nextChar] == '>' || input[nextChar] == ' ' || input[nextChar] == '/') {
-				depth++
-				i += len(openPattern)
-				continue
-			}
-		}
-
-		// Check for closing tag
-		if i+len(closePattern) <= len(input) && input[i:i+len(closePattern)] == closePattern {
 			depth--
 			if depth == 0 {
-				// Found the matching closing tag
-				result.Content = input[contentStart:i]
-				return result, true
+				span.contentEnd = i
+				span.end = i + gt + 1
+				return span, true
 			}
-			i += len(closePattern)
+			i += gt + 1
+			continue
+		}
+
+		if isOpenTagAt(input, i, tagName) {
+			_, next, nestedSelfClosing, ok := parseOpenTag(input, i+1+len(tagName))
+			if !ok {
+				break
+			}
+			if !nestedSelfClosing {
+				depth++
+			}
+			i = next
 			continue
 		}
 
 		i++
 	}
 
-	// If we get here, we didn't find a matching closing tag
-	return result, false
+	// No matching closing tag
+	return tagSpan{}, false
+}
+
+// indexOpenTag returns the index of the first <tagName opening tag at or after
+// from, or -1. The name must be followed by whitespace, '>' or '/'.
+func indexOpenTag(input string, tagName string, from int) int {
+	open := "<" + tagName
+	for i := from; i < len(input); {
+		idx := strings.Index(input[i:], open)
+		if idx == -1 {
+			return -1
+		}
+		idx += i
+		if isTagNameEnd(input, idx+len(open)) {
+			return idx
+		}
+		i = idx + 1
+	}
+	return -1
+}
+
+// isOpenTagAt reports whether a <tagName opening tag starts at index i
+func isOpenTagAt(input string, i int, tagName string) bool {
+	return strings.HasPrefix(input[i:], "<"+tagName) && isTagNameEnd(input, i+1+len(tagName))
+}
+
+// isTagNameEnd reports whether a tag name ending at index i is complete,
+// i.e. followed by whitespace, '>' or '/'
+func isTagNameEnd(input string, i int) bool {
+	if i >= len(input) {
+		return false
+	}
+	switch input[i] {
+	case '>', '/', ' ', '\t', '\n', '\r':
+		return true
+	}
+	return false
+}
+
+// parseOpenTag parses an opening tag's attributes, starting just after the tag
+// name, through its closing '>'. Attribute values may be single- or
+// double-quoted, and entities in them are decoded. It returns the attributes,
+// the index after the tag, whether it is self-closing, and false if the tag
+// is unterminated.
+func parseOpenTag(input string, i int) (map[string]string, int, bool, bool) {
+	attributes := make(map[string]string)
+	for i < len(input) {
+		c := input[i]
+		switch {
+		case c == '>':
+			return attributes, i + 1, false, true
+		case c == '/' && i+1 < len(input) && input[i+1] == '>':
+			return attributes, i + 2, true, true
+		case c == '/' || isXMLSpace(c):
+			i++
+		default:
+			nameStart := i
+			for i < len(input) && input[i] != '=' && input[i] != '>' && input[i] != '/' && !isXMLSpace(input[i]) {
+				i++
+			}
+			name := input[nameStart:i]
+			for i < len(input) && isXMLSpace(input[i]) {
+				i++
+			}
+			if i >= len(input) || input[i] != '=' {
+				attributes[name] = ""
+				continue
+			}
+			i++ // skip '='
+			for i < len(input) && isXMLSpace(input[i]) {
+				i++
+			}
+			if i < len(input) && (input[i] == '"' || input[i] == '\'') {
+				quote := input[i]
+				i++
+				valueStart := i
+				for i < len(input) && input[i] != quote {
+					i++
+				}
+				attributes[name] = html.UnescapeString(input[valueStart:i])
+				if i < len(input) {
+					i++ // skip closing quote
+				}
+			} else {
+				valueStart := i
+				for i < len(input) && input[i] != '>' && !isXMLSpace(input[i]) && !strings.HasPrefix(input[i:], "/>") {
+					i++
+				}
+				attributes[name] = input[valueStart:i]
+			}
+		}
+	}
+	return nil, i, false, false
+}
+
+func isXMLSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
 // removeComments removes XML comments from content
