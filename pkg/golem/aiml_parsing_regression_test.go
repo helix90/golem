@@ -90,3 +90,45 @@ func TestCommentedOutCategoriesNotLoaded(t *testing.T) {
 		t.Errorf("Expected pattern 'HELLO', got '%s'", categories[0].Pattern)
 	}
 }
+
+// Malformed templates must never panic the AST parser.
+func TestASTParserUnterminatedAttributeNoPanic(t *testing.T) {
+	inputs := []string{
+		`<get name="`,
+		`<get name="x`,
+		`<get name='`,
+		`<get name=\"`,
+		`<get name=\"x`,
+		`<star index=`,
+	}
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("Parser panicked on %q: %v", input, r)
+				}
+			}()
+			if _, err := NewASTParser(input).Parse(); err != nil {
+				t.Logf("Parse returned error: %v", err)
+			}
+		})
+	}
+}
+
+func FuzzASTParser(f *testing.F) {
+	seeds := []string{
+		`<get name="x"/>`,
+		`<uppercase><star/> and <get name="y"/></uppercase>`,
+		`<condition name="a"><li value="1">one</li><li>other</li></condition>`,
+		`<!-- c --><![CDATA[<raw>]]>text`,
+		`<get name=\"x\"/>`,
+		`<get name="`,
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		root, _ := NewASTParser(input).Parse()
+		_ = root.String()
+	})
+}

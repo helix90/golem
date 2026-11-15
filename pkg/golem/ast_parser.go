@@ -419,37 +419,29 @@ func (p *ASTParser) parseAttributeName() string {
 // parseAttributeValue parses an attribute value
 func (p *ASTParser) parseAttributeValue() string {
 	// Handle backslash-escaped quotes (common in Go string literals)
+	// Values are sliced before consuming the closing quote so that an
+	// unterminated value at end of input can't produce out-of-range slices.
 	if p.peek(2) == "\\\"" {
-		p.consume('\\')
-		p.consume('"')
+		p.consumeString("\\\"")
 		start := p.pos
-		for p.pos < p.len {
-			if p.peek(2) == "\\\"" {
-				p.consume('\\')
-				p.consume('"')
-				break
-			}
+		for p.pos < p.len && p.peek(2) != "\\\"" {
 			p.pos++
 		}
-		return p.input[start : p.pos-2]
+		value := p.input[start:p.pos]
+		p.consumeString("\\\"")
+		return value
 	}
 
-	if p.peek(1) == "\"" {
-		p.consume('"')
+	if p.peek(1) == "\"" || p.peek(1) == "'" {
+		quote := p.input[p.pos]
+		p.pos++
 		start := p.pos
-		for p.pos < p.len && p.peek(1) != "\"" {
+		for p.pos < p.len && p.input[p.pos] != quote {
 			p.pos++
 		}
-		p.consume('"')
-		return p.input[start : p.pos-1]
-	} else if p.peek(1) == "'" {
-		p.consume('\'')
-		start := p.pos
-		for p.pos < p.len && p.peek(1) != "'" {
-			p.pos++
-		}
-		p.consume('\'')
-		return p.input[start : p.pos-1]
+		value := p.input[start:p.pos]
+		p.consume(rune(quote))
+		return value
 	} else {
 		// Unquoted value
 		start := p.pos
