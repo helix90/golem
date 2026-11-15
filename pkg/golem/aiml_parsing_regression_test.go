@@ -66,3 +66,27 @@ func TestLoadersKeepCategoriesSharingPattern(t *testing.T) {
 		})
 	}
 }
+
+// Categories inside comments must not be loaded, even when the comment spans
+// multiple lines.
+func TestCommentedOutCategoriesNotLoaded(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<!--
+<category><pattern>HIDDEN</pattern><template>multi-line comment</template></category>
+-->
+<!-- <category><pattern>HIDDEN TOO</pattern><template>single-line comment</template></category> -->
+<category><pattern>HELLO</pattern><template>real</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	categories := g.GetKnowledgeBase().Categories
+	if len(categories) != 1 {
+		t.Fatalf("Expected 1 category, got %d: %+v", len(categories), categories)
+	}
+	if categories[0].Pattern != "HELLO" {
+		t.Errorf("Expected pattern 'HELLO', got '%s'", categories[0].Pattern)
+	}
+}

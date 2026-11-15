@@ -20,6 +20,9 @@ var (
 	patternSetTagRe   = regexp.MustCompile(`<set>([^<]+)</set>`)
 	patternTopicTagRe = regexp.MustCompile(`<topic>([^<]+)</topic>`)
 	whitespaceNormRe  = regexp.MustCompile(`\s+`)
+	// (?s) so comments spanning multiple lines are removed too
+	xmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
+	xmlDeclRe    = regexp.MustCompile(`<\?xml[^>]*\?>`)
 )
 
 // AIML represents the root AIML document
@@ -1203,14 +1206,12 @@ func (g *Golem) extractTagContentWithAttributes(input string, tagName string) (T
 
 // removeComments removes XML comments from content
 func (g *Golem) removeComments(content string) string {
-	commentRegex := regexp.MustCompile(`<!--.*?-->`)
-	return commentRegex.ReplaceAllString(content, "")
+	return xmlCommentRe.ReplaceAllString(content, "")
 }
 
 // removeXMLDeclaration removes XML declaration
 func (g *Golem) removeXMLDeclaration(content string) string {
-	xmlDeclRegex := regexp.MustCompile(`<\?xml[^>]*\?>`)
-	return xmlDeclRegex.ReplaceAllString(content, "")
+	return xmlDeclRe.ReplaceAllString(content, "")
 }
 
 // validateAIML validates the AIML structure
