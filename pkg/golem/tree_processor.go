@@ -686,8 +686,19 @@ func (tp *TreeProcessor) processSRAIXTag(node *ASTNode, content string) string {
 		requestParams["hint"] = hintText
 	}
 
-	// Add lat/lon from session predicates if available (for weather and location-based services)
+	// Pattern wildcards are available to URL templates as {STAR1}, {STAR2}, ...
+	if tp.ctx != nil {
+		for key, value := range tp.ctx.Wildcards {
+			requestParams[key] = value
+		}
+	}
+
+	// Add lat/lon/location from session predicates if available (for weather and location-based services)
 	if tp.ctx != nil && tp.ctx.Session != nil && tp.ctx.Session.Variables != nil {
+		if location, exists := tp.ctx.Session.Variables["location"]; exists && location != "" {
+			requestParams["location"] = location
+		}
+
 		hasLat := false
 		hasLon := false
 

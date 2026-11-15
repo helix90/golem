@@ -190,8 +190,8 @@ All `.properties` files must use JSON array format:
   - `{input}` - The SRAIX input text
   - `{apikey}` - API key from headers (Authorization header)
   - `{lat}`, `{lon}` - Automatically from session variables `latitude`/`longitude`
-  - `{location}` - Location name from wildcards
-  - `{WILDCARD_NAME}` - Any wildcard value in uppercase
+  - `{location}` - From session variable `location`
+  - `{STAR1}`, `{STAR2}`, ... - Pattern wildcard values
 - Automatically configured via `ConfigureFromProperties()` when knowledge base is set
 - Example: `export PIRATE_WEATHER_API_KEY="your-key"` then use `${PIRATE_WEATHER_API_KEY}` in URL templates
 

@@ -82,8 +82,10 @@ URL template placeholders:
 - `{input}` - The SRAIX input text
 - `{apikey}` - API key
 - `{lat}`, `{lon}` - From session variables `latitude`/`longitude`
-- `{location}` - Location name from wildcards
-- `{WILDCARD_NAME}` - Any wildcard value in uppercase
+- `{location}` - From session variable `location`
+- `{STAR1}`, `{STAR2}`, ... - Pattern wildcard values
+
+Placeholders are replaced in a single pass, and every value except `${ENV_VAR}` and `{apikey}` is URL-encoded, so user input cannot change the URL. Verbose logs mask environment variables and the API key.
 
 See `testdata/WEATHER_README.md` for a complete working example and `secure-sraix-demo/SECURE_API_KEYS.md` for handling API keys.
 

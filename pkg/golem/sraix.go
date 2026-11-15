@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -86,11 +87,11 @@ func (sm *SRAIXManager) AddConfig(config *SRAIXConfig) error {
 
 	sm.configs[config.Name] = config
 	if sm.verbose {
-		url := config.BaseURL
-		if url == "" {
-			url = config.URLTemplate
+		target := config.BaseURL
+		if target == "" {
+			target = config.URLTemplate
 		}
-		sm.logger.Printf("Added SRAIX config: %s -> %s", config.Name, url)
+		sm.logger.Printf("Added SRAIX config: %s -> %s", config.Name, target)
 	}
 	return nil
 }
@@ -114,16 +115,17 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 	}
 
 	// Prepare the request
-	var url string
+	var requestURL string
 	var body io.Reader
 	var contentType string
 
 	// Check if URL template is configured
+	logURL := ""
 	if config.URLTemplate != "" {
 		// Use URL template with placeholder substitution
-		url = sm.substituteURLTemplate(config.URLTemplate, input, wildcards, config.Headers)
+		requestURL, logURL = sm.substituteURLTemplate(config.URLTemplate, input, wildcards, config.Headers)
 	} else {
-		url = config.BaseURL
+		requestURL = config.BaseURL
 	}
 
 	// Build request body based on method and configuration
@@ -135,11 +137,11 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 			if paramName == "" {
 				paramName = "input" // Default parameter name
 			}
-			if strings.Contains(url, "?") {
-				url += "&" + paramName + "=" + strings.ReplaceAll(input, " ", "+")
-			} else {
-				url += "?" + paramName + "=" + strings.ReplaceAll(input, " ", "+")
+			separator := "?"
+			if strings.Contains(requestURL, "?") {
+				separator = "&"
 			}
+			requestURL += separator + url.QueryEscape(paramName) + "=" + url.QueryEscape(input)
 		}
 	} else {
 		// For POST/PUT requests, create JSON body
@@ -172,7 +174,7 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequest(config.Method, url, body)
+	req, err := http.NewRequest(config.Method, requestURL, body)
 	if err != nil {
 		return "", fmt.Errorf("failed to create HTTP request: %v", err)
 	}
@@ -192,7 +194,10 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 
 	// Make the request
 	if sm.verbose {
-		sm.logger.Printf("SRAIX request to %s: %s %s", serviceName, config.Method, url)
+		if logURL == "" {
+			logURL = requestURL
+		}
+		sm.logger.Printf("SRAIX request to %s: %s %s", serviceName, config.Method, logURL)
 	}
 
 	resp, err := sm.client.Do(req)
@@ -255,67 +260,95 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 	return strings.TrimSpace(response), nil
 }
 
-// substituteURLTemplate replaces placeholders in URL template with actual values
+// urlPlaceholderRe matches the placeholders of a URL template: ${ENV_VAR}
+// and {name}
+var urlPlaceholderRe = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}|\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// urlParamPlaceholders are the request parameters that can also be used in
+// lowercase; every parameter can be used in uppercase, e.g. {STAR1}
+var urlParamPlaceholders = map[string]bool{"lat": true, "lon": true, "location": true, "hint": true, "botid": true, "host": true}
+
+// substituteURLTemplate replaces placeholders in URL template with actual values.
 // Supported placeholders:
-//   {input} - the SRAIX input text
-//   {apikey} - API key from headers (Authorization header)
-//   {lat}, {lon} - latitude/longitude from wildcards or parsed from hint
-//   {location} - location name from wildcards
-//   {WILDCARD_NAME} - any wildcard value in uppercase
-//   ${ENV_VAR} - environment variable (e.g., ${PIRATE_WEATHER_API_KEY})
-func (sm *SRAIXManager) substituteURLTemplate(template, input string, wildcards map[string]string, headers map[string]string) string {
-	result := template
-
-	// First, substitute environment variables ${ENV_VAR}
-	// Match ${VARNAME} pattern and replace with os.Getenv(VARNAME)
-	envVarPattern := regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
-	result = envVarPattern.ReplaceAllStringFunc(result, func(match string) string {
-		// Extract variable name from ${VARNAME}
-		varName := match[2 : len(match)-1] // Remove ${ and }
-		envValue := os.Getenv(varName)
-		if envValue == "" && sm.verbose {
-			sm.logger.Printf("Warning: Environment variable %s is not set", varName)
+//
+//	{input} - the SRAIX input text
+//	{apikey} - API key from headers (Authorization header)
+//	{lat}, {lon} - latitude/longitude from params or parsed from a "lat,lon" hint
+//	{location}, {hint}, {botid}, {host} - request params
+//	{PARAM_NAME} - any param value in uppercase, e.g. {STAR1} for the first pattern wildcard
+//	${ENV_VAR} - environment variable (e.g., ${PIRATE_WEATHER_API_KEY})
+//
+// All placeholders are replaced in one pass, so placeholder text inside a
+// substituted value (such as user input containing "{apikey}") is left alone.
+// Values that can come from the user are query-escaped; environment variables
+// and the API key are configured by the bot author and inserted as they are.
+// It returns the URL and a copy with the environment variables and API key
+// masked, for logging.
+func (sm *SRAIXManager) substituteURLTemplate(template, input string, params map[string]string, headers map[string]string) (string, string) {
+	values := make(map[string]string, len(params)*2)
+	for key, value := range params {
+		values[strings.ToUpper(key)] = value
+		if urlParamPlaceholders[key] {
+			values[key] = value
 		}
-		return envValue
-	})
-
-	// URL-encode the input for safe inclusion in URLs
-	encodedInput := strings.ReplaceAll(input, " ", "+")
-
-	// Substitute {input}
-	result = strings.ReplaceAll(result, "{input}", encodedInput)
-
-	// Substitute {apikey} from Authorization header
-	if apikey, exists := headers["Authorization"]; exists {
-		result = strings.ReplaceAll(result, "{apikey}", apikey)
 	}
 
 	// Parse coordinates from hint if present (format: "lat,lon")
-	if hint, exists := wildcards["hint"]; exists && hint != "" {
+	if hint := params["hint"]; hint != "" {
 		parts := strings.Split(hint, ",")
 		if len(parts) == 2 {
-			// Add parsed lat/lon to wildcards for substitution
-			wildcards["lat"] = strings.TrimSpace(parts[0])
-			wildcards["lon"] = strings.TrimSpace(parts[1])
+			for i, key := range []string{"lat", "lon"} {
+				values[key] = strings.TrimSpace(parts[i])
+				values[strings.ToUpper(key)] = values[key]
+			}
 		}
 	}
 
-	// Substitute common wildcard placeholders
-	commonWildcards := []string{"lat", "lon", "location", "hint", "botid", "host"}
-	for _, key := range commonWildcards {
-		placeholder := "{" + key + "}"
-		if value, exists := wildcards[key]; exists {
-			result = strings.ReplaceAll(result, placeholder, value)
+	var redacted strings.Builder
+	var result strings.Builder
+	last := 0
+	for _, m := range urlPlaceholderRe.FindAllStringSubmatchIndex(template, -1) {
+		result.WriteString(template[last:m[0]])
+		redacted.WriteString(template[last:m[0]])
+		last = m[1]
+
+		if m[2] >= 0 {
+			varName := template[m[2]:m[3]]
+			envValue := os.Getenv(varName)
+			if envValue == "" && sm.verbose {
+				sm.logger.Printf("Warning: Environment variable %s is not set", varName)
+			}
+			result.WriteString(envValue)
+			redacted.WriteString("${" + varName + "}")
+			continue
+		}
+
+		name := template[m[4]:m[5]]
+		switch {
+		case name == "input":
+			value := url.QueryEscape(input)
+			result.WriteString(value)
+			redacted.WriteString(value)
+		case name == "apikey" && headers["Authorization"] != "":
+			result.WriteString(headers["Authorization"])
+			redacted.WriteString("{apikey}")
+		default:
+			value, exists := values[name]
+			if !exists {
+				// Unknown placeholders are left in place
+				result.WriteString(template[m[0]:m[1]])
+				redacted.WriteString(template[m[0]:m[1]])
+				continue
+			}
+			value = url.QueryEscape(value)
+			result.WriteString(value)
+			redacted.WriteString(value)
 		}
 	}
+	result.WriteString(template[last:])
+	redacted.WriteString(template[last:])
 
-	// Substitute any uppercase wildcard placeholders {WILDCARD_NAME}
-	for key, value := range wildcards {
-		placeholder := "{" + strings.ToUpper(key) + "}"
-		result = strings.ReplaceAll(result, placeholder, value)
-	}
-
-	return result
+	return result.String(), redacted.String()
 }
 
 // extractJSONPath extracts a value from JSON data using dot notation
