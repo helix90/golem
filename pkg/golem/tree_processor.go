@@ -555,6 +555,35 @@ func (tp *TreeProcessor) matchSRAI(kb *AIMLKnowledgeBase, input string) (*Catego
 	return category, wildcards, topic, err
 }
 
+// sessionWildcardKeyRe matches the session variables that hold wildcards
+// (star1, that_star1, ...), as opposed to ordinary predicates such as "starsign"
+var sessionWildcardKeyRe = regexp.MustCompile(`^(that_|topic_)?(star|wildcard)\d+$`)
+
+// hideSessionWildcards removes the wildcard variables from the session and
+// returns a function that puts them back.
+func hideSessionWildcards(session *ChatSession) func() {
+	if session == nil || session.Variables == nil {
+		return func() {}
+	}
+	hidden := make(map[string]string)
+	for key, value := range session.Variables {
+		if sessionWildcardKeyRe.MatchString(key) {
+			hidden[key] = value
+			delete(session.Variables, key)
+		}
+	}
+	return func() {
+		for key := range session.Variables {
+			if sessionWildcardKeyRe.MatchString(key) {
+				delete(session.Variables, key)
+			}
+		}
+		for key, value := range hidden {
+			session.Variables[key] = value
+		}
+	}
+}
+
 func (tp *TreeProcessor) processSRAITag(_ *ASTNode, content string) string {
 	// Process SRAI tag - recursive AIML processing (Symbolic Reduction and Inference)
 	// Check recursion depth to prevent infinite recursion
@@ -588,11 +617,14 @@ func (tp *TreeProcessor) processSRAITag(_ *ASTNode, content string) string {
 				Topic:          topic,
 				KnowledgeBase:  kb,
 				RecursionDepth: tp.ctx.RecursionDepth + 1,
-				Wildcards:      tp.ctx.Wildcards, // Preserve parent wildcards
 			}
 
-			// Process the matched template with the new context
+			// Process the matched template with the new context. Its <star/>
+			// tags refer to its own match, so the outer match's wildcards are
+			// hidden from the session while it runs.
+			restore := hideSessionWildcards(tp.ctx.Session)
 			response := tp.golem.processTemplateWithContext(category.Template, wildcards, newCtx)
+			restore()
 			tp.golem.LogInfo("SRAI result: '%s' -> '%s'", sraiContent, response)
 			return response
 		} else {
@@ -1094,134 +1126,21 @@ func (tp *TreeProcessor) processStarTag(node *ASTNode, _ string) string {
 }
 
 func (tp *TreeProcessor) processSRTag(_ *ASTNode, _ string) string {
-	// Process SR tag - shorthand for <srai><star/></srai>
-	// SR recursively processes the first wildcard (star1)
-
+	// Process SR tag - shorthand for <srai><star/></srai>, so it shares srai's
+	// matching, context handling and recursion limit
 	if tp.ctx == nil {
 		tp.golem.LogDebug("SR tag: no context available")
 		return ""
 	}
 
-	// Get the first wildcard (star1) - check session variables first, then wildcards in context
-	starContent := ""
-	if tp.ctx.Session != nil {
-		if value, exists := tp.ctx.Session.Variables["star1"]; exists {
-			starContent = value
-		}
-	}
-	// Also check the Wildcards map directly (for cases without a session)
-	if starContent == "" && tp.ctx.Wildcards != nil {
-		if value, exists := tp.ctx.Wildcards["star1"]; exists {
-			starContent = value
-		}
-	}
-
+	starContent := tp.processStarTag(&ASTNode{Type: NodeTypeSelfClosingTag, TagName: "star", Attributes: map[string]string{}}, "")
 	tp.golem.LogDebug("SR tag: star1 content='%s'", starContent)
-
-	// If no star content, return empty
 	if starContent == "" {
 		tp.golem.LogDebug("SR tag: no star content available")
 		return ""
 	}
 
-	// If no knowledge base, return empty
-	if tp.ctx.KnowledgeBase == nil {
-		tp.golem.LogDebug("SR tag: no knowledge base available")
-		return ""
-	}
-
-	// Try to match the star content as a pattern in the knowledge base
-	category, wildcards, _, err := tp.matchSRAI(tp.ctx.KnowledgeBase, starContent)
-	if err != nil || category == nil {
-		tp.golem.LogDebug("SR tag: no matching pattern for '%s'", starContent)
-		return ""
-	}
-
-	tp.golem.LogDebug("SR tag: found matching pattern for '%s'", starContent)
-
-	// Check recursion depth to prevent infinite loops
-	if tp.ctx.RecursionDepth >= 100 {
-		tp.golem.LogDebug("SR tag: max recursion depth reached")
-		return ""
-	}
-
-	// Increment recursion depth
-	oldDepth := tp.ctx.RecursionDepth
-	tp.ctx.RecursionDepth++
-	defer func() {
-		tp.ctx.RecursionDepth = oldDepth
-	}()
-
-	// Store old wildcards and restore them after processing
-	oldWildcards := make(map[string]string)
-	if tp.ctx.Session != nil && tp.ctx.Session.Variables != nil {
-		// Save current wildcards
-		for k, v := range tp.ctx.Session.Variables {
-			if strings.HasPrefix(k, "star") {
-				oldWildcards[k] = v
-			}
-		}
-
-		// Clear all existing star variables first
-		for k := range tp.ctx.Session.Variables {
-			if strings.HasPrefix(k, "star") {
-				delete(tp.ctx.Session.Variables, k)
-			}
-		}
-
-		// Set new wildcards from the matched pattern
-		for k, v := range wildcards {
-			tp.ctx.Session.Variables[k] = v
-		}
-	} else if tp.ctx.Wildcards != nil {
-		// No session - use context wildcards instead
-		// Save current wildcards
-		for k, v := range tp.ctx.Wildcards {
-			if strings.HasPrefix(k, "star") {
-				oldWildcards[k] = v
-			}
-		}
-
-		// Clear all existing star variables first
-		for k := range tp.ctx.Wildcards {
-			if strings.HasPrefix(k, "star") {
-				delete(tp.ctx.Wildcards, k)
-			}
-		}
-
-		// Set new wildcards from the matched pattern
-		for k, v := range wildcards {
-			tp.ctx.Wildcards[k] = v
-		}
-	}
-
-	// Process the matched template recursively
-	result := tp.golem.processTemplateWithContext(category.Template, wildcards, tp.ctx)
-
-	// Restore old wildcards
-	if tp.ctx.Session != nil && tp.ctx.Session.Variables != nil {
-		// Remove wildcards from the matched pattern
-		for k := range wildcards {
-			delete(tp.ctx.Session.Variables, k)
-		}
-		// Restore original wildcards
-		for k, v := range oldWildcards {
-			tp.ctx.Session.Variables[k] = v
-		}
-	} else if tp.ctx.Wildcards != nil {
-		// Remove wildcards from the matched pattern
-		for k := range wildcards {
-			delete(tp.ctx.Wildcards, k)
-		}
-		// Restore original wildcards
-		for k, v := range oldWildcards {
-			tp.ctx.Wildcards[k] = v
-		}
-	}
-
-	tp.golem.LogDebug("SR tag: result='%s'", result)
-
-	return result
+	return tp.processSRAITag(nil, starContent)
 }
 
 func (tp *TreeProcessor) processThatTag(node *ASTNode, _ string) string {

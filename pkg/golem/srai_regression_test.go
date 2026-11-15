@@ -53,3 +53,36 @@ func TestSRAIUsesTopicAndThat(t *testing.T) {
 		})
 	}
 }
+
+// <sr/> must stop at the srai recursion limit, and must not disturb
+// predicates whose names start with "star".
+func TestSRSharesSRAIHandling(t *testing.T) {
+	g := New(false)
+	if err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>LOOP *</pattern><template><srai>LOOP <sr/></srai></template></category>
+<category><pattern>SIGN *</pattern><template><sr/></template></category>
+<category><pattern>ARIES</pattern><template><think><set name="starsign">aries</set></think>[<star/>]</template></category>
+</aiml>`); err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	session := g.CreateSession("test")
+	if _, err := g.ProcessInput("loop forever", session); err != nil {
+		t.Fatalf("Failed to process looping input: %v", err)
+	}
+
+	session.Variables["starsign"] = "unknown"
+	response, err := g.ProcessInput("sign aries", session)
+	if err != nil {
+		t.Fatalf("Failed to process input: %v", err)
+	}
+	if response != "[]" {
+		t.Errorf("Expected the inner <star/> to be empty, got %q", response)
+	}
+	if got := session.Variables["starsign"]; got != "aries" {
+		t.Errorf("Expected starsign 'aries', got %q", got)
+	}
+	if _, exists := session.Variables["star1"]; exists {
+		t.Errorf("Expected no star1 left in the session, got %q", session.Variables["star1"])
+	}
+}
