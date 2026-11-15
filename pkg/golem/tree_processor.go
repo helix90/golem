@@ -13,7 +13,7 @@ import (
 type TreeProcessor struct {
 	golem       *Golem
 	ctx         *VariableContext
-	starCounter int // Tracks auto-incrementing star index for <star/> tags without explicit index
+	starCounter int                // Tracks auto-incrementing star index for <star/> tags without explicit index
 	metrics     *ProcessorRegistry // Tracks metrics for different tag types/operations
 }
 
@@ -42,12 +42,16 @@ type TreeProcessorWildcard struct {
 	metrics *ProcessorMetrics
 }
 
-func (p *TreeProcessorWildcard) Name() string                                      { return p.name }
-func (p *TreeProcessorWildcard) Type() ProcessorType                               { return ProcessorTypeWildcard }
-func (p *TreeProcessorWildcard) Priority() ProcessorPriority                       { return PriorityEarly }
-func (p *TreeProcessorWildcard) Condition() ProcessorCondition                     { return ProcessorCondition{} }
-func (p *TreeProcessorWildcard) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) { return template, nil }
-func (p *TreeProcessorWildcard) ShouldProcess(template string, ctx *VariableContext) bool { return true }
+func (p *TreeProcessorWildcard) Name() string                  { return p.name }
+func (p *TreeProcessorWildcard) Type() ProcessorType           { return ProcessorTypeWildcard }
+func (p *TreeProcessorWildcard) Priority() ProcessorPriority   { return PriorityEarly }
+func (p *TreeProcessorWildcard) Condition() ProcessorCondition { return ProcessorCondition{} }
+func (p *TreeProcessorWildcard) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
+	return template, nil
+}
+func (p *TreeProcessorWildcard) ShouldProcess(template string, ctx *VariableContext) bool {
+	return true
+}
 func (p *TreeProcessorWildcard) GetMetrics() *ProcessorMetrics {
 	if p.metrics == nil {
 		p.metrics = &ProcessorMetrics{}
@@ -61,11 +65,13 @@ type TreeProcessorData struct {
 	metrics *ProcessorMetrics
 }
 
-func (p *TreeProcessorData) Name() string                                          { return p.name }
-func (p *TreeProcessorData) Type() ProcessorType                                   { return ProcessorTypeData }
-func (p *TreeProcessorData) Priority() ProcessorPriority                           { return PriorityNormal }
-func (p *TreeProcessorData) Condition() ProcessorCondition                         { return ProcessorCondition{} }
-func (p *TreeProcessorData) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) { return template, nil }
+func (p *TreeProcessorData) Name() string                  { return p.name }
+func (p *TreeProcessorData) Type() ProcessorType           { return ProcessorTypeData }
+func (p *TreeProcessorData) Priority() ProcessorPriority   { return PriorityNormal }
+func (p *TreeProcessorData) Condition() ProcessorCondition { return ProcessorCondition{} }
+func (p *TreeProcessorData) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
+	return template, nil
+}
 func (p *TreeProcessorData) ShouldProcess(template string, ctx *VariableContext) bool { return true }
 func (p *TreeProcessorData) GetMetrics() *ProcessorMetrics {
 	if p.metrics == nil {
@@ -80,11 +86,13 @@ type TreeProcessorFormat struct {
 	metrics *ProcessorMetrics
 }
 
-func (p *TreeProcessorFormat) Name() string                                        { return p.name }
-func (p *TreeProcessorFormat) Type() ProcessorType                                 { return ProcessorTypeFormat }
-func (p *TreeProcessorFormat) Priority() ProcessorPriority                         { return PriorityLate }
-func (p *TreeProcessorFormat) Condition() ProcessorCondition                       { return ProcessorCondition{} }
-func (p *TreeProcessorFormat) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) { return template, nil }
+func (p *TreeProcessorFormat) Name() string                  { return p.name }
+func (p *TreeProcessorFormat) Type() ProcessorType           { return ProcessorTypeFormat }
+func (p *TreeProcessorFormat) Priority() ProcessorPriority   { return PriorityLate }
+func (p *TreeProcessorFormat) Condition() ProcessorCondition { return ProcessorCondition{} }
+func (p *TreeProcessorFormat) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
+	return template, nil
+}
 func (p *TreeProcessorFormat) ShouldProcess(template string, ctx *VariableContext) bool { return true }
 func (p *TreeProcessorFormat) GetMetrics() *ProcessorMetrics {
 	if p.metrics == nil {
@@ -99,12 +107,16 @@ type TreeProcessorVariable struct {
 	metrics *ProcessorMetrics
 }
 
-func (p *TreeProcessorVariable) Name() string                                      { return p.name }
-func (p *TreeProcessorVariable) Type() ProcessorType                               { return ProcessorTypeVariable }
-func (p *TreeProcessorVariable) Priority() ProcessorPriority                       { return PriorityEarly }
-func (p *TreeProcessorVariable) Condition() ProcessorCondition                     { return ProcessorCondition{} }
-func (p *TreeProcessorVariable) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) { return template, nil }
-func (p *TreeProcessorVariable) ShouldProcess(template string, ctx *VariableContext) bool { return true }
+func (p *TreeProcessorVariable) Name() string                  { return p.name }
+func (p *TreeProcessorVariable) Type() ProcessorType           { return ProcessorTypeVariable }
+func (p *TreeProcessorVariable) Priority() ProcessorPriority   { return PriorityEarly }
+func (p *TreeProcessorVariable) Condition() ProcessorCondition { return ProcessorCondition{} }
+func (p *TreeProcessorVariable) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
+	return template, nil
+}
+func (p *TreeProcessorVariable) ShouldProcess(template string, ctx *VariableContext) bool {
+	return true
+}
 func (p *TreeProcessorVariable) GetMetrics() *ProcessorMetrics {
 	if p.metrics == nil {
 		p.metrics = &ProcessorMetrics{}
@@ -118,11 +130,13 @@ type TreeProcessorLogic struct {
 	metrics *ProcessorMetrics
 }
 
-func (p *TreeProcessorLogic) Name() string                                         { return p.name }
-func (p *TreeProcessorLogic) Type() ProcessorType                                  { return ProcessorTypeConditional }
-func (p *TreeProcessorLogic) Priority() ProcessorPriority                          { return PriorityNormal }
-func (p *TreeProcessorLogic) Condition() ProcessorCondition                        { return ProcessorCondition{} }
-func (p *TreeProcessorLogic) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) { return template, nil }
+func (p *TreeProcessorLogic) Name() string                  { return p.name }
+func (p *TreeProcessorLogic) Type() ProcessorType           { return ProcessorTypeConditional }
+func (p *TreeProcessorLogic) Priority() ProcessorPriority   { return PriorityNormal }
+func (p *TreeProcessorLogic) Condition() ProcessorCondition { return ProcessorCondition{} }
+func (p *TreeProcessorLogic) Process(template string, wildcards map[string]string, ctx *VariableContext) (string, error) {
+	return template, nil
+}
 func (p *TreeProcessorLogic) ShouldProcess(template string, ctx *VariableContext) bool { return true }
 func (p *TreeProcessorLogic) GetMetrics() *ProcessorMetrics {
 	if p.metrics == nil {
@@ -880,7 +894,7 @@ func (tp *TreeProcessor) processSetTag(node *ASTNode, content string) string {
 					tp.ctx.KnowledgeBase.Variables = make(map[string]string)
 				}
 				tp.ctx.KnowledgeBase.Variables[varKey] = value
-				} else {
+			} else {
 				// Fallback to local variables as last resort
 				if tp.ctx.LocalVars == nil {
 					tp.ctx.LocalVars = make(map[string]string)
