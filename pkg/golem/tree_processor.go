@@ -538,6 +538,23 @@ func (tp *TreeProcessor) processSelfClosingTag(node *ASTNode) string {
 
 // Tag processing methods
 
+// matchSRAI matches srai input the same way ProcessInput matches user input:
+// against the session's current topic and the bot's last response (<that>).
+// The topic is read at this point so that a <set name="topic"> earlier in the
+// same template applies.
+func (tp *TreeProcessor) matchSRAI(kb *AIMLKnowledgeBase, input string) (*Category, map[string]string, string, error) {
+	topic := tp.ctx.Topic
+	that := ""
+	if tp.ctx.Session != nil {
+		topic = tp.ctx.Session.GetSessionTopic()
+		if lastThat := tp.ctx.Session.GetLastThat(); lastThat != "" {
+			that = tp.golem.CachedNormalizeThatPattern(lastThat)
+		}
+	}
+	category, wildcards, err := kb.MatchPatternWithTopicAndThatIndexOriginalCached(tp.golem, tp.golem.CachedNormalizePattern(input), input, topic, that, 0)
+	return category, wildcards, topic, err
+}
+
 func (tp *TreeProcessor) processSRAITag(_ *ASTNode, content string) string {
 	// Process SRAI tag - recursive AIML processing (Symbolic Reduction and Inference)
 	// Check recursion depth to prevent infinite recursion
@@ -551,9 +568,14 @@ func (tp *TreeProcessor) processSRAITag(_ *ASTNode, content string) string {
 
 	tp.golem.LogInfo("Processing SRAI: '%s' (depth: %d)", sraiContent, tp.ctx.RecursionDepth)
 
+	kb := tp.ctx.KnowledgeBase
+	if kb == nil {
+		kb = tp.golem.aimlKB
+	}
+
 	// Try to match the SRAI content as a new AIML pattern
-	if tp.golem.aimlKB != nil {
-		category, wildcards, err := tp.golem.aimlKB.MatchPattern(sraiContent)
+	if kb != nil {
+		category, wildcards, topic, err := tp.matchSRAI(kb, sraiContent)
 		tp.golem.LogInfo("SRAI pattern match: content='%s', err=%v, category=%v, wildcards=%v",
 			sraiContent, err, category != nil, wildcards)
 
@@ -563,8 +585,8 @@ func (tp *TreeProcessor) processSRAITag(_ *ASTNode, content string) string {
 			newCtx := &VariableContext{
 				LocalVars:      tp.ctx.LocalVars,
 				Session:        tp.ctx.Session,
-				Topic:          tp.ctx.Topic,
-				KnowledgeBase:  tp.ctx.KnowledgeBase,
+				Topic:          topic,
+				KnowledgeBase:  kb,
 				RecursionDepth: tp.ctx.RecursionDepth + 1,
 				Wildcards:      tp.ctx.Wildcards, // Preserve parent wildcards
 			}
@@ -1151,7 +1173,7 @@ func (tp *TreeProcessor) processSRTag(_ *ASTNode, _ string) string {
 	}
 
 	// Try to match the star content as a pattern in the knowledge base
-	category, wildcards, err := tp.ctx.KnowledgeBase.MatchPattern(starContent)
+	category, wildcards, _, err := tp.matchSRAI(tp.ctx.KnowledgeBase, starContent)
 	if err != nil || category == nil {
 		tp.golem.LogDebug("SR tag: no matching pattern for '%s'", starContent)
 		return ""
