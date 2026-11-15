@@ -713,7 +713,8 @@ func (tp *TreeProcessor) processSRAIXTag(node *ASTNode, content string) string {
 
 		// Only use _coords as fallback if we don't have individual lat/lon
 		// (because _coords in hint will override lat/lon in substituteURLTemplate)
-		if !hasLat || !hasLon {
+		// An explicit hint attribute takes precedence.
+		if hintText == "" && (!hasLat || !hasLon) {
 			if coords, exists := tp.ctx.Session.Variables["_coords"]; exists && coords != "" {
 				requestParams["hint"] = coords
 			}

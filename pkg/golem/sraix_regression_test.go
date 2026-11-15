@@ -152,3 +152,67 @@ func TestSRAIXVerboseLogMasksSecrets(t *testing.T) {
 		t.Errorf("Secrets leaked into log:\n%s", logs.String())
 	}
 }
+
+// A response with no text must fall back: first to the configured fallback,
+// then to the default attribute, then to the tag content.
+func TestSRAIXEmptyResultFallsBack(t *testing.T) {
+	const aiml = `<aiml version="2.0">
+<category><pattern>WITH DEFAULT</pattern><template><sraix service="svc" default="DEFAULTED">question</sraix></template></category>
+<category><pattern>WITHOUT DEFAULT</pattern><template><sraix service="svc">question</sraix></template></category>
+</aiml>`
+	tests := []struct {
+		name     string
+		body     string
+		format   string
+		path     string
+		fallback string
+		input    string
+		want     string
+	}{
+		{"missing path uses default", `{"data":{"other":"x"}}`, "json", "data.answer", "", "with default", "DEFAULTED"},
+		{"missing path uses fallback", `{"data":{"other":"x"}}`, "json", "data.answer", "FALLBACK", "with default", "FALLBACK"},
+		{"invalid json uses fallback", `not json`, "json", "data.answer", "FALLBACK", "with default", "FALLBACK"},
+		{"empty text uses default", "  \n", "text", "", "", "with default", "DEFAULTED"},
+		{"empty text uses content", "", "text", "", "", "without default", "question"},
+		{"value found", `{"data":{"answer":"42"}}`, "json", "data.answer", "FALLBACK", "with default", "42"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, srv := newSRAIXRecorder(t, tt.body)
+			g := newSRAIXGolem(t, &SRAIXConfig{
+				Name:             "svc",
+				BaseURL:          srv.URL,
+				Method:           "GET",
+				ResponseFormat:   tt.format,
+				ResponsePath:     tt.path,
+				FallbackResponse: tt.fallback,
+			}, aiml)
+			response, err := g.ProcessInput(tt.input, g.CreateSession("test"))
+			if err != nil {
+				t.Fatalf("Failed to process input: %v", err)
+			}
+			if response != tt.want {
+				t.Errorf("Expected %q, got %q", tt.want, response)
+			}
+		})
+	}
+}
+
+// An explicit hint attribute must not be replaced by the _coords predicate.
+func TestSRAIXExplicitHintKept(t *testing.T) {
+	rec, srv := newSRAIXRecorder(t, "answer")
+	g := newSRAIXGolem(t, &SRAIXConfig{
+		Name:        "svc",
+		URLTemplate: srv.URL + "/q?hint={hint}",
+		Method:      "GET",
+	}, `<aiml version="2.0">
+<category><pattern>ASK</pattern><template><think><set name="_coords">1,2</set></think><sraix service="svc" hint="explicit">question</sraix></template></category>
+</aiml>`)
+
+	if _, err := g.ProcessInput("ask", g.CreateSession("test")); err != nil {
+		t.Fatalf("Failed to process input: %v", err)
+	}
+	if got := rec.last(t).URL.Query().Get("hint"); got != "explicit" {
+		t.Errorf("Expected hint 'explicit', got %q", got)
+	}
+}

@@ -56,9 +56,9 @@ type SRAIXManager struct {
 func NewSRAIXManager(logger *log.Logger, verbose bool) *SRAIXManager {
 	return &SRAIXManager{
 		configs: make(map[string]*SRAIXConfig),
-		client: &http.Client{
-			Timeout: 30 * time.Second, // Default timeout
-		},
+		// No client-wide timeout: each request gets its config's timeout,
+		// and a client timeout would cap any config timeout above it
+		client:  &http.Client{},
 		logger:  logger,
 		verbose: verbose,
 	}
@@ -200,15 +200,31 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 		sm.logger.Printf("SRAIX request to %s: %s %s", serviceName, config.Method, logURL)
 	}
 
-	resp, err := sm.client.Do(req)
+	response, err := sm.doRequest(req, config)
 	if err != nil {
 		if sm.verbose {
-			sm.logger.Printf("SRAIX request failed: %v", err)
+			sm.logger.Printf("SRAIX request to %s failed: %v", serviceName, err)
 		}
 		// Return fallback response if configured
 		if config.FallbackResponse != "" {
 			return config.FallbackResponse, nil
 		}
+		return "", err
+	}
+
+	if sm.verbose {
+		sm.logger.Printf("SRAIX response from %s: %s", serviceName, response)
+	}
+
+	return response, nil
+}
+
+// doRequest sends the request and extracts the response text. Any failure,
+// including a response with no text (such as a missing response path), is
+// returned as an error, so that the caller falls back.
+func (sm *SRAIXManager) doRequest(req *http.Request, config *SRAIXConfig) (string, error) {
+	resp, err := sm.client.Do(req)
+	if err != nil {
 		return "", fmt.Errorf("SRAIX request failed: %v", err)
 	}
 	defer resp.Body.Close()
@@ -221,13 +237,6 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 
 	// Check for HTTP errors
 	if resp.StatusCode >= 400 {
-		if sm.verbose {
-			sm.logger.Printf("SRAIX request returned status %d: %s", resp.StatusCode, string(responseBody))
-		}
-		// Return fallback response if configured
-		if config.FallbackResponse != "" {
-			return config.FallbackResponse, nil
-		}
 		return "", fmt.Errorf("SRAIX request failed with status %d: %s", resp.StatusCode, string(responseBody))
 	}
 
@@ -243,6 +252,9 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 			}
 			// JSON path extraction (supports dot notation and array indices like "0.lat")
 			response = sm.extractJSONPath(jsonData, config.ResponsePath)
+			if response == "" {
+				return "", fmt.Errorf("SRAIX response has no value at path '%s'", config.ResponsePath)
+			}
 		}
 	case "xml":
 		// For XML, we'll return the raw response for now
@@ -253,11 +265,11 @@ func (sm *SRAIXManager) ProcessSRAIX(serviceName, input string, wildcards map[st
 		// Default to text
 	}
 
-	if sm.verbose {
-		sm.logger.Printf("SRAIX response from %s: %s", serviceName, response)
+	response = strings.TrimSpace(response)
+	if response == "" {
+		return "", fmt.Errorf("SRAIX response is empty")
 	}
-
-	return strings.TrimSpace(response), nil
+	return response, nil
 }
 
 // urlPlaceholderRe matches the placeholders of a URL template: ${ENV_VAR}
