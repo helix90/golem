@@ -57,61 +57,67 @@ func (p *ASTParser) Parse() (*ASTNode, error) {
 		Children: []*ASTNode{},
 	}
 
-	p.parseChildren(root)
-
-	// If root has children, change its type to indicate it's a container
-	if len(root.Children) > 0 {
-		root.Type = NodeTypeText // Keep as text but handle in String method
-	}
+	p.parseNodes(root, "")
 
 	return root, nil
 }
 
-// parseChildren parses all children of a node
-func (p *ASTParser) parseChildren(parent *ASTNode) {
+// implicitlySelfClosingTags are treated as self-closing when written without
+// a slash and never closed (e.g. <get name="x">)
+var implicitlySelfClosingTags = map[string]bool{
+	"star":     true,
+	"sr":       true,
+	"get":      true,
+	"bot":      true,
+	"that":     true,
+	"input":    true,
+	"loop":     true,
+	"date":     true,
+	"time":     true,
+	"size":     true,
+	"version":  true,
+	"id":       true,
+	"request":  true,
+	"response": true,
+	"repeat":   true,
+	"topic":    true,
+	"subj":     true,
+	"pred":     true,
+	"obj":      true,
+	"uniq":     true,
+}
+
+// parseNodes parses nodes into parent until the end of input or, when
+// closeTag is set, until that tag's closing tag, which it consumes. It returns
+// whether the closing tag was found. Other closing tags are dropped.
+func (p *ASTParser) parseNodes(parent *ASTNode, closeTag string) bool {
 	for p.pos < p.len {
+		if p.peek(2) == "</" {
+			p.pos += 2
+			name := p.parseTagName()
+			if closeTag != "" && name == closeTag {
+				p.consume('>')
+				return true
+			}
+			// Not this element's closing tag: drop it
+			if name != "" {
+				p.consume('>')
+			}
+			continue
+		}
+
 		oldPos := p.pos
-
-		// Parse whitespace as text content
-		if p.isWhitespace() {
-			node := p.parseText()
-			if node != nil {
-				parent.Children = append(parent.Children, node)
-			}
-			continue
+		var node *ASTNode
+		switch {
+		case p.peek(4) == "<!--":
+			node = p.parseComment()
+		case p.peek(9) == "<![CDATA[":
+			node = p.parseCDATA()
+		case p.peek(1) == "<":
+			node = p.parseTag()
+		default:
+			node = p.parseText()
 		}
-
-		// Check for comment
-		if p.peek(4) == "<!--" {
-			node := p.parseComment()
-			if node != nil {
-				parent.Children = append(parent.Children, node)
-			}
-			continue
-		}
-
-		// Check for CDATA
-		if p.peek(9) == "<![CDATA[" {
-			node := p.parseCDATA()
-			if node != nil {
-				parent.Children = append(parent.Children, node)
-			}
-			continue
-		}
-
-		// Check for opening tag
-		if p.peek(1) == "<" && !p.isAtEnd() {
-			node := p.parseTag()
-			if node != nil {
-				parent.Children = append(parent.Children, node)
-			}
-			// Continue parsing even if parseTag() returned nil (for closing tags)
-			// This ensures we parse any text that follows the closing tag
-			continue
-		}
-
-		// Parse text content
-		node := p.parseText()
 		if node != nil {
 			parent.Children = append(parent.Children, node)
 		}
@@ -121,20 +127,16 @@ func (p *ASTParser) parseChildren(parent *ASTNode) {
 			break
 		}
 	}
+	return false
 }
 
-// parseTag parses a tag (opening, closing, or self-closing)
+// parseTag parses a tag (opening or self-closing) and its content
 func (p *ASTParser) parseTag() *ASTNode {
 	startPos := p.pos
 
 	// Consume opening '<'
 	if !p.consume('<') {
 		return nil
-	}
-
-	// Check for closing tag
-	if p.peek(1) == "/" {
-		return p.parseClosingTag(startPos)
 	}
 
 	// Parse tag name
@@ -163,65 +165,12 @@ func (p *ASTParser) parseTag() *ASTNode {
 		}
 	}
 
-	// Check if this is an implicitly self-closing tag
-	implicitlySelfClosing := map[string]bool{
-		"star":     true,
-		"sr":       true,
-		"get":      true,
-		"bot":      true,
-		"that":     true,
-		"input":    true,
-		"loop":     true,
-		"date":     true,
-		"time":     true,
-		"size":     true,
-		"version":  true,
-		"id":       true,
-		"request":  true,
-		"response": true,
-		"repeat":   true,
-		"topic":    true,
-		"subj":     true,
-		"pred":     true,
-		"obj":      true,
-		"uniq":     true,
-	}
-
-	// If this is an implicitly self-closing tag and we're at the end or next non-whitespace is '<'
-	if implicitlySelfClosing[tagName] {
-		// Save current position
-		savedPos := p.pos
-
-		// Skip whitespace
-		for p.pos < p.len && p.isWhitespace() {
-			p.pos++
-		}
-
-		// If we're at the end or the next character is '<', treat as self-closing
-		if p.pos >= p.len || p.peek(1) == "<" {
-			// Consume the '>' character
-			if p.consume('>') {
-				return &ASTNode{
-					Type:        NodeTypeSelfClosingTag,
-					TagName:     tagName,
-					Attributes:  attributes,
-					SelfClosing: true,
-					StartPos:    startPos,
-					EndPos:      p.pos,
-				}
-			}
-		}
-
-		// Reset position if not self-closing
-		p.pos = savedPos
-	}
-
 	// Consume '>'
 	if !p.consume('>') {
 		return nil
 	}
 
-	// Create opening tag node
+	// Create opening tag node and parse its content up to the matching closing tag
 	tagNode := &ASTNode{
 		Type:       NodeTypeTag,
 		TagName:    tagName,
@@ -229,106 +178,14 @@ func (p *ASTParser) parseTag() *ASTNode {
 		Children:   []*ASTNode{},
 		StartPos:   startPos,
 	}
-
-	// Parse children (content between opening and closing tags)
-	// We need to parse until we find the matching closing tag
-	for p.pos < p.len {
-		// Check if we're at a closing tag
-		if p.peek(2) == "</" {
-			// Check if it's the matching closing tag
-			closingStart := p.pos
-			p.consume('<')
-			p.consume('/')
-			closingTagName := p.parseTagName()
-			if closingTagName == tagName {
-				// Found matching closing tag
-				p.consume('>')
-				tagNode.EndPos = p.pos
-				// Successfully parsed tag
-				return tagNode
-			} else {
-				// Not the right closing tag, reset position and continue parsing
-				p.pos = closingStart
-			}
-		}
-
-		// Parse the next node
-		oldPos := p.pos
-
-		// Parse whitespace as text content (don't skip it)
-		if p.isWhitespace() {
-			node := p.parseText()
-			if node != nil {
-				tagNode.Children = append(tagNode.Children, node)
-			}
-			continue
-		}
-
-		// Check for comment
-		if p.peek(4) == "<!--" {
-			node := p.parseComment()
-			if node != nil {
-				tagNode.Children = append(tagNode.Children, node)
-			}
-			continue
-		}
-
-		// Check for CDATA
-		if p.peek(9) == "<![CDATA[" {
-			node := p.parseCDATA()
-			if node != nil {
-				tagNode.Children = append(tagNode.Children, node)
-			}
-			continue
-		}
-
-		// Check for opening tag
-		if p.peek(1) == "<" && !p.isAtEnd() {
-			node := p.parseTag()
-			if node != nil {
-				tagNode.Children = append(tagNode.Children, node)
-			}
-			continue
-		}
-
-		// Parse text content
-		node := p.parseText()
-		if node != nil {
-			tagNode.Children = append(tagNode.Children, node)
-		}
-
-		// If we didn't make progress, break to avoid infinite loop
-		if p.pos == oldPos {
-			break
-		}
+	if p.parseNodes(tagNode, tagName) {
+		tagNode.EndPos = p.pos
+		return tagNode
 	}
 
-	// If we get here, check if it should be a self-closing tag
-	implicitlySelfClosingTags := map[string]bool{
-		"star":     true,
-		"sr":       true,
-		"get":      true,
-		"bot":      true,
-		"that":     true,
-		"input":    true,
-		"loop":     true,
-		"date":     true,
-		"time":     true,
-		"size":     true,
-		"version":  true,
-		"id":       true,
-		"request":  true,
-		"response": true,
-		"repeat":   true,
-		"topic":    true,
-		"subj":     true,
-		"pred":     true,
-		"obj":      true,
-		"uniq":     true,
-	}
-
+	// Unclosed tag: implicitly self-closing tags (e.g. <get name="x">) are
+	// treated as self-closing
 	if implicitlySelfClosingTags[tagName] {
-		// This is an implicitly self-closing tag
 		return &ASTNode{
 			Type:        NodeTypeSelfClosingTag,
 			TagName:     tagName,
@@ -339,31 +196,14 @@ func (p *ASTParser) parseTag() *ASTNode {
 		}
 	}
 
-	// If we get here, it's a malformed tag
-	// Return as text node
+	// Otherwise it's malformed; return it verbatim as text so the problem
+	// is visible in the output
 	return &ASTNode{
 		Type:     NodeTypeText,
 		Content:  p.input[startPos:p.pos],
 		StartPos: startPos,
 		EndPos:   p.pos,
 	}
-}
-
-// parseClosingTag parses a closing tag
-func (p *ASTParser) parseClosingTag(_ int) *ASTNode {
-	p.consume('/')
-	tagName := p.parseTagName()
-	if tagName == "" {
-		return nil
-	}
-
-	if !p.consume('>') {
-		return nil
-	}
-
-	// Closing tags are typically not stored as separate nodes
-	// They're handled during the opening tag parsing
-	return nil
 }
 
 // parseTagName parses a tag name
