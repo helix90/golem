@@ -293,3 +293,48 @@ func FuzzParseAIML(f *testing.F) {
 		_, _ = g.parseAIML(input)
 	})
 }
+
+// Entities in templates are decoded in the output, including in learned
+// categories and attribute values.
+func TestTemplateEntitiesDecoded(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>AMP</pattern><template>A &amp; B &lt;3 &quot;hi&quot; &#233;</template></category>
+<category><pattern>ATTR</pattern><template><think><set name="x">Q&amp;A</set></think><condition name="x" value="Q&amp;A">matched</condition></template></category>
+<category><pattern>TEACH</pattern><template><learn><category><pattern>LEARNED</pattern><template>C &amp; D</template></category></learn>ok</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	session := g.CreateSession("test")
+	steps := []struct{ input, want string }{
+		{"amp", `A & B <3 "hi" é`},
+		{"attr", "matched"},
+		{"teach", "ok"},
+		{"learned", "C & D"},
+	}
+	for _, step := range steps {
+		response, err := g.ProcessInput(step.input, session)
+		if err != nil {
+			t.Fatalf("ProcessInput(%q) failed: %v", step.input, err)
+		}
+		if response != step.want {
+			t.Errorf("ProcessInput(%q): expected '%s', got '%s'", step.input, step.want, response)
+		}
+	}
+}
+
+// Re-serialized attributes are escaped and in a stable order.
+func TestASTNodeStringAttributes(t *testing.T) {
+	root, err := NewASTParser(`<li name="b" value="x &amp; &quot;y&quot;" a="1">z</li>`).Parse()
+	if err != nil {
+		t.Fatalf("Failed to parse: %v", err)
+	}
+	want := `<li a="1" name="b" value="x &amp; &quot;y&quot;">z</li>`
+	for i := 0; i < 10; i++ {
+		if got := root.String(); got != want {
+			t.Fatalf("Expected %s, got %s", want, got)
+		}
+	}
+}

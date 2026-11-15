@@ -2,6 +2,7 @@ package golem
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"sort"
 	"strconv"
@@ -246,7 +247,10 @@ func (tp *TreeProcessor) processNode(node *ASTNode) string {
 			}
 			return children
 		}
-		return node.Content
+		// Decode entities (&amp;, &lt;, ...) on output. Content itself keeps
+		// the source text so that re-serialized templates (e.g. in <learn>)
+		// still parse correctly.
+		return html.UnescapeString(node.Content)
 	case NodeTypeComment:
 		return "" // Comments are not output
 	case NodeTypeCDATA:
@@ -532,19 +536,7 @@ func (tp *TreeProcessor) processSelfClosingTag(node *ASTNode) string {
 		return tp.processTopicTag(node, "")
 	default:
 		// Unknown self-closing tag, return as-is
-		attrStr := ""
-		if len(node.Attributes) > 0 {
-			var attrs []string
-			for k, v := range node.Attributes {
-				if v == "" {
-					attrs = append(attrs, k)
-				} else {
-					attrs = append(attrs, fmt.Sprintf(`%s="%s"`, k, v))
-				}
-			}
-			attrStr = " " + strings.Join(attrs, " ")
-		}
-		return fmt.Sprintf("<%s%s/>", node.TagName, attrStr)
+		return fmt.Sprintf("<%s%s/>", node.TagName, formatAttributes(node.Attributes))
 	}
 }
 
@@ -2092,20 +2084,7 @@ func (tp *TreeProcessor) processChildPreservingReferences(node *ASTNode) string 
 func (tp *TreeProcessor) processTagWithContent(node *ASTNode, content string) string {
 	// Helper function to format tag with attributes
 	formatTag := func(tagName string, attrs map[string]string, content string) string {
-		if len(attrs) == 0 {
-			return fmt.Sprintf("<%s>%s</%s>", tagName, content, tagName)
-		}
-
-		var attrStr strings.Builder
-		for key, value := range attrs {
-			if value == "" {
-				attrStr.WriteString(fmt.Sprintf(" %s", key))
-			} else {
-				attrStr.WriteString(fmt.Sprintf(` %s="%s"`, key, value))
-			}
-		}
-
-		return fmt.Sprintf("<%s%s>%s</%s>", tagName, attrStr.String(), content, tagName)
+		return fmt.Sprintf("<%s%s>%s</%s>", tagName, formatAttributes(attrs), content, tagName)
 	}
 
 	// Process the tag based on its name

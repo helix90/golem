@@ -2,6 +2,8 @@ package golem
 
 import (
 	"fmt"
+	"html"
+	"sort"
 	"strings"
 )
 
@@ -427,7 +429,7 @@ func (p *ASTParser) parseAttributeValue() string {
 		for p.pos < p.len && p.peek(2) != "\\\"" {
 			p.pos++
 		}
-		value := p.input[start:p.pos]
+		value := html.UnescapeString(p.input[start:p.pos])
 		p.consumeString("\\\"")
 		return value
 	}
@@ -439,7 +441,7 @@ func (p *ASTParser) parseAttributeValue() string {
 		for p.pos < p.len && p.input[p.pos] != quote {
 			p.pos++
 		}
-		value := p.input[start:p.pos]
+		value := html.UnescapeString(p.input[start:p.pos])
 		p.consume(rune(quote))
 		return value
 	} else {
@@ -591,32 +593,10 @@ func (n *ASTNode) String() string {
 	case NodeTypeCDATA:
 		return fmt.Sprintf("<![CDATA[%s]]>", n.Content)
 	case NodeTypeSelfClosingTag:
-		attrStr := ""
-		if len(n.Attributes) > 0 {
-			var attrs []string
-			for k, v := range n.Attributes {
-				if v == "" {
-					attrs = append(attrs, k)
-				} else {
-					attrs = append(attrs, fmt.Sprintf(`%s="%s"`, k, v))
-				}
-			}
-			attrStr = " " + strings.Join(attrs, " ")
-		}
+		attrStr := formatAttributes(n.Attributes)
 		return fmt.Sprintf("<%s%s/>", n.TagName, attrStr)
 	case NodeTypeTag:
-		attrStr := ""
-		if len(n.Attributes) > 0 {
-			var attrs []string
-			for k, v := range n.Attributes {
-				if v == "" {
-					attrs = append(attrs, k)
-				} else {
-					attrs = append(attrs, fmt.Sprintf(`%s="%s"`, k, v))
-				}
-			}
-			attrStr = " " + strings.Join(attrs, " ")
-		}
+		attrStr := formatAttributes(n.Attributes)
 
 		children := ""
 		for _, child := range n.Children {
@@ -632,6 +612,34 @@ func (n *ASTNode) String() string {
 		}
 		return children
 	}
+}
+
+// attributeEscaper escapes attribute values so they survive re-parsing
+var attributeEscaper = strings.NewReplacer(`&`, "&amp;", `"`, "&quot;", `<`, "&lt;")
+
+// formatAttributes serializes attributes as ` name="value"` pairs in sorted
+// order, escaping values. Attributes with empty values are written bare.
+func formatAttributes(attributes map[string]string) string {
+	if len(attributes) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(attributes))
+	for name := range attributes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var b strings.Builder
+	for _, name := range names {
+		b.WriteString(" ")
+		b.WriteString(name)
+		if value := attributes[name]; value != "" {
+			b.WriteString(`="`)
+			b.WriteString(attributeEscaper.Replace(value))
+			b.WriteString(`"`)
+		}
+	}
+	return b.String()
 }
 
 // GetTextContent returns all text content from a node and its children
