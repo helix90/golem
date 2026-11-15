@@ -448,3 +448,40 @@ func TestClearSessionLearningRemovesOnlyLearned(t *testing.T) {
 		t.Errorf("Expected file category 'cats yes' to remain, got '%s' (err=%v)", response, err)
 	}
 }
+
+// assertIndexPointsIntoCategories checks that every Patterns entry points at
+// an element of kb.Categories, so updates through the index stay consistent.
+func assertIndexPointsIntoCategories(t *testing.T, kb *AIMLKnowledgeBase) {
+	t.Helper()
+	inCategories := make(map[*Category]bool, len(kb.Categories))
+	for i := range kb.Categories {
+		inCategories[&kb.Categories[i]] = true
+	}
+	for key, category := range kb.Patterns {
+		if !inCategories[category] {
+			t.Errorf("Patterns[%q] does not point into Categories", key)
+		}
+	}
+}
+
+func TestPatternIndexPointsIntoCategories(t *testing.T) {
+	dir := t.TempDir()
+	for i, content := range []string{thatCollisionAIML, `<aiml version="2.0"><category><pattern>OTHER</pattern><template>o</template></category></aiml>`} {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%d.aiml", i)), []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to write test file: %v", err)
+		}
+	}
+
+	g := New(false)
+	kb, err := g.LoadAIMLFromDirectory(dir)
+	if err != nil {
+		t.Fatalf("Failed to load directory: %v", err)
+	}
+	assertIndexPointsIntoCategories(t, kb)
+
+	g.SetKnowledgeBase(kb)
+	if err := g.LoadAIMLFromString(`<aiml version="2.0"><category><pattern>MORE</pattern><template>m</template></category></aiml>`); err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+	assertIndexPointsIntoCategories(t, g.GetKnowledgeBase())
+}

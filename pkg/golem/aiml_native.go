@@ -86,9 +86,16 @@ type AIMLKnowledgeBase struct {
 // pointers; the index is rebuilt to keep every key on its own category.
 func (kb *AIMLKnowledgeBase) removeCategory(i int) {
 	kb.Categories = append(kb.Categories[:i], kb.Categories[i+1:]...)
+	kb.rebuildPatternIndex()
+}
+
+// rebuildPatternIndex rebuilds Patterns from Categories, so that every entry
+// points at its category in kb.Categories. When categories share a key, the
+// later one wins.
+func (kb *AIMLKnowledgeBase) rebuildPatternIndex() {
 	kb.Patterns = make(map[string]*Category, len(kb.Categories))
-	for j := range kb.Categories {
-		kb.Patterns[categoryKey(kb.Categories[j])] = &kb.Categories[j]
+	for i := range kb.Categories {
+		kb.Patterns[categoryKey(kb.Categories[i])] = &kb.Categories[i]
 	}
 }
 
@@ -203,10 +210,7 @@ func (g *Golem) aimlToKnowledgeBase(aiml *AIML) *AIMLKnowledgeBase {
 		Substitutions:  make(map[string]map[string]string),
 	}
 
-	// Build pattern index
-	for i := range kb.Categories {
-		kb.Patterns[categoryKey(kb.Categories[i])] = &kb.Categories[i]
-	}
+	kb.rebuildPatternIndex()
 
 	return kb
 }
@@ -246,9 +250,6 @@ func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledge
 
 	// Copy from first knowledge base
 	mergedKB.Categories = append(mergedKB.Categories, kb1.Categories...)
-	for pattern, category := range kb1.Patterns {
-		mergedKB.Patterns[pattern] = category
-	}
 	for setName, members := range kb1.Sets {
 		mergedKB.Sets[setName] = members
 	}
@@ -279,9 +280,7 @@ func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledge
 
 	// Merge from second knowledge base
 	mergedKB.Categories = append(mergedKB.Categories, kb2.Categories...)
-	for pattern, category := range kb2.Patterns {
-		mergedKB.Patterns[pattern] = category
-	}
+	mergedKB.rebuildPatternIndex()
 	for setName, members := range kb2.Sets {
 		if mergedKB.Sets[setName] == nil {
 			mergedKB.Sets[setName] = make([]string, 0)
@@ -345,29 +344,14 @@ func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledge
 }
 
 func (g *Golem) LoadAIML(filename string) (*AIMLKnowledgeBase, error) {
-	g.LogInfo("Loading AIML file: %s", filename)
-
-	// Read the file
-	content, err := g.LoadFile(filename)
+	categories, err := g.loadAIMLCategories(filename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AIML file: %v", err)
-	}
-
-	// Parse the AIML content
-	aiml, err := g.parseAIML(content)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse AIML: %v", err)
-	}
-
-	// Validate the AIML
-	err = g.validateAIML(aiml)
-	if err != nil {
-		return nil, fmt.Errorf("AIML validation failed: %v", err)
+		return nil, err
 	}
 
 	// Create knowledge base
 	kb := NewAIMLKnowledgeBase()
-	kb.Categories = aiml.Categories
+	kb.Categories = categories
 
 	// Load default properties
 	err = g.loadDefaultProperties(kb)
@@ -375,15 +359,33 @@ func (g *Golem) LoadAIML(filename string) (*AIMLKnowledgeBase, error) {
 		return nil, fmt.Errorf("failed to load default properties: %v", err)
 	}
 
-	// Index patterns for fast lookup
-	for i := range kb.Categories {
-		kb.Patterns[categoryKey(kb.Categories[i])] = &kb.Categories[i]
-	}
+	kb.rebuildPatternIndex()
 
-	g.LogInfo("Loaded %d AIML categories", len(aiml.Categories))
+	g.LogInfo("Loaded %d AIML categories", len(kb.Categories))
 	g.LogInfo("Loaded %d properties", len(kb.Properties))
 
 	return kb, nil
+}
+
+// loadAIMLCategories reads, parses, and validates the categories in an AIML file
+func (g *Golem) loadAIMLCategories(filename string) ([]Category, error) {
+	g.LogInfo("Loading AIML file: %s", filename)
+
+	content, err := g.LoadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AIML file: %v", err)
+	}
+
+	aiml, err := g.parseAIML(content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse AIML: %v", err)
+	}
+
+	if err := g.validateAIML(aiml); err != nil {
+		return nil, fmt.Errorf("AIML validation failed: %v", err)
+	}
+
+	return aiml.Categories, nil
 }
 
 // LoadAIMLFromDirectory loads all AIML files from a directory and merges them into a single knowledge base
@@ -424,49 +426,17 @@ func (g *Golem) LoadAIMLFromDirectory(dirPath string) (*AIMLKnowledgeBase, error
 
 	g.LogInfo("Found %d AIML files in directory", len(aimlFiles))
 
-	// Load each AIML file and merge into the knowledge base
+	// Load the categories from each AIML file
 	for _, aimlFile := range aimlFiles {
-		g.LogInfo("Loading AIML file: %s", aimlFile)
-
-		// Load the individual AIML file
-		kb, err := g.LoadAIML(aimlFile)
+		categories, err := g.loadAIMLCategories(aimlFile)
 		if err != nil {
 			// Log the error but continue with other files
 			g.LogWarn("Failed to load %s: %v", aimlFile, err)
 			continue
 		}
-
-		// Merge the categories from this file into the merged knowledge base
-		for i := range kb.Categories {
-			mergedKB.Categories = append(mergedKB.Categories, kb.Categories[i])
-			mergedKB.Patterns[categoryKey(kb.Categories[i])] = &kb.Categories[i]
-		}
-
-		// Merge sets
-		for setName, members := range kb.Sets {
-			for _, member := range members {
-				mergedKB.AddSetMember(setName, member)
-			}
-		}
-
-		// Merge topics
-		for topicName, patterns := range kb.Topics {
-			if mergedKB.Topics[topicName] == nil {
-				mergedKB.Topics[topicName] = make([]string, 0)
-			}
-			mergedKB.Topics[topicName] = append(mergedKB.Topics[topicName], patterns...)
-		}
-
-		// Merge variables (file variables override defaults)
-		for varName, varValue := range kb.Variables {
-			mergedKB.Variables[varName] = varValue
-		}
-
-		// Merge properties (file properties override defaults)
-		for propName, propValue := range kb.Properties {
-			mergedKB.Properties[propName] = propValue
-		}
+		mergedKB.Categories = append(mergedKB.Categories, categories...)
 	}
+	mergedKB.rebuildPatternIndex()
 
 	// Load map files from the same directory
 	maps, err := g.LoadMapsFromDirectory(dirPath)
