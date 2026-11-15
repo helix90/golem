@@ -40,14 +40,14 @@ func TestPatternMatchingPerformance(t *testing.T) {
 		{
 			name:        "Complex pattern matching",
 			categories:  1000,
-			pattern:     "* * * * * * * * * *",
+			pattern:     "* * * * * * * * *", // 9 is the maximum wildcards per pattern
 			input:       "one two three four five six seven eight nine ten",
 			maxDuration: 100 * time.Millisecond,
 		},
 		{
 			name:        "Wildcard-heavy pattern",
 			categories:  1000,
-			pattern:     "* * * * * * * * * * * * * * * * * * * *",
+			pattern:     "* * * * * * * * *", // 9 is the maximum wildcards per pattern
 			input:       "word word word word word word word word word word word word word word word word word word word word",
 			maxDuration: 150 * time.Millisecond,
 		},

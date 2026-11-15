@@ -132,3 +132,69 @@ func FuzzASTParser(f *testing.F) {
 		_ = root.String()
 	})
 }
+
+// Pattern validation is case-insensitive and accepts apostrophes, common
+// punctuation, and non-ASCII letters. An invalid category is skipped without
+// discarding the rest of the file.
+func TestDirectoryLoadValidation(t *testing.T) {
+	dir := t.TempDir()
+	content := `<aiml version="2.0">
+<category><pattern>hello there</pattern><template>lowercase</template></category>
+<category><pattern>LET'S TALK ABOUT *</pattern><template>apostrophe</template></category>
+<category><pattern>CAFÉ</pattern><template>accented</template></category>
+<category><pattern>MAIL ME @ HOME</pattern><template>invalid</template></category>
+</aiml>`
+	if err := os.WriteFile(filepath.Join(dir, "mixed.aiml"), []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	g := New(false)
+	kb, err := g.LoadAIMLFromDirectory(dir)
+	if err != nil {
+		t.Fatalf("Failed to load directory: %v", err)
+	}
+	g.SetKnowledgeBase(kb)
+
+	if got := len(kb.Categories); got != 3 {
+		t.Fatalf("Expected 3 valid categories, got %d: %+v", got, kb.Categories)
+	}
+
+	session := g.CreateSession("test")
+	for input, want := range map[string]string{
+		"hello there":           "lowercase",
+		"let's talk about cats": "apostrophe",
+		"café":                  "accented",
+	} {
+		response, err := g.ProcessInput(input, session)
+		if err != nil {
+			t.Errorf("ProcessInput(%q) failed: %v", input, err)
+			continue
+		}
+		if response != want {
+			t.Errorf("ProcessInput(%q): expected '%s', got '%s'", input, want, response)
+		}
+	}
+}
+
+// LoadAIMLFromString validates categories like the file loaders do.
+func TestLoadAIMLFromStringValidates(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern></pattern><template>empty pattern</template></category>
+</aiml>`)
+	if err == nil {
+		t.Fatal("Expected error when the only category has an empty pattern")
+	}
+
+	err = g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>MAIL ME @ HOME</pattern><template>invalid</template></category>
+<category><pattern>HELLO</pattern><template>valid</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+	categories := g.GetKnowledgeBase().Categories
+	if len(categories) != 1 || categories[0].Pattern != "HELLO" {
+		t.Errorf("Expected only the HELLO category, got %+v", categories)
+	}
+}

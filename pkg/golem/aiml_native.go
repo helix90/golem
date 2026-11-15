@@ -23,6 +23,10 @@ var (
 	// (?s) so comments spanning multiple lines are removed too
 	xmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
 	xmlDeclRe    = regexp.MustCompile(`<\?xml[^>]*\?>`)
+	// Patterns are matched case-insensitively, so accept any letters (including
+	// non-ASCII), digits, wildcards, tag syntax, and common punctuation.
+	emptySetTagRe       = regexp.MustCompile(`<set>\s*</set>`)
+	validPatternCharsRe = regexp.MustCompile(`^[\p{L}\p{M}\p{N}\s*_^#$<>/="'.!?,:;-]+$`)
 )
 
 // AIML represents the root AIML document
@@ -96,6 +100,10 @@ func (g *Golem) LoadAIMLFromString(content string) error {
 	aiml, err := g.parseAIML(content)
 	if err != nil {
 		return err
+	}
+
+	if err := g.validateAIML(aiml); err != nil {
+		return fmt.Errorf("AIML validation failed: %v", err)
 	}
 
 	// Convert AIML to AIMLKnowledgeBase
@@ -369,7 +377,7 @@ func (g *Golem) LoadAIMLFromDirectory(dirPath string) (*AIMLKnowledgeBase, error
 		kb, err := g.LoadAIML(aimlFile)
 		if err != nil {
 			// Log the error but continue with other files
-			g.LogInfo("Warning: failed to load %s: %v", aimlFile, err)
+			g.LogWarn("Failed to load %s: %v", aimlFile, err)
 			continue
 		}
 
@@ -1214,7 +1222,9 @@ func (g *Golem) removeXMLDeclaration(content string) string {
 	return xmlDeclRe.ReplaceAllString(content, "")
 }
 
-// validateAIML validates the AIML structure
+// validateAIML validates the AIML structure. Categories with invalid patterns
+// are dropped with a warning so that one bad category doesn't discard the rest
+// of the file; it's an error only if no valid categories remain.
 func (g *Golem) validateAIML(aiml *AIML) error {
 	if aiml.Version == "" {
 		return fmt.Errorf("AIML version is required")
@@ -1224,16 +1234,18 @@ func (g *Golem) validateAIML(aiml *AIML) error {
 		return fmt.Errorf("AIML must contain at least one category")
 	}
 
+	valid := make([]Category, 0, len(aiml.Categories))
 	for i, category := range aiml.Categories {
-		if strings.TrimSpace(category.Pattern) == "" {
-			return fmt.Errorf("category %d: pattern cannot be empty", i)
+		if err := g.validatePattern(category.Pattern); err != nil {
+			g.LogWarn("Skipping category %d: invalid pattern '%s': %v", i, category.Pattern, err)
+			continue
 		}
+		valid = append(valid, category)
+	}
+	aiml.Categories = valid
 
-		// Validate pattern syntax
-		err := g.validatePattern(category.Pattern)
-		if err != nil {
-			return fmt.Errorf("category %d: invalid pattern '%s': %v", i, category.Pattern, err)
-		}
+	if len(aiml.Categories) == 0 {
+		return fmt.Errorf("AIML must contain at least one valid category")
 	}
 
 	return nil
@@ -1244,16 +1256,19 @@ func (g *Golem) validatePattern(pattern string) error {
 	// Basic pattern validation
 	pattern = strings.TrimSpace(pattern)
 
+	if pattern == "" {
+		return fmt.Errorf("pattern cannot be empty")
+	}
+	if emptySetTagRe.MatchString(pattern) {
+		return fmt.Errorf("set name cannot be empty")
+	}
+
 	// Check for valid wildcards and tags
 	// First, normalize the pattern by replacing set and topic tags with placeholders
-	normalizedPattern := pattern
-	setPattern := regexp.MustCompile(`<set>[^<]+</set>`)
-	topicPattern := regexp.MustCompile(`<topic>[^<]+</topic>`)
-	normalizedPattern = setPattern.ReplaceAllString(normalizedPattern, "SETTAG")
-	normalizedPattern = topicPattern.ReplaceAllString(normalizedPattern, "TOPICTAG")
+	normalizedPattern := patternSetTagRe.ReplaceAllString(pattern, "SETTAG")
+	normalizedPattern = patternTopicTagRe.ReplaceAllString(normalizedPattern, "TOPICTAG")
 
-	validWildcard := regexp.MustCompile(`^[A-Z0-9\s\*_^#$<>/]+$`)
-	if !validWildcard.MatchString(normalizedPattern) {
+	if !validPatternCharsRe.MatchString(normalizedPattern) {
 		return fmt.Errorf("pattern contains invalid characters")
 	}
 
@@ -1266,8 +1281,7 @@ func (g *Golem) validatePattern(pattern string) error {
 	}
 
 	// Check for valid set references
-	setRefPattern := regexp.MustCompile(`<set>([^<]+)</set>`)
-	matches := setRefPattern.FindAllStringSubmatch(pattern, -1)
+	matches := patternSetTagRe.FindAllStringSubmatch(pattern, -1)
 	for _, match := range matches {
 		if len(match) > 1 && strings.TrimSpace(match[1]) == "" {
 			return fmt.Errorf("set name cannot be empty")
