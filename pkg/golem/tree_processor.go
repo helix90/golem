@@ -2558,6 +2558,8 @@ func (tp *TreeProcessor) processInputTag(_ *ASTNode, _ string) string {
 	// Process input tag - returns the most recent user input
 	// <input/> always returns the current/most recent user input (last item in RequestHistory)
 	// This is different from <request> which can take an index attribute
+	// Note: during ProcessInput() the current input is added to RequestHistory only
+	// after the template is processed, so this returns the *previous* user input
 
 	if tp.ctx == nil || tp.ctx.Session == nil {
 		tp.golem.LogDebug("Input tag: no context or session available")
