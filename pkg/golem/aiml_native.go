@@ -139,22 +139,27 @@ func (g *Golem) aimlToKnowledgeBase(aiml *AIML) *AIMLKnowledgeBase {
 
 	// Build pattern index
 	for i := range kb.Categories {
-		pattern := NormalizePattern(kb.Categories[i].Pattern)
-		// Create a unique key that includes pattern, that, topic, and that index
-		key := pattern
-		if kb.Categories[i].That != "" {
-			key += "|THAT:" + NormalizePattern(kb.Categories[i].That)
-			if kb.Categories[i].ThatIndex != 0 {
-				key += fmt.Sprintf("|THATINDEX:%d", kb.Categories[i].ThatIndex)
-			}
-		}
-		if kb.Categories[i].Topic != "" {
-			key += "|TOPIC:" + strings.ToUpper(kb.Categories[i].Topic)
-		}
-		kb.Patterns[key] = &kb.Categories[i]
+		kb.Patterns[categoryKey(kb.Categories[i])] = &kb.Categories[i]
 	}
 
 	return kb
+}
+
+// categoryKey returns the Patterns index key for a category. The key includes
+// that, that index, and topic so categories sharing a pattern don't overwrite
+// each other in the index.
+func categoryKey(category Category) string {
+	key := NormalizePattern(category.Pattern)
+	if category.That != "" {
+		key += "|THAT:" + NormalizePattern(category.That)
+		if category.ThatIndex != 0 {
+			key += fmt.Sprintf("|THATINDEX:%d", category.ThatIndex)
+		}
+	}
+	if category.Topic != "" {
+		key += "|TOPIC:" + strings.ToUpper(category.Topic)
+	}
+	return key
 }
 
 // mergeKnowledgeBases merges two knowledge bases
@@ -305,11 +310,8 @@ func (g *Golem) LoadAIML(filename string) (*AIMLKnowledgeBase, error) {
 	}
 
 	// Index patterns for fast lookup
-	for i := range aiml.Categories {
-		category := &aiml.Categories[i]
-		// Normalize pattern for storage
-		pattern := NormalizePattern(category.Pattern)
-		kb.Patterns[pattern] = category
+	for i := range kb.Categories {
+		kb.Patterns[categoryKey(kb.Categories[i])] = &kb.Categories[i]
 	}
 
 	g.LogInfo("Loaded %d AIML categories", len(aiml.Categories))
@@ -370,13 +372,8 @@ func (g *Golem) LoadAIMLFromDirectory(dirPath string) (*AIMLKnowledgeBase, error
 
 		// Merge the categories from this file into the merged knowledge base
 		for i := range kb.Categories {
-			category := &kb.Categories[i]
-			// Normalize pattern for storage
-			pattern := NormalizePattern(category.Pattern)
-
-			// Add category to merged knowledge base
-			mergedKB.Categories = append(mergedKB.Categories, *category)
-			mergedKB.Patterns[pattern] = category
+			mergedKB.Categories = append(mergedKB.Categories, kb.Categories[i])
+			mergedKB.Patterns[categoryKey(kb.Categories[i])] = &kb.Categories[i]
 		}
 
 		// Merge sets
@@ -10148,18 +10145,8 @@ func (g *Golem) addSessionCategory(category Category, ctx *VariableContext) erro
 		return fmt.Errorf("category validation failed: %v", err)
 	}
 
-	// Normalize the pattern and build the proper key including that and topic
-	normalizedPattern := NormalizePattern(category.Pattern)
-	key := normalizedPattern
-	if category.That != "" {
-		key += "|THAT:" + NormalizePattern(category.That)
-		if category.ThatIndex != 0 {
-			key += fmt.Sprintf("|THATINDEX:%d", category.ThatIndex)
-		}
-	}
-	if category.Topic != "" {
-		key += "|TOPIC:" + strings.ToUpper(category.Topic)
-	}
+	// Build the index key including that and topic
+	key := categoryKey(category)
 
 	// Check if category already exists
 	if existingCategory, exists := g.aimlKB.Patterns[key]; exists {
@@ -10264,16 +10251,7 @@ func (g *Golem) addPersistentCategory(category Category) error {
 
 	// Normalize the pattern and build the proper key including that and topic
 	normalizedPattern := NormalizePattern(category.Pattern)
-	key := normalizedPattern
-	if category.That != "" {
-		key += "|THAT:" + NormalizePattern(category.That)
-		if category.ThatIndex != 0 {
-			key += fmt.Sprintf("|THATINDEX:%d", category.ThatIndex)
-		}
-	}
-	if category.Topic != "" {
-		key += "|TOPIC:" + strings.ToUpper(category.Topic)
-	}
+	key := categoryKey(category)
 
 	// Check if category already exists
 	if existingCategory, exists := g.aimlKB.Patterns[key]; exists {
@@ -10310,16 +10288,7 @@ func (g *Golem) removeSessionCategory(category Category, ctx *VariableContext) e
 
 	// Normalize the pattern and build the proper key including that and topic
 	normalizedPattern := NormalizePattern(category.Pattern)
-	key := normalizedPattern
-	if category.That != "" {
-		key += "|THAT:" + NormalizePattern(category.That)
-		if category.ThatIndex != 0 {
-			key += fmt.Sprintf("|THATINDEX:%d", category.ThatIndex)
-		}
-	}
-	if category.Topic != "" {
-		key += "|TOPIC:" + strings.ToUpper(category.Topic)
-	}
+	key := categoryKey(category)
 
 	// Check if category exists
 	if _, exists := g.aimlKB.Patterns[key]; !exists {
@@ -10362,16 +10331,7 @@ func (g *Golem) removePersistentCategory(category Category) error {
 
 	// Normalize the pattern and build the proper key including that and topic
 	normalizedPattern := NormalizePattern(category.Pattern)
-	key := normalizedPattern
-	if category.That != "" {
-		key += "|THAT:" + NormalizePattern(category.That)
-		if category.ThatIndex != 0 {
-			key += fmt.Sprintf("|THATINDEX:%d", category.ThatIndex)
-		}
-	}
-	if category.Topic != "" {
-		key += "|TOPIC:" + strings.ToUpper(category.Topic)
-	}
+	key := categoryKey(category)
 
 	// Check if category exists
 	if _, exists := g.aimlKB.Patterns[key]; !exists {

@@ -1234,16 +1234,16 @@ func (g *Golem) LoadPersistentCategories() error {
 
 	// Add categories to the knowledge base
 	for _, category := range categories {
-		normalizedPattern := NormalizePattern(category.Pattern)
+		key := categoryKey(category)
 
 		// Check if category already exists
-		if existingCategory, exists := g.aimlKB.Patterns[normalizedPattern]; exists {
+		if existingCategory, exists := g.aimlKB.Patterns[key]; exists {
 			// Update existing category
 			*existingCategory = category
 		} else {
 			// Add new category
 			g.aimlKB.Categories = append(g.aimlKB.Categories, category)
-			g.aimlKB.Patterns[normalizedPattern] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
+			g.aimlKB.Patterns[key] = &g.aimlKB.Categories[len(g.aimlKB.Categories)-1]
 		}
 	}
 
@@ -1307,7 +1307,7 @@ func (g *Golem) ClearSessionLearning(sessionID string) error {
 	// Remove all session-learned categories from knowledge base
 	for _, category := range session.LearnedCategories {
 		normalizedPattern := NormalizePattern(category.Pattern)
-		delete(g.aimlKB.Patterns, normalizedPattern)
+		delete(g.aimlKB.Patterns, categoryKey(category))
 
 		// Remove from categories slice
 		for i, cat := range g.aimlKB.Categories {
