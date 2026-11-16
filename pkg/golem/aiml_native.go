@@ -85,6 +85,11 @@ type AIMLKnowledgeBase struct {
 	// lock; adding and removing categories holds the write lock. It is separate
 	// from mu so that matching never waits on template data tags.
 	patternsMu sync.RWMutex
+
+	// patternOrder gives each indexed category's position in Categories, so
+	// that equally good matches are chosen by load order rather than by map
+	// iteration order. Guarded by patternsMu.
+	patternOrder map[*Category]int
 }
 
 // removeCategory removes the category at index i. Patterns entries point into
@@ -116,7 +121,12 @@ func (kb *AIMLKnowledgeBase) addOrUpdateCategory(category Category) bool {
 	if cap(kb.Categories) != oldCap {
 		kb.rebuildPatternIndex()
 	} else {
-		kb.Patterns[key] = &kb.Categories[len(kb.Categories)-1]
+		last := &kb.Categories[len(kb.Categories)-1]
+		kb.Patterns[key] = last
+		if kb.patternOrder == nil {
+			kb.patternOrder = make(map[*Category]int)
+		}
+		kb.patternOrder[last] = len(kb.Categories) - 1
 	}
 	return false
 }
@@ -163,9 +173,20 @@ func (kb *AIMLKnowledgeBase) snapshotCategories() []Category {
 // later one wins.
 func (kb *AIMLKnowledgeBase) rebuildPatternIndex() {
 	kb.Patterns = make(map[string]*Category, len(kb.Categories))
+	kb.patternOrder = make(map[*Category]int, len(kb.Categories))
 	for i := range kb.Categories {
 		kb.Patterns[categoryKey(kb.Categories[i])] = &kb.Categories[i]
+		kb.patternOrder[&kb.Categories[i]] = i
 	}
+}
+
+// loadOrder returns the category's position in Categories, or math.MaxInt if
+// it is not known (for a Patterns map built without rebuildPatternIndex)
+func (kb *AIMLKnowledgeBase) loadOrder(category *Category) int {
+	if order, exists := kb.patternOrder[category]; exists {
+		return order
+	}
+	return math.MaxInt
 }
 
 // lookupVariable looks up varKey in the topic's variables, then global
@@ -1421,6 +1442,8 @@ func (g *Golem) validatePattern(pattern string) error {
 
 // PatternPriority represents the priority of a pattern for matching
 type PatternPriority struct {
+	key              string // Patterns key, for ordering equal priorities
+	order            int    // Load order, for ordering equal priorities
 	Pattern          string
 	Category         *Category
 	Priority         int
@@ -1479,6 +1502,7 @@ func (kb *AIMLKnowledgeBase) matchPattern(g *Golem, normalizedInput string, orig
 
 	// Try dollar wildcard patterns first (highest priority)
 	// Dollar wildcards match exact patterns but with higher priority
+	var dollarMatch *Category
 	for _, category := range kb.Patterns {
 		// Check if this pattern has a dollar wildcard
 		if strings.HasPrefix(category.Pattern, "$") {
@@ -1492,10 +1516,16 @@ func (kb *AIMLKnowledgeBase) matchPattern(g *Golem, normalizedInput string, orig
 					if category.That != "" && thatIndex != 0 && category.ThatIndex != thatIndex {
 						continue
 					}
-					return category, make(map[string]string), nil
+					if dollarMatch == nil || kb.loadOrder(category) < kb.loadOrder(dollarMatch) ||
+						(kb.loadOrder(category) == kb.loadOrder(dollarMatch) && categoryKey(*category) < categoryKey(*dollarMatch)) {
+						dollarMatch = category
+					}
 				}
 			}
 		}
+	}
+	if dollarMatch != nil {
+		return dollarMatch, make(map[string]string), nil
 	}
 
 	// Try exact match (second highest priority)
@@ -1634,6 +1664,8 @@ func (kb *AIMLKnowledgeBase) matchPattern(g *Golem, normalizedInput string, orig
 			}
 
 			matchingPatterns = append(matchingPatterns, PatternPriority{
+				key:              patternKey,
+				order:            kb.loadOrder(category),
 				Pattern:          basePattern,
 				Category:         category,
 				Priority:         priority.Priority,
@@ -1644,9 +1676,17 @@ func (kb *AIMLKnowledgeBase) matchPattern(g *Golem, normalizedInput string, orig
 		}
 	}
 
-	// Sort by priority (highest first)
+	// Sort by priority (highest first). Equal priorities go to the category
+	// loaded first, then by key, so the choice never depends on map order.
 	sort.Slice(matchingPatterns, func(i, j int) bool {
-		return comparePatternPriorities(matchingPatterns[i].Priority, matchingPatterns[j].Priority)
+		a, b := matchingPatterns[i], matchingPatterns[j]
+		if a.Priority != b.Priority {
+			return comparePatternPriorities(a.Priority, b.Priority)
+		}
+		if a.order != b.order {
+			return a.order < b.order
+		}
+		return a.key < b.key
 	})
 
 	// Return the highest priority match
@@ -1882,15 +1922,24 @@ func matchPatternWithWildcardsAndSetsCasePreserving(normalizedInput, originalInp
 
 // matchPatternWithWildcardsAndSetsCasePreservingCached matches input against a pattern with wildcards and sets with caching support
 func matchPatternWithWildcardsAndSetsCasePreservingCached(g *Golem, normalizedInput, originalInput, pattern string, kb *AIMLKnowledgeBase) (bool, map[string]string) {
+	regexPattern := patternToRegexWithSetsCached(g, pattern, kb)
+
+	// A pattern with sets matches differently when set members change, so it
+	// is cached under its regex, which lists the current members
+	cacheKey := pattern
+	if strings.Contains(pattern, "<set>") {
+		cacheKey = regexPattern
+	}
+
 	// Check cache first
 	if g != nil && g.patternMatchingCache != nil {
-		if result, found := g.patternMatchingCache.GetWildcardMatch(normalizedInput, pattern); found {
+		if result, found := g.patternMatchingCache.GetWildcardMatch(normalizedInput, cacheKey); found {
 			return result.Matched, result.Wildcards
 		}
 	}
 
 	// Perform the matching
-	matched, wildcards := matchPatternWithWildcardsAndSetsCasePreservingInternal(g, normalizedInput, originalInput, pattern, kb)
+	matched, wildcards := matchPatternWithWildcardsAndSetsCasePreservingInternal(g, normalizedInput, originalInput, pattern, regexPattern, kb)
 
 	// Cache the result
 	if g != nil && g.patternMatchingCache != nil {
@@ -1900,19 +1949,17 @@ func matchPatternWithWildcardsAndSetsCasePreservingCached(g *Golem, normalizedIn
 			Pattern:   pattern,
 			Input:     normalizedInput,
 		}
-		g.patternMatchingCache.SetWildcardMatch(normalizedInput, pattern, result)
+		g.patternMatchingCache.SetWildcardMatch(normalizedInput, cacheKey, result)
 	}
 
 	return matched, wildcards
 }
 
 // matchPatternWithWildcardsAndSetsCasePreservingInternal matches input against a pattern with wildcards and sets (internal implementation)
-func matchPatternWithWildcardsAndSetsCasePreservingInternal(g *Golem, normalizedInput, originalInput, pattern string, kb *AIMLKnowledgeBase) (bool, map[string]string) {
+func matchPatternWithWildcardsAndSetsCasePreservingInternal(g *Golem, normalizedInput, originalInput, pattern, regexPattern string, kb *AIMLKnowledgeBase) (bool, map[string]string) {
 	wildcards := make(map[string]string)
 
-	// Convert pattern to regex with set support.
 	// If the pattern is lowercase, make the regex case-insensitive.
-	regexPattern := patternToRegexWithSetsCached(g, pattern, kb)
 	if pattern != strings.ToUpper(pattern) {
 		regexPattern = "(?i)" + regexPattern
 	}
@@ -1986,160 +2033,106 @@ func getCompiledRegex(g *Golem, regexStr string) *regexp.Regexp {
 	return re
 }
 
-// patternToRegex converts AIML pattern to regex with enhanced set and topic matching
+// patternToRegex converts AIML pattern to regex. Without a knowledge base,
+// a <set> matches any single word.
 func patternToRegex(pattern string) string {
-	// Handle set matching first (before escaping)
-	pattern = patternSetTagRe.ReplaceAllString(pattern, "([^\\s]*)")
-
-	// Handle topic matching (before escaping)
-	pattern = patternTopicTagRe.ReplaceAllString(pattern, "([^\\s]*)")
-
-	// Build regex pattern by processing each character
-	var result strings.Builder
-	for i, char := range pattern {
-		switch char {
-		case '*':
-			// Zero+ wildcard: matches zero or more words
-			result.WriteString("(.*?)")
-		case '_':
-			// Single wildcard: matches exactly one word
-			result.WriteString("([^\\s]+)")
-		case '^':
-			// Caret wildcard: matches zero or more words (AIML2)
-			result.WriteString("(.*?)")
-		case '#':
-			// Hash wildcard: matches zero or more words with high priority (AIML2)
-			result.WriteString("(.*?)")
-		case '$':
-			// Dollar wildcard: highest priority exact match (AIML2)
-			// For regex purposes, treat as exact match (no wildcard capture)
-			// Don't add anything to regex - this will be handled in pattern matching
-			continue
-		case ' ':
-			// Check if this space is followed by a wildcard or preceded by a wildcard
-			if (i+1 < len(pattern) && (pattern[i+1] == '*' || pattern[i+1] == '_' || pattern[i+1] == '^' || pattern[i+1] == '#')) ||
-				(i > 0 && (pattern[i-1] == '*' || pattern[i-1] == '_' || pattern[i-1] == '^' || pattern[i-1] == '#')) {
-				// This space is adjacent to a wildcard, make it optional
-				result.WriteString(" ?")
-			} else {
-				// Regular space
-				result.WriteRune(' ')
-			}
-		case '(', ')', '[', ']', '{', '}', '?', '+', '.':
-			// Escape special regex characters (but not | as it's needed for alternation)
-			result.WriteRune('\\')
-			result.WriteRune(char)
-		case '|':
-			// Don't escape pipe character as it's needed for alternation in sets
-			result.WriteRune(char)
-		default:
-			// Regular character
-			result.WriteRune(char)
-		}
-	}
-
-	return "^" + result.String() + "$"
+	return buildPatternRegex(nil, pattern, nil)
 }
 
-// patternToRegexWithSetsCached converts AIML pattern to regex with proper set matching and caching
+// patternToRegexWithSetsCached converts AIML pattern to regex, matching each
+// <set> against the knowledge base's members
 func patternToRegexWithSetsCached(g *Golem, pattern string, kb *AIMLKnowledgeBase) string {
-	// Handle set matching with proper set validation
+	return buildPatternRegex(g, pattern, kb)
+}
+
+// noMatchRe is a regex group that never matches, for sets that do not exist
+const noMatchRe = `(\b\B)`
+
+// patternPlaceholderBase is the first of the private-use runes that stand in
+// for <set> and <topic> groups while the pattern is converted
+const patternPlaceholderBase = 0xE000
+
+// isZeroPlusWildcard reports whether r is a wildcard that matches zero or more words
+func isZeroPlusWildcard(r rune) bool {
+	return r == '*' || r == '^' || r == '#'
+}
+
+// buildPatternRegex converts an AIML pattern to an anchored regex.
+//
+// A wildcard that stands alone as a word matches whole words only: "HELLO *"
+// matches "HELLO" and "HELLO THERE" but not "HELLOTHERE". *, ^ and # match
+// zero or more words; _ matches one word. Each <set> becomes an alternation of
+// its members (or a group that never matches if kb is given and the set does
+// not exist), and each <topic> matches one word.
+func buildPatternRegex(g *Golem, pattern string, kb *AIMLKnowledgeBase) string {
+	// Replace set and topic tags with placeholder runes first, so that the
+	// regex they become is not converted again as pattern text
+	var groups []string
+	placeholder := func(group string) string {
+		groups = append(groups, group)
+		return string(rune(patternPlaceholderBase + len(groups) - 1))
+	}
 	pattern = patternSetTagRe.ReplaceAllStringFunc(pattern, func(match string) string {
-		// Extract set name using regex groups
-		matches := patternSetTagRe.FindStringSubmatch(match)
-		if len(matches) < 2 {
-			return "([^\\s]*)"
+		if kb == nil {
+			return placeholder(`(\S+)`)
 		}
-		setName := strings.ToUpper(strings.TrimSpace(matches[1]))
-
-		// Check cache first
-		if g != nil && g.patternMatchingCache != nil {
-			if regex, found := g.patternMatchingCache.GetSetRegex(setName, kb.Sets[setName]); found {
-				return regex
-			}
-		}
-
-		if len(kb.Sets[setName]) > 0 {
-			// Create regex alternation for set members
-			var alternatives []string
-			for _, member := range kb.Sets[setName] {
-				// Escape only specific regex characters, not the pipe
-				upperMember := strings.ToUpper(member)
-				// Escape characters that have special meaning in regex, but not |
-				escaped := strings.ReplaceAll(upperMember, "(", "\\(")
-				escaped = strings.ReplaceAll(escaped, ")", "\\)")
-				escaped = strings.ReplaceAll(escaped, "[", "\\[")
-				escaped = strings.ReplaceAll(escaped, "]", "\\]")
-				escaped = strings.ReplaceAll(escaped, "{", "\\{")
-				escaped = strings.ReplaceAll(escaped, "}", "\\}")
-				escaped = strings.ReplaceAll(escaped, "^", "\\^")
-				escaped = strings.ReplaceAll(escaped, "$", "\\$")
-				escaped = strings.ReplaceAll(escaped, ".", "\\.")
-				escaped = strings.ReplaceAll(escaped, "+", "\\+")
-				escaped = strings.ReplaceAll(escaped, "?", "\\?")
-				escaped = strings.ReplaceAll(escaped, "*", "\\*")
-				escaped = strings.ReplaceAll(escaped, "-", "\\-")
-				escaped = strings.ReplaceAll(escaped, "@", "\\@")
-				// Don't escape | as it's needed for alternation
-				alternatives = append(alternatives, escaped)
-			}
-			regex := "(" + strings.Join(alternatives, "|") + ")"
-
-			// Cache the result
-			if g != nil && g.patternMatchingCache != nil {
-				g.patternMatchingCache.SetSetRegex(setName, kb.Sets[setName], regex)
-			}
-
-			return regex
-		}
-		// Fallback to wildcard if set not found
-		return "([^\\s]*)"
+		setName := strings.ToUpper(strings.TrimSpace(patternSetTagRe.FindStringSubmatch(match)[1]))
+		return placeholder(setRegex(g, setName, kb))
+	})
+	pattern = patternTopicTagRe.ReplaceAllStringFunc(pattern, func(string) string {
+		return placeholder(`(\S*)`)
 	})
 
-	// Handle topic matching
-	pattern = patternTopicTagRe.ReplaceAllString(pattern, "([^\\s]*)")
+	// standaloneWildcard reports whether the byte at i is a zero+ wildcard
+	// that is a whole word. Spaces and wildcards are ASCII, so byte indices
+	// can be used.
+	standaloneWildcard := func(i int) bool {
+		return i < len(pattern) && isZeroPlusWildcard(rune(pattern[i])) &&
+			(i == 0 || pattern[i-1] == ' ') && (i == len(pattern)-1 || pattern[i+1] == ' ')
+	}
 
-	// Build regex pattern by processing each character
 	var result strings.Builder
 	inAlternationGroup := false
 	for i, char := range pattern {
+		if idx := int(char) - patternPlaceholderBase; idx >= 0 && idx < len(groups) {
+			result.WriteString(groups[idx])
+			continue
+		}
 		switch char {
-		case '*':
-			// Zero+ wildcard: matches zero or more words
-			result.WriteString("(.*?)")
+		case '*', '^', '#':
+			if standaloneWildcard(i) {
+				// Zero or more whole words, together with the space after
+				// them, so that matching no words needs no space
+				result.WriteString(`(?:(.+?)(?: |$))?`)
+			} else {
+				result.WriteString("(.*?)")
+			}
 		case '_':
 			// Single wildcard: matches exactly one word
-			result.WriteString("([^\\s]+)")
-		case '^':
-			// Caret wildcard: matches zero or more words (AIML2)
-			result.WriteString("(.*?)")
-		case '#':
-			// Hash wildcard: matches zero or more words with high priority (AIML2)
-			result.WriteString("(.*?)")
+			result.WriteString(`(\S+)`)
 		case '$':
 			// Dollar wildcard: highest priority exact match (AIML2)
 			// For regex purposes, treat as exact match (no wildcard capture)
-			// Don't add anything to regex - this will be handled in pattern matching
 			continue
 		case ' ':
-			// Check if this space is followed by a wildcard or preceded by a wildcard
-			if (i+1 < len(pattern) && (pattern[i+1] == '*' || pattern[i+1] == '_' || pattern[i+1] == '^' || pattern[i+1] == '#')) ||
-				(i > 0 && (pattern[i-1] == '*' || pattern[i-1] == '_' || pattern[i-1] == '^' || pattern[i-1] == '#')) {
-				// This space is adjacent to a wildcard, make it optional
-				result.WriteString(" ?")
-			} else {
-				// Regular space
+			switch {
+			case standaloneWildcard(i - 1):
+				// Already matched by the preceding wildcard
+			case standaloneWildcard(i + 1):
+				// The next word is a wildcard that may match nothing, so this
+				// word may also be the last one
+				result.WriteString("(?: |$)")
+			default:
 				result.WriteRune(' ')
 			}
 		case '(':
-			// Check if this is the start of an alternation group (contains |)
-			// Look ahead to see if there's a | in this group
+			// An alternation group (containing |) is kept; other parentheses
+			// are literal
 			groupEnd := findMatchingParen(pattern, i)
 			if groupEnd > i && strings.Contains(pattern[i:groupEnd+1], "|") {
 				inAlternationGroup = true
 				result.WriteRune('(')
 			} else {
-				// Regular group, escape it
 				result.WriteString("\\(")
 			}
 		case ')':
@@ -2149,20 +2142,40 @@ func patternToRegexWithSetsCached(g *Golem, pattern string, kb *AIMLKnowledgeBas
 			} else {
 				result.WriteString("\\)")
 			}
-		case '[', ']', '{', '}', '?', '+', '.':
-			// Escape special regex characters
-			result.WriteRune('\\')
-			result.WriteRune(char)
 		case '|':
-			// Don't escape pipe character as it's needed for alternation in sets
+			// Don't escape pipe character as it's needed for alternation
 			result.WriteRune(char)
 		default:
-			// Regular character
-			result.WriteRune(char)
+			result.WriteString(regexp.QuoteMeta(string(char)))
 		}
 	}
 
 	return "^" + result.String() + "$"
+}
+
+// setRegex returns the regex group matching any member of the set, or a
+// group that never matches if the set does not exist or is empty
+func setRegex(g *Golem, setName string, kb *AIMLKnowledgeBase) string {
+	members := kb.Sets[setName]
+	if g != nil && g.patternMatchingCache != nil {
+		if regex, found := g.patternMatchingCache.GetSetRegex(setName, members); found {
+			return regex
+		}
+	}
+	if len(members) == 0 {
+		return noMatchRe
+	}
+
+	alternatives := make([]string, len(members))
+	for i, member := range members {
+		alternatives[i] = regexp.QuoteMeta(strings.ToUpper(member))
+	}
+	regex := "(" + strings.Join(alternatives, "|") + ")"
+
+	if g != nil && g.patternMatchingCache != nil {
+		g.patternMatchingCache.SetSetRegex(setName, members, regex)
+	}
+	return regex
 }
 
 // findMatchingParen finds the matching closing parenthesis for an opening parenthesis

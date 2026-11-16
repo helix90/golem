@@ -2794,6 +2794,9 @@ func (cache *PatternMatchingCache) SetWildcardMatch(input, pattern string, resul
 
 // GetSetRegex returns a cached set regex
 func (cache *PatternMatchingCache) GetSetRegex(setName string, setContent []string) (string, bool) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	// Create content hash for set validation
 	contentHash := cache.generateSetContentHash(setContent)
 
@@ -2815,6 +2818,9 @@ func (cache *PatternMatchingCache) GetSetRegex(setName string, setContent []stri
 
 // SetSetRegex caches a set regex
 func (cache *PatternMatchingCache) SetSetRegex(setName string, setContent []string, regex string) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	contentHash := cache.generateSetContentHash(setContent)
 
 	// Evict if cache is full
@@ -2830,6 +2836,9 @@ func (cache *PatternMatchingCache) SetSetRegex(setName string, setContent []stri
 
 // GetExactMatchKey returns a cached exact match key
 func (cache *PatternMatchingCache) GetExactMatchKey(input, topic, that string, thatIndex int) (string, bool) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	cacheKey := cache.generateExactMatchKey(input, topic, that, thatIndex)
 
 	if key, exists := cache.ExactMatchKeys[cacheKey]; exists {
@@ -2850,6 +2859,9 @@ func (cache *PatternMatchingCache) GetExactMatchKey(input, topic, that string, t
 
 // SetExactMatchKey caches an exact match key
 func (cache *PatternMatchingCache) SetExactMatchKey(input, topic, that string, thatIndex int, key string) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	cacheKey := cache.generateExactMatchKey(input, topic, that, thatIndex)
 
 	// Evict if cache is full
@@ -2942,6 +2954,9 @@ func (cache *PatternMatchingCache) evictLRU() {
 
 // GetCacheStats returns cache statistics
 func (cache *PatternMatchingCache) GetCacheStats() map[string]interface{} {
+	cache.mutex.RLock()
+	defer cache.mutex.RUnlock()
+
 	totalRequests := cache.Misses
 	for _, hits := range cache.Hits {
 		totalRequests += hits
@@ -2970,6 +2985,13 @@ func (cache *PatternMatchingCache) GetCacheStats() map[string]interface{} {
 
 // ClearCache clears the pattern matching cache
 func (cache *PatternMatchingCache) ClearCache() {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+	cache.clear()
+}
+
+// clear empties the cache. The caller must hold cache.mutex.
+func (cache *PatternMatchingCache) clear() {
 	cache.PatternPriorities = make(map[string]PatternPriorityInfo)
 	cache.WildcardMatches = make(map[string]WildcardMatchResult)
 	cache.SetRegexes = make(map[string]string)
@@ -2985,14 +3007,18 @@ func (cache *PatternMatchingCache) ClearCache() {
 
 // InvalidateKnowledgeBase invalidates all caches when knowledge base changes
 func (cache *PatternMatchingCache) InvalidateKnowledgeBase(newHash string) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
 	if cache.KnowledgeBaseHash != newHash {
-		cache.ClearCache()
+		cache.clear()
 		cache.KnowledgeBaseHash = newHash
 	}
 }
 
 // InvalidateSet invalidates set-related caches when a set changes
 func (cache *PatternMatchingCache) InvalidateSet(setName string) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
 	cache.removeSetRegex(setName)
 	// Also invalidate wildcard matches that might use this set
 	for key := range cache.WildcardMatches {
