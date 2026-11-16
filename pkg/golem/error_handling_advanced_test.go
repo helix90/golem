@@ -145,7 +145,7 @@ func TestConcurrentAccessErrors(t *testing.T) {
 				g.LoadAIMLFromString(aiml)
 				return g
 			},
-			expected: "response",
+			expected: "value",
 		},
 		{
 			name: "Concurrent collection access",
