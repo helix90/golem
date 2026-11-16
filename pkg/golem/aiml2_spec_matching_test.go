@@ -99,9 +99,16 @@ func TestSpecThatAndTopicInPath(t *testing.T) {
 <category><pattern>NO</pattern><template>plain no</template></category>
 <category><pattern>PLAY</pattern><template><think><set name="topic">board games</set></think>ok</template></category>
 <category><pattern>MOVE</pattern><topic>BOARD *</topic><template>move [<topicstar/>]</template></category>
-<category><pattern>MOVE</pattern><template>plain move</template></category>`)
+<category><pattern>MOVE</pattern><template>plain move</template></category>
+<category><pattern>OFFER *</pattern><template>Would you like a <star/>?</template></category>
+<category><pattern>SURE</pattern><that>WOULD YOU LIKE A <set>fruits</set></that><template>fruit [<thatstar/>]</template></category>
+<category><pattern>SURE</pattern><template>plain sure</template></category>`)
+	g.aimlKB.AddSetMembers("fruits", []string{"apple", "passion fruit"})
 
 	runSpecCases(t, g, []specCase{
+		{[]string{"offer apple", "sure"}, "fruit [APPLE]"},
+		{[]string{"offer passion fruit", "sure"}, "fruit [PASSION FRUIT]"},
+		{[]string{"offer rock", "sure"}, "plain sure"},
 		{[]string{"ask", "yes"}, "plain yes"},
 		{[]string{"ask", "maybe"}, "any [CATS]"},
 		{[]string{"ask", "no"}, "no [CATS]"},
