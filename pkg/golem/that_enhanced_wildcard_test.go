@@ -85,10 +85,10 @@ func TestEnhancedThatPatternValidation(t *testing.T) {
 			description: "Should reject invalid wildcard sequence",
 		},
 		{
-			name:        "Invalid starts with wildcard",
+			name:        "Valid starts with wildcard",
 			pattern:     "* HELLO WORLD",
-			expectError: true,
-			description: "Should reject pattern starting with wildcard",
+			expectError: false,
+			description: "Should allow pattern starting with wildcard (AIML2)",
 		},
 		{
 			name:        "Valid ends with wildcard",
@@ -290,7 +290,7 @@ func TestThatPatternPriority(t *testing.T) {
 		{
 			name:        "Single caret wildcard",
 			pattern:     "HELLO ^ WORLD",
-			expected:    2100, // Base 1000 + 9*50 (caret is not counted) + 30 for caret + 500 exact bonus + 2 words * 60
+			expected:    1550, // Base 1000 + 8*50 for one wildcard + 30 for caret + 2 words * 60
 			description: "Single caret should have medium-high priority",
 		},
 		{
@@ -300,10 +300,10 @@ func TestThatPatternPriority(t *testing.T) {
 			description: "Single hash should have high priority",
 		},
 		{
-			name:        "Single dollar wildcard",
-			pattern:     "HELLO $ WORLD",
-			expected:    1570, // Base 1000 + 8*50 for one wildcard + 50 for dollar + 2 words * 60
-			description: "Single dollar should have highest wildcard priority",
+			name:        "Dollar priority word",
+			pattern:     "$HELLO WORLD",
+			expected:    2120, // Base 1000 + 9*50 for no wildcards + 50 for dollar + 500 exact bonus + 2 words * 60
+			description: "A $ priority word should have the highest priority",
 		},
 		{
 			name:        "Multiple wildcards",

@@ -153,3 +153,41 @@ func TestLiteralWordsOutweighWildcards(t *testing.T) {
 		t.Errorf("Expected <that>DO * LIKE *</that> to beat <that>DO *</that>, got %q", response)
 	}
 }
+
+// <that> is matched against the last sentence of the bot's processed
+// response, from its first word, and may start with a wildcard.
+func TestThatMatchesLastSentenceOfResponse(t *testing.T) {
+	g := loadPatternTestAIML(t, `
+<category><pattern>ASK</pattern><template>Hello! <srai>QUESTION</srai></template></category>
+<category><pattern>QUESTION</pattern><template>Do you like cats?</template></category>
+<category><pattern>TELL</pattern><template>I really like cats.</template></category>
+<category><pattern>YES</pattern><that>* LIKE CATS</that><template>leading wildcard</template></category>
+<category><pattern>NO</pattern><that>LIKE CATS</that><template>unanchored</template></category>
+<category><pattern>NO</pattern><template>generic no</template></category>
+<category><pattern>MAYBE</pattern><that>^ LIKE CATS</that><template>caret</template></category>
+<category><pattern>MAYBE</pattern><that>DO YOU LIKE CATS</that><template>exact</template></category>`)
+
+	for _, tt := range []struct {
+		inputs []string
+		want   string
+	}{
+		{[]string{"ask", "yes"}, "leading wildcard"},
+		{[]string{"tell", "yes"}, "leading wildcard"},
+		{[]string{"ask", "no"}, "generic no"},
+		{[]string{"tell", "no"}, "generic no"},
+		{[]string{"ask", "maybe"}, "exact"},
+		{[]string{"tell", "maybe"}, "caret"},
+	} {
+		session := g.CreateSession(tt.inputs[0] + tt.inputs[1])
+		var response string
+		for _, input := range tt.inputs {
+			var err error
+			if response, err = g.ProcessInput(input, session); err != nil {
+				t.Fatalf("%q: %v", input, err)
+			}
+		}
+		if response != tt.want {
+			t.Errorf("%v: expected %q, got %q", tt.inputs, tt.want, response)
+		}
+	}
+}

@@ -606,7 +606,7 @@ func (tp *TreeProcessor) matchSRAI(kb *AIMLKnowledgeBase, input string) (*Catego
 	if tp.ctx.Session != nil {
 		topic = tp.ctx.Session.GetSessionTopic()
 		if lastThat := tp.ctx.Session.GetLastThat(); lastThat != "" {
-			that = tp.golem.CachedNormalizeThatPattern(lastThat)
+			that = tp.golem.normalizeThatContext(lastThat)
 		}
 	}
 	category, wildcards, err := kb.MatchPatternWithTopicAndThatIndexOriginalCached(tp.golem, tp.golem.CachedNormalizePattern(input), input, topic, that, 0)

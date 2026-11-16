@@ -8952,14 +8952,7 @@ func validateThatWildcardCombinations(pattern string) error {
 		}
 	}
 
-	// Check for wildcard at start without proper context
-	if strings.HasPrefix(pattern, "*") || strings.HasPrefix(pattern, "_") ||
-		strings.HasPrefix(pattern, "^") || strings.HasPrefix(pattern, "#") ||
-		strings.HasPrefix(pattern, "$") {
-		return fmt.Errorf("that pattern cannot start with wildcard")
-	}
-
-	// Note: Patterns can end with wildcards in AIML2, so we don't check for that
+	// Note: Patterns can start and end with wildcards in AIML2, so we don't check for that
 
 	return nil
 }
@@ -9466,6 +9459,9 @@ func thatPatternToRegexWordBased(pattern string) string {
 	// Split the pattern into words and process each word
 	words := strings.Fields(pattern)
 	var result strings.Builder
+	// Anchor at the start, so a that pattern must match from the first word
+	// unless it starts with a wildcard
+	result.WriteString("^")
 
 	for i, word := range words {
 		if i > 0 {
@@ -9611,6 +9607,9 @@ func thatPatternToRegexWithSetsAndTopics(g *Golem, pattern string, kb *AIMLKnowl
 	// Split the pattern into words and process each word
 	words := strings.Fields(pattern)
 	var result strings.Builder
+	// Anchor at the start, so a that pattern must match from the first word
+	// unless it starts with a wildcard
+	result.WriteString("^")
 
 	for i, word := range words {
 		if i > 0 {
@@ -9696,7 +9695,8 @@ func calculateThatPatternPriority(thatPattern string) int {
 	caretCount := strings.Count(thatPattern, "^")
 	hashCount := strings.Count(thatPattern, "#")
 	dollarCount := strings.Count(thatPattern, "$")
-	totalWildcards := starCount + underscoreCount + hashCount + dollarCount
+	// $ marks a priority word, so it is not a wildcard
+	totalWildcards := starCount + underscoreCount + caretCount + hashCount
 
 	// Higher priority for fewer wildcards
 	priority += (9 - totalWildcards) * 50

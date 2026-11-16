@@ -1801,7 +1801,7 @@ func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error)
 	// Normalize the that context for matching using enhanced that normalization
 	normalizedThat := ""
 	if lastThat != "" {
-		normalizedThat = g.CachedNormalizeThatPattern(lastThat)
+		normalizedThat = g.normalizeThatContext(lastThat)
 	}
 
 	// Try to match pattern with full context (using index 0 for last response)
@@ -1809,10 +1809,6 @@ func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error)
 	if err != nil {
 		return "", err
 	}
-
-	// Capture that context from template before processing (for next input)
-	// This needs to be done before the template is processed because <set> tags might change the content
-	nextThatContext := g.extractThatContextFromTemplate(category.Template)
 
 	// Process template with context
 	response := g.ProcessTemplateWithContext(category.Template, wildcards, session)
@@ -1824,9 +1820,9 @@ func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error)
 	// Add to request history for <request> tag support
 	session.AddToRequestHistory(input)
 
-	// Add the extracted that context to history for future context matching
-	if nextThatContext != "" {
-		session.AddToThatHistory(nextThatContext)
+	// The response is what the next input's <that> is matched against
+	if response != "" {
+		session.AddToThatHistory(response)
 	}
 
 	// Add to response history for <response> tag support
@@ -1856,7 +1852,7 @@ func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, th
 	// Normalize the that context for matching using enhanced that normalization
 	normalizedThat := ""
 	if thatContext != "" {
-		normalizedThat = g.CachedNormalizeThatPattern(thatContext)
+		normalizedThat = g.normalizeThatContext(thatContext)
 	}
 
 	// Try to match pattern with full context and specific that index
@@ -1864,10 +1860,6 @@ func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, th
 	if err != nil {
 		return "", err
 	}
-
-	// Capture that context from template before processing (for next input)
-	// This needs to be done before the template is processed because <set> tags might change the content
-	nextThatContext := g.extractThatContextFromTemplate(category.Template)
 
 	// Process template with context
 	response := g.ProcessTemplateWithContext(category.Template, wildcards, session)
@@ -1879,43 +1871,15 @@ func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, th
 	// Add to request history for <request> tag support
 	session.AddToRequestHistory(input)
 
-	// Add the extracted that context to history for future context matching
-	if nextThatContext != "" {
-		session.AddToThatHistory(nextThatContext)
+	// The response is what the next input's <that> is matched against
+	if response != "" {
+		session.AddToThatHistory(response)
 	}
 
 	// Add to response history for <response> tag support
 	session.AddToResponseHistory(response)
 
 	return response, nil
-}
-
-// extractThatContextFromTemplate extracts the that context from a template
-// This is used to capture the that context before <set> tags are processed
-func (g *Golem) extractThatContextFromTemplate(template string) string {
-	// For that context, we need to extract only the content that comes after <set> tags
-	// This is because <set> tags are processed and removed, but the that context
-	// should only include the content that remains after processing
-
-	// Find <set name="topic"> tags and extract content after them
-	topicSetRegex := regexp.MustCompile(`<set\s+name="topic">(.*?)</set>`)
-	matches := topicSetRegex.FindAllStringSubmatch(template, -1)
-
-	if len(matches) > 0 {
-		// If there are <set> tags, extract only the content after the last one
-		lastMatch := matches[len(matches)-1]
-		lastMatchEnd := strings.Index(template, lastMatch[0]) + len(lastMatch[0])
-
-		// Get the content after the last <set> tag
-		thatContext := strings.TrimSpace(template[lastMatchEnd:])
-
-		return thatContext
-	}
-
-	// If no <set> tags, return the entire template
-	processedTemplate := strings.TrimSpace(template)
-
-	return processedTemplate
 }
 
 // AnalyzeData is a library function that can be used by other programs
@@ -3060,6 +3024,26 @@ func (g *Golem) CachedNormalizeThatPattern(pattern string) string {
 	}
 	// Fallback to direct normalization
 	return NormalizeThatPattern(pattern)
+}
+
+// thatSentenceEndRe matches the end of a sentence inside a bot response
+var thatSentenceEndRe = regexp.MustCompile(`[.!?]+\s+`)
+
+// lastSentence returns the last sentence of a bot response, which is what a
+// <that> pattern is matched against
+func lastSentence(response string) string {
+	response = strings.TrimSpace(response)
+	ends := thatSentenceEndRe.FindAllStringIndex(response, -1)
+	if len(ends) == 0 {
+		return response
+	}
+	return response[ends[len(ends)-1][1]:]
+}
+
+// normalizeThatContext normalizes the last sentence of a bot response for
+// <that> matching
+func (g *Golem) normalizeThatContext(response string) string {
+	return g.CachedNormalizeThatPattern(lastSentence(response))
 }
 
 // CachedNormalizeForMatching normalizes text for matching with caching
