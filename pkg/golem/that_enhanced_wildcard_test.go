@@ -103,10 +103,10 @@ func TestEnhancedThatPatternValidation(t *testing.T) {
 			description: "Should reject too many wildcards",
 		},
 		{
-			name:        "Invalid characters",
+			name:        "Any characters",
 			pattern:     "HELLO @ WORLD",
-			expectError: true,
-			description: "Should reject invalid characters",
+			expectError: false,
+			description: "AIML 2.0 patterns may contain any characters",
 		},
 		{
 			name:        "Empty pattern",
@@ -352,11 +352,6 @@ func TestEnhancedThatPatternIntegration(t *testing.T) {
 </category>
 <category>
 <pattern>YES</pattern>
-<that>DO YOU LIKE $ SPORTS</that>
-<template>Outstanding! <that_dollar1/> is perfect!</template>
-</category>
-<category>
-<pattern>YES</pattern>
 <that>WHAT DO YOU THINK ABOUT * TECHNOLOGY</that>
 <template>I think <that_star1/> is interesting.</template>
 </category>
@@ -401,12 +396,6 @@ func TestEnhancedThatPatternIntegration(t *testing.T) {
 			thatContext:      "DO YOU LIKE FICTION BOOKS",
 			expectedResponse: "Fantastic! FICTION is wonderful!",
 			description:      "Should match hash wildcard in that pattern",
-		},
-		{
-			name:             "Dollar wildcard that pattern",
-			thatContext:      "DO YOU LIKE SOCCER SPORTS",
-			expectedResponse: "Outstanding! SOCCER is perfect!",
-			description:      "Should match dollar wildcard in that pattern",
 		},
 		{
 			name:             "Complex star wildcard that pattern",

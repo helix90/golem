@@ -270,7 +270,7 @@ func TestEdgeCaseErrorHandling(t *testing.T) {
 				<template>response</template>
 			</category>`,
 			input:    "hello & world",
-			expected: "", // No match because pattern has &amp; but input has &
+			expected: "response", // &amp; in the pattern is the & the user types
 		},
 		{
 			name: "Template with HTML entities",

@@ -15,8 +15,8 @@ func loadPatternTestAIML(t *testing.T, categories string) *Golem {
 	return g
 }
 
-// Wildcards must match whole words, while keeping their widths: *, ^ and #
-// match zero or more words, _ matches one.
+// Wildcards must match whole words, with the AIML 2.0 widths: * and _
+// match one or more words, ^ and # zero or more.
 func TestWildcardsMatchWholeWords(t *testing.T) {
 	g := loadPatternTestAIML(t, `
 <category><pattern>HELLO *</pattern><template>hello [<star/>]</template></category>
@@ -26,19 +26,19 @@ func TestWildcardsMatchWholeWords(t *testing.T) {
 <category><pattern>*</pattern><template>catchall</template></category>`)
 
 	tests := map[string]string{
-		"hello":             "hello []",
+		"hello":             "catchall",
 		"hello there":       "hello [there]",
 		"hello big world":   "hello [big world]",
 		"helloworld":        "catchall",
-		"love":              "love []",
+		"love":              "catchall",
 		"i love":            "love [i]",
 		"glove":             "catchall",
 		"i glove":           "catchall",
 		"i am 5 years old":  "age [5]",
-		"i am years old":    "age []",
+		"i am years old":    "catchall",
 		"i am5 years old":   "catchall",
 		"door please":       "please [door]",
-		"close door please": "catchall",
+		"close door please": "please [close door]",
 		"doorplease":        "catchall",
 	}
 	for input, want := range tests {
@@ -53,7 +53,8 @@ func TestWildcardsMatchWholeWords(t *testing.T) {
 	}
 }
 
-// Equally good matches must be chosen the same way every time: by load order.
+// Matching goes word by word, so the pattern whose word matches earlier wins,
+// whichever category was loaded first.
 func TestEqualPriorityMatchesAreDeterministic(t *testing.T) {
 	for _, tt := range []struct {
 		categories string
@@ -62,7 +63,7 @@ func TestEqualPriorityMatchesAreDeterministic(t *testing.T) {
 		{`<category><pattern>* LOVE *</pattern><template>love</template></category>
 <category><pattern>* YOU *</pattern><template>you</template></category>`, "love"},
 		{`<category><pattern>* YOU *</pattern><template>you</template></category>
-<category><pattern>* LOVE *</pattern><template>love</template></category>`, "you"},
+<category><pattern>* LOVE *</pattern><template>love</template></category>`, "love"},
 	} {
 		for i := 0; i < 20; i++ {
 			g := loadPatternTestAIML(t, tt.categories)
@@ -71,7 +72,7 @@ func TestEqualPriorityMatchesAreDeterministic(t *testing.T) {
 				t.Fatalf("Failed to process input: %v", err)
 			}
 			if response != tt.want {
-				t.Fatalf("Run %d: expected the first loaded category %q, got %q", i, tt.want, response)
+				t.Fatalf("Run %d: expected %q, got %q", i, tt.want, response)
 			}
 		}
 	}

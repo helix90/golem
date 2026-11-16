@@ -5406,7 +5406,7 @@ func TestAIML2Wildcards(t *testing.T) {
 		{
 			name:     "Hash wildcard with words after only",
 			input:    "HELLO THERE",
-			expected: "Hello with hash: THERE!", // HELLO # pattern has higher priority than # HELLO #
+			expected: "Hash wildcard:  HELLO THERE!", // # at the start outranks the word HELLO
 		},
 		// Test underscore wildcard (one or more words)
 		{
@@ -5450,7 +5450,7 @@ func TestAIML2Wildcards(t *testing.T) {
 		{
 			name:     "Caret at end with words",
 			input:    "HELLO THERE",
-			expected: "Hello with hash: THERE!", // Hash wildcard has higher priority
+			expected: "Hash wildcard:  HELLO THERE!", // # at the start outranks the word HELLO
 		},
 		{
 			name:     "Hash at end with no words",
@@ -5460,12 +5460,12 @@ func TestAIML2Wildcards(t *testing.T) {
 		{
 			name:     "Hash at end with words",
 			input:    "HELLO THERE",
-			expected: "Hello with hash: THERE!",
+			expected: "Hash wildcard:  HELLO THERE!", // # at the start outranks the word HELLO
 		},
 		{
 			name:     "Underscore at end with words",
 			input:    "HELLO THERE",
-			expected: "Hello with hash: THERE!", // Hash wildcard has higher priority
+			expected: "Hash wildcard:  HELLO THERE!", // # at the start outranks the word HELLO
 		},
 		{
 			name:     "Asterisk at end with no words",
@@ -5475,7 +5475,7 @@ func TestAIML2Wildcards(t *testing.T) {
 		{
 			name:     "Asterisk at end with words",
 			input:    "HELLO THERE",
-			expected: "Hello with hash: THERE!", // Hash wildcard has higher priority
+			expected: "Hash wildcard:  HELLO THERE!", // # at the start outranks the word HELLO
 		},
 	}
 
@@ -5716,52 +5716,52 @@ func TestWildcardEdgeCases(t *testing.T) {
 		{
 			name:     "Multiple words with caret",
 			input:    "HELLO THERE WORLD",
-			expected: "Middle hash: THERE!", // Middle hash pattern is more specific
+			expected: "Just hash: HELLO THERE WORLD!", // # alone outranks every word
 		},
 		{
 			name:     "Multiple words with hash",
 			input:    "HELLO THERE WORLD",
-			expected: "Middle hash: THERE!", // Middle hash pattern is more specific
+			expected: "Just hash: HELLO THERE WORLD!", // # alone outranks every word
 		},
 		{
 			name:     "Multiple words with asterisk",
 			input:    "HELLO THERE WORLD",
-			expected: "Middle hash: THERE!", // Middle hash pattern is more specific
+			expected: "Just hash: HELLO THERE WORLD!", // # alone outranks every word
 		},
 		{
 			name:     "Middle caret with no middle words",
 			input:    "HELLO WORLD",
-			expected: "Middle hash: !", // Hash has higher priority than caret
+			expected: "Just hash: HELLO WORLD!", // # alone outranks every word
 		},
 		{
 			name:     "Middle caret with middle words",
 			input:    "HELLO THERE WORLD",
-			expected: "Middle hash: THERE!", // Hash has higher priority than caret
+			expected: "Just hash: HELLO THERE WORLD!", // # alone outranks every word
 		},
 		{
 			name:     "Middle hash with no middle words",
 			input:    "HELLO WORLD",
-			expected: "Middle hash: !",
+			expected: "Just hash: HELLO WORLD!", // # alone outranks every word
 		},
 		{
 			name:     "Middle hash with middle words",
 			input:    "HELLO THERE WORLD",
-			expected: "Middle hash: THERE!",
+			expected: "Just hash: HELLO THERE WORLD!", // # alone outranks every word
 		},
 		{
 			name:     "Middle underscore with middle words",
 			input:    "HELLO THERE WORLD",
-			expected: "Middle hash: THERE!", // Hash has higher priority than underscore
+			expected: "Just hash: HELLO THERE WORLD!", // # alone outranks every word
 		},
 		{
 			name:     "Middle asterisk with no middle words",
 			input:    "HELLO WORLD",
-			expected: "Middle hash: !", // Hash has higher priority than asterisk
+			expected: "Just hash: HELLO WORLD!", // # alone outranks every word
 		},
 		{
 			name:     "Middle asterisk with middle words",
 			input:    "HELLO THERE WORLD",
-			expected: "Middle hash: THERE!", // Hash has higher priority than asterisk
+			expected: "Just hash: HELLO THERE WORLD!", // # alone outranks every word
 		},
 	}
 

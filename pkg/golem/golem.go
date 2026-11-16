@@ -1784,10 +1784,55 @@ func (g *Golem) ProcessData(input string) (string, error) {
 }
 
 // ProcessInput processes user input with full context support
+//
+// As AIML 2.0 specifies, input is split into sentences, each sentence is
+// matched and answered in turn, and the responses are joined.
 func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error) {
 	if g.aimlKB == nil {
 		return "", fmt.Errorf("no AIML knowledge base loaded")
 	}
+
+	sentences := inputSentences(input)
+	if len(sentences) <= 1 {
+		return g.processSentence(input, session)
+	}
+	var responses []string
+	var firstErr error
+	for _, sentence := range sentences {
+		response, err := g.processSentence(sentence, session)
+		if err != nil {
+			g.LogInfo("No response for sentence %q: %v", sentence, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if response != "" {
+			responses = append(responses, response)
+		}
+	}
+	if len(responses) == 0 && firstErr != nil {
+		return "", firstErr
+	}
+	return strings.Join(responses, " "), nil
+}
+
+// inputSentenceEndRe matches the end of a sentence in user input
+var inputSentenceEndRe = regexp.MustCompile(`[.!?]+(\s+|$)`)
+
+// inputSentences splits user input into its sentences
+func inputSentences(input string) []string {
+	var sentences []string
+	for _, sentence := range inputSentenceEndRe.Split(strings.TrimSpace(input), -1) {
+		if sentence = strings.TrimSpace(sentence); sentence != "" {
+			sentences = append(sentences, sentence)
+		}
+	}
+	return sentences
+}
+
+// processSentence matches and answers one sentence of input
+func (g *Golem) processSentence(input string, session *ChatSession) (string, error) {
 
 	g.LogInfo("Processing input: %s", input)
 

@@ -194,6 +194,9 @@ func (tp *TreeProcessor) ProcessTemplate(template string, wildcards map[string]s
 		}
 
 		// Set new wildcards
+		if ctx.Session.Variables == nil {
+			ctx.Session.Variables = make(map[string]string)
+		}
 		for key, value := range wildcards {
 			ctx.Session.Variables[key] = value
 		}
@@ -391,6 +394,8 @@ func (tp *TreeProcessor) processTag(node *ASTNode) string {
 		return tp.processThatDollarTag(node, content)
 	case "thatstar":
 		return tp.processThatStarTag(node, content)
+	case "topicstar":
+		return tp.processTopicStarTag(node, content)
 	case "topic":
 		return tp.processTopicTag(node, content)
 	case "random":
@@ -582,6 +587,8 @@ func (tp *TreeProcessor) processSelfClosingTag(node *ASTNode) string {
 		return tp.processThatDollarTag(node, "")
 	case "thatstar":
 		return tp.processThatStarTag(node, "")
+	case "topicstar":
+		return tp.processTopicStarTag(node, "")
 	case "bot":
 		return tp.processBotTag(node, "")
 	case "repeat":
@@ -1233,6 +1240,12 @@ func (tp *TreeProcessor) processThatStarTag(node *ASTNode, _ string) string {
 	// <that_star1/> refers to the first star wildcard in the that pattern
 	// <that_star index="2"/> refers to the second star wildcard, etc.
 	return tp.processThatWildcardTag(node, "that_star")
+}
+
+func (tp *TreeProcessor) processTopicStarTag(node *ASTNode, _ string) string {
+	// Process topicstar tag - wildcard reference from the topic pattern
+	// <topicstar index="2"/> refers to the second wildcard, etc.
+	return tp.processThatWildcardTag(node, "topic_star")
 }
 
 func (tp *TreeProcessor) processThatUnderscoreTag(node *ASTNode, _ string) string {
