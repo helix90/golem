@@ -272,43 +272,43 @@ func TestThatPatternPriority(t *testing.T) {
 		{
 			name:        "Exact match",
 			pattern:     "HELLO WORLD",
-			expected:    2410, // Base 1000 + 500 for no wildcards + 910 for word count (3 words * 5 + 9*100)
+			expected:    2070, // Base 1000 + 9*50 for no wildcards + 500 exact bonus + 2 words * 60
 			description: "Exact match should have highest priority",
 		},
 		{
 			name:        "Single star wildcard",
 			pattern:     "HELLO * WORLD",
-			expected:    1835, // Base 1000 + 100 for 8 remaining wildcards + 20 for star + 715 for word count (3 words * 5 + 8*100)
+			expected:    1540, // Base 1000 + 8*50 for one wildcard + 20 for star + 2 words * 60
 			description: "Single star should have high priority",
 		},
 		{
 			name:        "Single underscore wildcard",
 			pattern:     "HELLO _ WORLD",
-			expected:    1825, // Base 1000 + 100 for 8 remaining wildcards + 10 for underscore + 715 for word count
+			expected:    1530, // Base 1000 + 8*50 for one wildcard + 10 for underscore + 2 words * 60
 			description: "Single underscore should have medium priority",
 		},
 		{
 			name:        "Single caret wildcard",
 			pattern:     "HELLO ^ WORLD",
-			expected:    2445, // Base 1000 + 100 for 8 remaining wildcards + 30 for caret + 1315 for word count
+			expected:    2100, // Base 1000 + 9*50 (caret is not counted) + 30 for caret + 500 exact bonus + 2 words * 60
 			description: "Single caret should have medium-high priority",
 		},
 		{
 			name:        "Single hash wildcard",
 			pattern:     "HELLO # WORLD",
-			expected:    1855, // Base 1000 + 100 for 8 remaining wildcards + 40 for hash + 715 for word count
+			expected:    1560, // Base 1000 + 8*50 for one wildcard + 40 for hash + 2 words * 60
 			description: "Single hash should have high priority",
 		},
 		{
 			name:        "Single dollar wildcard",
 			pattern:     "HELLO $ WORLD",
-			expected:    1865, // Base 1000 + 100 for 8 remaining wildcards + 50 for dollar + 715 for word count
+			expected:    1570, // Base 1000 + 8*50 for one wildcard + 50 for dollar + 2 words * 60
 			description: "Single dollar should have highest wildcard priority",
 		},
 		{
 			name:        "Multiple wildcards",
 			pattern:     "HELLO * _ WORLD",
-			expected:    1750, // Base 1000 + 100 for 7 remaining wildcards + 20 for star + 10 for underscore + 620 for word count
+			expected:    1500, // Base 1000 + 7*50 for two wildcards + 20 for star + 10 for underscore + 2 words * 60
 			description: "Multiple wildcards should have lower priority",
 		},
 	}

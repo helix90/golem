@@ -119,3 +119,37 @@ func TestConcurrentSetMatching(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// A literal word must outweigh a wildcard, so patterns with more words win
+// over a catch-all and over shorter patterns.
+func TestLiteralWordsOutweighWildcards(t *testing.T) {
+	g := loadPatternTestAIML(t, `
+<category><pattern>*</pattern><template>catchall</template></category>
+<category><pattern>TEACH *</pattern><template>teach</template></category>
+<category><pattern>TEACH * MEANS *</pattern><template>means [<star/>] [<star index="2"/>]</template></category>
+<category><pattern>YES</pattern><that>DO *</that><template>any yes</template></category>
+<category><pattern>YES</pattern><that>DO * LIKE *</that><template>like yes</template></category>
+<category><pattern>ASK</pattern><template>Do you like cats</template></category>`)
+
+	tests := map[string]string{
+		"teach foo means bar": "means [foo] [bar]",
+		"teach foo":           "teach",
+		"hello":               "catchall",
+	}
+	for input, want := range tests {
+		response, err := g.ProcessInput(input, g.CreateSession(input))
+		if err != nil {
+			t.Errorf("%q: %v", input, err)
+			continue
+		}
+		if response != want {
+			t.Errorf("%q: expected %q, got %q", input, want, response)
+		}
+	}
+
+	session := g.CreateSession("that")
+	g.ProcessInput("ask", session)
+	if response, _ := g.ProcessInput("yes", session); response != "like yes" {
+		t.Errorf("Expected <that>DO * LIKE *</that> to beat <that>DO *</that>, got %q", response)
+	}
+}

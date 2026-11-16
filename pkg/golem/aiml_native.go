@@ -1847,20 +1847,12 @@ func calculatePatternPriorityInternal(pattern string) PatternPriorityInfo {
 	priority += wildcardPosition * 10
 
 	// Bonus for fewer wildcards (more specific patterns)
-	priority += (9 - totalWildcards) * 100
+	priority += (9 - totalWildcards) * 20
 
-	// Bonus for word count (more specific patterns have more words)
-	// This ensures "TOPIC UPPERCASE *" has higher priority than "TOPIC *"
-	words := strings.Fields(pattern)
-	wordCount := 0
-	for _, word := range words {
-		// Don't count wildcards as words
-		if word != "*" && word != "_" && word != "^" && word != "#" && word != "$" {
-			wordCount++
-		}
-	}
-	// Add word count bonus (each word adds 10 points)
-	priority += wordCount * 10
+	// Bonus for word count (more specific patterns have more words). A word
+	// must outweigh a wildcard, so "TEACH * MEANS *" beats both "TEACH *"
+	// and a catch-all "*".
+	priority += literalWordCount(pattern) * 30
 
 	return PatternPriorityInfo{
 		Priority:         priority,
@@ -1868,6 +1860,17 @@ func calculatePatternPriorityInternal(pattern string) PatternPriorityInfo {
 		HasUnderscore:    underscoreCount > 0,
 		WildcardPosition: wildcardPosition,
 	}
+}
+
+// literalWordCount counts the words of a pattern that are not wildcards
+func literalWordCount(pattern string) int {
+	count := 0
+	for _, word := range strings.Fields(pattern) {
+		if word != "*" && word != "_" && word != "^" && word != "#" && word != "$" {
+			count++
+		}
+	}
+	return count
 }
 
 // sortPatternsByPriority sorts patterns by priority (highest first)
@@ -9696,7 +9699,7 @@ func calculateThatPatternPriority(thatPattern string) int {
 	totalWildcards := starCount + underscoreCount + hashCount + dollarCount
 
 	// Higher priority for fewer wildcards
-	priority += (9 - totalWildcards) * 100
+	priority += (9 - totalWildcards) * 50
 
 	// Higher priority for specific wildcard types (dollar > hash > caret > star > underscore)
 	priority += dollarCount * 50
@@ -9710,9 +9713,9 @@ func calculateThatPatternPriority(thatPattern string) int {
 		priority += 500
 	}
 
-	// Higher priority for patterns with more specific content
-	wordCount := len(strings.Fields(thatPattern))
-	priority += wordCount * 5
+	// Higher priority for patterns with more specific content. A word must
+	// outweigh a wildcard, so "* LIKE *" beats "*".
+	priority += literalWordCount(thatPattern) * 60
 
 	return priority
 }
