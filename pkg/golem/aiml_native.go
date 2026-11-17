@@ -1500,14 +1500,19 @@ func (kb *AIMLKnowledgeBase) matchPattern(g *Golem, normalizedInput string, orig
 		normalizedThat = NormalizeThatPattern(that)
 	}
 	inputWords := strings.Fields(normalizedInput)
+	normalize := NormalizePattern
+	if g != nil {
+		normalize = g.CachedNormalizePattern
+	}
 
 	m := &gmMatcher{
 		kb:        kb,
 		sections:  [3][]string{inputWords, strings.Fields(normalizedThat), strings.Fields(NormalizePattern(topic))},
 		thatIndex: thatIndex,
+		original:  newOriginalText(originalInput, inputWords, normalize),
 	}
 	if category := m.match(kb.graphmaster(), gmInput, 0); category != nil {
-		return category, m.wildcards(newOriginalText(originalInput, inputWords)), nil
+		return category, m.wildcards(), nil
 	}
 
 	// A DEFAULT category, as in AIML 1.0, answers what nothing else matches

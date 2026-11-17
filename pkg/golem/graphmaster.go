@@ -205,6 +205,8 @@ type gmMatcher struct {
 	sections  [3][]string
 	thatIndex int
 	captures  []gmCapture
+	// original maps the input words to the user's own text, if possible
+	original *originalText
 	// setPhrases caches each set's phrases for this match
 	setPhrases map[string]map[string]bool
 	setMaxLen  map[string]int
@@ -273,7 +275,10 @@ func (m *gmMatcher) match(n *gmNode, s, pos int) *Category {
 }
 
 // wildcard matches a wildcard child against as few words as it can, but at
-// least min. A missing <that> or <topic> is matched by any wildcard.
+// least min. A missing <that> or <topic> is matched by any wildcard. In the
+// input, it first tries the lengths that end on a boundary of the user's own
+// words, so that "* *" splits "user@example.com secret" (normalized to
+// "USER AT EXAMPLECOM SECRET") as the user did.
 func (m *gmMatcher) wildcard(child *gmNode, s, pos, min int, kind string) *Category {
 	if child == nil {
 		return nil
@@ -282,7 +287,22 @@ func (m *gmMatcher) wildcard(child *gmNode, s, pos, min int, kind string) *Categ
 	if len(words) == 0 && s > gmInput {
 		min = 0
 	}
-	for end := pos + min; end <= len(words); end++ {
+	if s != gmInput || m.original == nil {
+		return m.wildcardEnds(child, s, pos, min, kind, func(int) bool { return true })
+	}
+	aligned := func(end int) bool { return end == pos || m.original.last[end-1] }
+	if c := m.wildcardEnds(child, s, pos, min, kind, aligned); c != nil {
+		return c
+	}
+	return m.wildcardEnds(child, s, pos, min, kind, func(end int) bool { return !aligned(end) })
+}
+
+// wildcardEnds is wildcard for the ends that try accepts, shortest first
+func (m *gmMatcher) wildcardEnds(child *gmNode, s, pos, min int, kind string, try func(end int) bool) *Category {
+	for end := pos + min; end <= len(m.sections[s]); end++ {
+		if !try(end) {
+			continue
+		}
 		m.captures = append(m.captures, gmCapture{section: s, start: pos, end: end, kind: kind})
 		if c := m.match(child, s, end); c != nil {
 			return c
@@ -356,7 +376,7 @@ func (m *gmMatcher) pick(n *gmNode) *Category {
 // for <topic>. <that> captures are also keyed by wildcard type
 // (that_underscore1...). Input captures are taken from the user's own text
 // where possible (see originalText).
-func (m *gmMatcher) wildcards(original *originalText) map[string]string {
+func (m *gmMatcher) wildcards() map[string]string {
 	wildcards := make(map[string]string)
 	counts := [3]int{}
 	for _, capture := range m.captures {
@@ -364,7 +384,7 @@ func (m *gmMatcher) wildcards(original *originalText) map[string]string {
 		index := counts[capture.section]
 		value := strings.Join(m.sections[capture.section][capture.start:capture.end], " ")
 		if capture.section == gmInput {
-			if text, ok := original.span(capture.start, capture.end); ok {
+			if text, ok := m.original.span(capture.start, capture.end); ok {
 				value = text
 			}
 		}
@@ -397,11 +417,13 @@ type originalText struct {
 
 // newOriginalText returns the mapping of words to the tokens of text, or nil
 // if normalizing the tokens one by one doesn't give the same words (for
-// example after substitutions)
-func newOriginalText(text string, words []string) *originalText {
+// example after a substitution that spans tokens). normalize must be the
+// normalization that gave words, such as Golem.CachedNormalizePattern, which
+// applies substitutions.
+func newOriginalText(text string, words []string, normalize func(string) string) *originalText {
 	o := &originalText{tokens: strings.Fields(text)}
 	for i, token := range o.tokens {
-		tokenWords := strings.Fields(NormalizePattern(token))
+		tokenWords := strings.Fields(normalize(token))
 		for j := range tokenWords {
 			o.token = append(o.token, i)
 			o.first = append(o.first, j == 0)

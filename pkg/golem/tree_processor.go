@@ -1466,8 +1466,9 @@ func (tp *TreeProcessor) processConditionOnce(node *ASTNode) (string, bool) {
 		li := tp.liftAttributeChildren(child)
 
 		liValue, hasValue := li.Attributes["value"]
-		// If no value, this is the default case - save it for later
-		if !hasValue || liValue == "" {
+		// If no value, this is the default case - save it for later.
+		// value="" is not a default: it matches an empty variable
+		if !hasValue {
 			if defaultLi == nil {
 				defaultLi = li
 			}

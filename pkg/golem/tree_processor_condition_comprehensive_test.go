@@ -581,6 +581,18 @@ func TestConditionTagEdgeCases(t *testing.T) {
 			expectedOut: "Empty value matched",
 		},
 		{
+			name:        "Li with empty value matches an empty variable",
+			template:    `<condition name="user"><li value="">Nobody</li><li>Somebody</li></condition>`,
+			setupVars:   map[string]string{"user": ""},
+			expectedOut: "Nobody",
+		},
+		{
+			name:        "Li with empty value is not the default",
+			template:    `<condition name="user"><li value="">Nobody</li><li>Somebody</li></condition>`,
+			setupVars:   map[string]string{"user": "alice"},
+			expectedOut: "Somebody",
+		},
+		{
 			name:        "Condition with numeric values",
 			template:    `<condition name="count"><li value="0">Zero</li><li value="1">One</li><li>Other</li></condition>`,
 			setupVars:   map[string]string{"count": "0"},
