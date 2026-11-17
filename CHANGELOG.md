@@ -2,6 +2,15 @@
 
 All notable changes to Golem are recorded here.
 
+## Unreleased
+
+### Concurrency
+
+- Fixed more data races when one `Golem` serves many goroutines: in the variable resolution cache, in cache keys that read knowledge-base data, in global and topic variables and bot properties, and in the session stats methods.
+- Calls on the same `ChatSession` from different goroutines now run one at a time instead of corrupting the session.
+- `GetSessionLearningStats`, `GetSessionLearnedCategories` and the cache stats methods return copies, not the live data.
+- The threading rules are documented in `ARCHITECTURE.md` under "Thread Safety".
+
 ## v1.6.0 - 2026-11-16
 
 This release replaces Golem's pattern matcher with an AIML 2.0 graphmaster. It also fixes many template, loader, concurrency and SRAIX bugs. Some changes alter how existing bots answer, so read **Upgrading** before you update.

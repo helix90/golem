@@ -132,9 +132,11 @@ type VariableResolutionCache struct {
 	Timestamps  map[string]time.Time `json:"timestamps"`
 	AccessOrder []string             `json:"access_order"` // Kept for JSON compat; not populated
 	// Scope tracking for cache invalidation
-	ScopeHashes map[string]string        `json:"scope_hashes"` // Maps cache key to scope hash
+	ScopeHashes map[string]string `json:"scope_hashes"` // Maps cache key to scope hash
 	lruList     *list.List
 	lruIndex    map[string]*list.Element
+	// Mutex for thread safety
+	mutex sync.Mutex
 }
 
 // TemplateTagProcessingCache represents a cache for template tag processing results
@@ -228,6 +230,11 @@ type ChatSession struct {
 	// Session-specific learning
 	LearnedCategories []Category            // Categories learned in this session
 	LearningStats     *SessionLearningStats // Learning statistics for this session
+
+	// mu is held while the session processes input or a template, and while
+	// Golem methods read or change the session, so that calls for one session
+	// from different goroutines run one at a time
+	mu sync.Mutex
 }
 
 // SessionLearningStats represents learning statistics for a session
@@ -255,6 +262,13 @@ type SessionLearningStats struct {
 // - Single command mode: Creates new instance per command (state lost)
 // - Interactive mode: Single persistent instance (state preserved)
 // - Library mode: User manages instance lifecycle (state controlled by user)
+//
+// THREAD SAFETY:
+// One Golem can serve many goroutines. Load and configure it (LoadAIML*,
+// SetKnowledgeBase, SetLogLevel, ...) before serving; those calls are not
+// guarded. After that, the chat, session and cache methods are safe from any
+// goroutine. Different sessions run in parallel; calls on the same session
+// run one at a time. See ARCHITECTURE.md, "Thread Safety", for the full rules.
 //
 // DO NOT modify the state management without understanding the implications
 // for all three usage patterns.
@@ -406,6 +420,9 @@ func (cache *RegexCache) evictLRU() {
 
 // GetCacheStats returns cache statistics
 func (cache *RegexCache) GetCacheStats() map[string]interface{} {
+	cache.mutex.RLock()
+	defer cache.mutex.RUnlock()
+
 	totalRequests := cache.Misses
 	for _, hits := range cache.Hits {
 		totalRequests += hits
@@ -420,7 +437,7 @@ func (cache *RegexCache) GetCacheStats() map[string]interface{} {
 		"patterns":       len(cache.Patterns),
 		"max_size":       cache.MaxSize,
 		"ttl_seconds":    cache.TTL,
-		"hits":           cache.Hits,
+		"hits":           copyCounts(cache.Hits),
 		"misses":         cache.Misses,
 		"hit_rate":       hitRate,
 		"total_requests": totalRequests,
@@ -429,6 +446,9 @@ func (cache *RegexCache) GetCacheStats() map[string]interface{} {
 
 // ClearCache clears the regex cache
 func (cache *RegexCache) ClearCache() {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	cache.Patterns = make(map[string]*regexp.Regexp)
 	cache.Hits = make(map[string]int)
 	cache.Misses = 0
@@ -554,6 +574,9 @@ func (cache *TextNormalizationCache) evictLRU() {
 
 // GetCacheStats returns cache statistics
 func (cache *TextNormalizationCache) GetCacheStats() map[string]interface{} {
+	cache.mutex.RLock()
+	defer cache.mutex.RUnlock()
+
 	totalRequests := cache.Misses
 	for _, hits := range cache.Hits {
 		totalRequests += hits
@@ -568,7 +591,7 @@ func (cache *TextNormalizationCache) GetCacheStats() map[string]interface{} {
 		"results":        len(cache.Results),
 		"max_size":       cache.MaxSize,
 		"ttl_seconds":    cache.TTL,
-		"hits":           cache.Hits,
+		"hits":           copyCounts(cache.Hits),
 		"misses":         cache.Misses,
 		"hit_rate":       hitRate,
 		"total_requests": totalRequests,
@@ -577,6 +600,9 @@ func (cache *TextNormalizationCache) GetCacheStats() map[string]interface{} {
 
 // ClearCache clears the text normalization cache
 func (cache *TextNormalizationCache) ClearCache() {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	cache.Results = make(map[string]string)
 	cache.Hits = make(map[string]int)
 	cache.Misses = 0
@@ -603,13 +629,18 @@ func NewVariableResolutionCache(maxSize int, ttlSeconds int64) *VariableResoluti
 func (cache *VariableResolutionCache) GetResolvedVariable(varName string, ctx *VariableContext) (string, bool) {
 	// Create cache key with variable name and scope context
 	cacheKey := cache.generateCacheKey(varName, ctx)
+	// The scope hash reads the session and knowledge base, so it is computed
+	// before taking the cache lock
+	currentScopeHash := cache.generateScopeHash(ctx)
+
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
 
 	// Check if result exists in cache
 	if result, exists := cache.Results[cacheKey]; exists {
 		// Check TTL
 		if time.Since(cache.Timestamps[cacheKey]).Seconds() < float64(cache.TTL) {
 			// Check if scope has changed (cache invalidation)
-			currentScopeHash := cache.generateScopeHash(ctx)
 			if cache.ScopeHashes[cacheKey] == currentScopeHash {
 				// Update access order for LRU
 				cache.updateAccessOrder(cacheKey)
@@ -635,7 +666,9 @@ func (cache *VariableResolutionCache) SetResolvedVariable(varName string, value 
 	scopeHash := cache.generateScopeHash(ctx)
 
 	// Cache the result
+	cache.mutex.Lock()
 	cache.setResult(cacheKey, value, scopeHash)
+	cache.mutex.Unlock()
 }
 
 // generateCacheKey creates a cache key for variable resolution
@@ -666,18 +699,17 @@ func (cache *VariableResolutionCache) generateScopeHash(ctx *VariableContext) st
 		}
 	}
 
-	// Include global variables
-	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Variables != nil {
+	if ctx.KnowledgeBase != nil {
+		ctx.KnowledgeBase.mu.RLock()
+		// Include global variables
 		for k, v := range ctx.KnowledgeBase.Variables {
 			scopeData = append(scopeData, fmt.Sprintf("global:%s=%s", k, v))
 		}
-	}
-
-	// Include properties
-	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Properties != nil {
+		// Include properties
 		for k, v := range ctx.KnowledgeBase.Properties {
 			scopeData = append(scopeData, fmt.Sprintf("properties:%s=%s", k, v))
 		}
+		ctx.KnowledgeBase.mu.RUnlock()
 	}
 
 	// Include current topic (important for topic-scoped variables)
@@ -738,9 +770,14 @@ func (cache *VariableResolutionCache) evictLRU() {
 
 // GetCacheStats returns cache statistics
 func (cache *VariableResolutionCache) GetCacheStats() map[string]interface{} {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
 	totalRequests := cache.Misses
-	for _, hits := range cache.Hits {
-		totalRequests += hits
+	hits := make(map[string]int, len(cache.Hits))
+	for key, count := range cache.Hits {
+		hits[key] = count
+		totalRequests += count
 	}
 
 	hitRate := 0.0
@@ -752,7 +789,7 @@ func (cache *VariableResolutionCache) GetCacheStats() map[string]interface{} {
 		"results":        len(cache.Results),
 		"max_size":       cache.MaxSize,
 		"ttl_seconds":    cache.TTL,
-		"hits":           cache.Hits,
+		"hits":           hits,
 		"misses":         cache.Misses,
 		"hit_rate":       hitRate,
 		"total_requests": totalRequests,
@@ -760,8 +797,20 @@ func (cache *VariableResolutionCache) GetCacheStats() map[string]interface{} {
 	}
 }
 
+// copyCounts copies a cache's hit counts, so that stats callers do not share
+// the map the cache keeps updating
+func copyCounts(counts map[string]int) map[string]int {
+	copied := make(map[string]int, len(counts))
+	for key, count := range counts {
+		copied[key] = count
+	}
+	return copied
+}
+
 // ClearCache clears the variable resolution cache
 func (cache *VariableResolutionCache) ClearCache() {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
 	cache.Results = make(map[string]string)
 	cache.Hits = make(map[string]int)
 	cache.Misses = 0
@@ -790,6 +839,9 @@ func NewTemplateTagProcessingCache(maxSize int, ttlSeconds int64) *TemplateTagPr
 func (cache *TemplateTagProcessingCache) GetProcessedTag(tagType, content string, ctx *VariableContext) (string, bool) {
 	// Create cache key with tag type, content, and context
 	cacheKey := cache.generateCacheKey(tagType, content, ctx)
+	// The context hash reads the session and knowledge base, so it is computed
+	// before taking the cache lock
+	currentContextHash := cache.generateContextHash(ctx)
 
 	// Check if result exists in cache
 	cache.mutex.RLock()
@@ -797,7 +849,6 @@ func (cache *TemplateTagProcessingCache) GetProcessedTag(tagType, content string
 		// Check TTL
 		if time.Since(cache.Timestamps[cacheKey]).Seconds() < float64(cache.TTL) {
 			// Check if context has changed (cache invalidation)
-			currentContextHash := cache.generateContextHash(ctx)
 			if cache.ContextHashes[cacheKey] == currentContextHash {
 				cache.mutex.RUnlock()
 				// Update access order for LRU (requires write lock)
@@ -869,42 +920,30 @@ func (cache *TemplateTagProcessingCache) generateContextHash(ctx *VariableContex
 		}
 	}
 
-	// Include global variables
-	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Variables != nil {
+	if ctx.KnowledgeBase != nil {
+		ctx.KnowledgeBase.mu.RLock()
+		// Include global variables
 		for k, v := range ctx.KnowledgeBase.Variables {
 			contextData = append(contextData, fmt.Sprintf("global:%s=%s", k, v))
 		}
-	}
-
-	// Include properties
-	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Properties != nil {
+		// Include properties
 		for k, v := range ctx.KnowledgeBase.Properties {
 			contextData = append(contextData, fmt.Sprintf("properties:%s=%s", k, v))
 		}
-	}
-
-	// Include arrays, sets, maps, lists state
-	if ctx.KnowledgeBase != nil {
-		if ctx.KnowledgeBase.Arrays != nil {
-			for k, v := range ctx.KnowledgeBase.Arrays {
-				contextData = append(contextData, fmt.Sprintf("arrays:%s=%v", k, v))
-			}
+		// Include arrays, sets, maps, lists state
+		for k, v := range ctx.KnowledgeBase.Arrays {
+			contextData = append(contextData, fmt.Sprintf("arrays:%s=%v", k, v))
 		}
-		if ctx.KnowledgeBase.Sets != nil {
-			for k, v := range ctx.KnowledgeBase.Sets {
-				contextData = append(contextData, fmt.Sprintf("sets:%s=%v", k, v))
-			}
+		for k, v := range ctx.KnowledgeBase.Sets {
+			contextData = append(contextData, fmt.Sprintf("sets:%s=%v", k, v))
 		}
-		if ctx.KnowledgeBase.Maps != nil {
-			for k, v := range ctx.KnowledgeBase.Maps {
-				contextData = append(contextData, fmt.Sprintf("maps:%s=%v", k, v))
-			}
+		for k, v := range ctx.KnowledgeBase.Maps {
+			contextData = append(contextData, fmt.Sprintf("maps:%s=%v", k, v))
 		}
-		if ctx.KnowledgeBase.Lists != nil {
-			for k, v := range ctx.KnowledgeBase.Lists {
-				contextData = append(contextData, fmt.Sprintf("lists:%s=%v", k, v))
-			}
+		for k, v := range ctx.KnowledgeBase.Lists {
+			contextData = append(contextData, fmt.Sprintf("lists:%s=%v", k, v))
 		}
+		ctx.KnowledgeBase.mu.RUnlock()
 	}
 
 	// Sort for consistent hashing
@@ -1264,11 +1303,23 @@ func (g *Golem) GetSessionLearningStats(sessionID string) (*SessionLearningStats
 		return nil, fmt.Errorf("session not found: %s", sessionID)
 	}
 
+	session.mu.Lock()
+	defer session.mu.Unlock()
 	if session.LearningStats == nil {
 		return &SessionLearningStats{}, nil
 	}
 
-	return session.LearningStats, nil
+	// A copy, since the session keeps updating its own stats
+	return session.LearningStats.copy(), nil
+}
+
+// copy returns a copy of the stats that shares no maps or slices with them
+func (stats *SessionLearningStats) copy() *SessionLearningStats {
+	copied := *stats
+	copied.LearningSources = copyCounts(stats.LearningSources)
+	copied.PatternTypes = copyCounts(stats.PatternTypes)
+	copied.TemplateLengths = append([]int(nil), stats.TemplateLengths...)
+	return &copied
 }
 
 // GetSessionLearnedCategories returns categories learned in a session
@@ -1281,7 +1332,9 @@ func (g *Golem) GetSessionLearnedCategories(sessionID string) ([]Category, error
 		return nil, fmt.Errorf("session not found: %s", sessionID)
 	}
 
-	return session.LearnedCategories, nil
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return append([]Category(nil), session.LearnedCategories...), nil
 }
 
 // ClearSessionLearning clears all learned categories from a session
@@ -1293,6 +1346,9 @@ func (g *Golem) ClearSessionLearning(sessionID string) error {
 	if !exists {
 		return fmt.Errorf("session not found: %s", sessionID)
 	}
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
 
 	// Remove all session-learned categories from knowledge base
 	for _, category := range session.LearnedCategories {
@@ -1317,8 +1373,9 @@ func (g *Golem) ClearSessionLearning(sessionID string) error {
 
 // GetLearningSummary returns a summary of learning across all sessions
 func (g *Golem) GetLearningSummary() map[string]interface{} {
+	sessions := g.sessionSnapshot()
 	summary := map[string]interface{}{
-		"total_sessions":   len(g.sessions),
+		"total_sessions":   len(sessions),
 		"total_categories": g.aimlKB.categoryCount(),
 		"session_stats":    make(map[string]interface{}),
 		"global_stats": map[string]interface{}{
@@ -1330,27 +1387,47 @@ func (g *Golem) GetLearningSummary() map[string]interface{} {
 
 	globalStats := summary["global_stats"].(map[string]interface{})
 
-	for sessionID, session := range g.sessions {
+	for sessionID, session := range sessions {
+		session.mu.Lock()
+		var stats *SessionLearningStats
 		if session.LearningStats != nil {
+			stats = session.LearningStats.copy()
+		}
+		session.mu.Unlock()
+
+		if stats != nil {
 			sessionStats := map[string]interface{}{
-				"total_learned":     session.LearningStats.TotalLearned,
-				"total_unlearned":   session.LearningStats.TotalUnlearned,
-				"validation_errors": session.LearningStats.ValidationErrors,
-				"learning_rate":     session.LearningStats.LearningRate,
-				"pattern_types":     session.LearningStats.PatternTypes,
-				"learning_sources":  session.LearningStats.LearningSources,
+				"total_learned":     stats.TotalLearned,
+				"total_unlearned":   stats.TotalUnlearned,
+				"validation_errors": stats.ValidationErrors,
+				"learning_rate":     stats.LearningRate,
+				"pattern_types":     stats.PatternTypes,
+				"learning_sources":  stats.LearningSources,
 			}
 
 			summary["session_stats"].(map[string]interface{})[sessionID] = sessionStats
 
 			// Add to global stats
-			globalStats["total_learned"] = globalStats["total_learned"].(int) + session.LearningStats.TotalLearned
-			globalStats["total_unlearned"] = globalStats["total_unlearned"].(int) + session.LearningStats.TotalUnlearned
-			globalStats["validation_errors"] = globalStats["validation_errors"].(int) + session.LearningStats.ValidationErrors
+			globalStats["total_learned"] = globalStats["total_learned"].(int) + stats.TotalLearned
+			globalStats["total_unlearned"] = globalStats["total_unlearned"].(int) + stats.TotalUnlearned
+			globalStats["validation_errors"] = globalStats["validation_errors"].(int) + stats.ValidationErrors
 		}
 	}
 
 	return summary
+}
+
+// sessionSnapshot returns the sessions as they are now. Callers lock each
+// session after the session map's lock is released, so that a session's lock
+// is never waited for while holding the map's lock.
+func (g *Golem) sessionSnapshot() map[string]*ChatSession {
+	g.sessionMutex.RLock()
+	defer g.sessionMutex.RUnlock()
+	sessions := make(map[string]*ChatSession, len(g.sessions))
+	for id, session := range g.sessions {
+		sessions[id] = session
+	}
+	return sessions
 }
 
 // SetLogLevel sets the logging level
@@ -1642,6 +1719,8 @@ func (g *Golem) chatCommand(args []string) error {
 	if session == nil {
 		session = g.createSession("")
 	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
 
 	input := strings.Join(args, " ")
 	g.LogInfo("Processing chat input in session %s: %s", session.ID, input)
@@ -1680,7 +1759,7 @@ func (g *Golem) chatCommand(args []string) error {
 	}
 
 	// Process template with session context
-	response := g.ProcessTemplateWithSession(category.Template, wildcards, session)
+	response := g.processTemplateWithSession(category.Template, wildcards, session)
 	fmt.Printf("Golem: %s\n", response)
 	session.History = append(session.History, "Golem: "+response)
 
@@ -1791,6 +1870,8 @@ func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error)
 	if g.aimlKB == nil {
 		return "", fmt.Errorf("no AIML knowledge base loaded")
 	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
 
 	sentences := inputSentences(input)
 	if len(sentences) <= 1 {
@@ -1856,7 +1937,7 @@ func (g *Golem) processSentence(input string, session *ChatSession) (string, err
 	}
 
 	// Process template with context
-	response := g.ProcessTemplateWithContext(category.Template, wildcards, session)
+	response := g.processTemplateForSession(category.Template, wildcards, session)
 
 	// Add to history
 	session.History = append(session.History, input)
@@ -1881,6 +1962,8 @@ func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, th
 	if g.aimlKB == nil {
 		return "", fmt.Errorf("no AIML knowledge base loaded")
 	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
 
 	g.LogInfo("Processing input with that index %d: %s", thatIndex, input)
 
@@ -1907,7 +1990,7 @@ func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, th
 	}
 
 	// Process template with context
-	response := g.ProcessTemplateWithContext(category.Template, wildcards, session)
+	response := g.processTemplateForSession(category.Template, wildcards, session)
 
 	// Add to history
 	session.History = append(session.History, input)
@@ -2033,23 +2116,28 @@ func (g *Golem) createSessionCommand(args []string) error {
 
 // listSessionsCommand lists all active sessions
 func (g *Golem) listSessionsCommand() error {
+	sessions := g.sessionSnapshot()
 	g.sessionMutex.RLock()
-	defer g.sessionMutex.RUnlock()
+	currentID := g.currentID
+	g.sessionMutex.RUnlock()
 
-	if len(g.sessions) == 0 {
+	if len(sessions) == 0 {
 		fmt.Println("No active sessions")
 		return nil
 	}
 
 	fmt.Println("Active Sessions:")
 	fmt.Println(strings.Repeat("=", 50))
-	for id, session := range g.sessions {
+	for id, session := range sessions {
 		marker := ""
-		if id == g.currentID {
+		if id == currentID {
 			marker = " (current)"
 		}
+		session.mu.Lock()
+		messages := len(session.History)
+		session.mu.Unlock()
 		fmt.Printf("%-10s: Created %s, %d messages%s\n",
-			id, session.CreatedAt, len(session.History), marker)
+			id, session.CreatedAt, messages, marker)
 	}
 	return nil
 }
@@ -2100,18 +2188,18 @@ func (g *Golem) deleteSessionCommand(args []string) error {
 
 // currentSessionCommand shows current session info
 func (g *Golem) currentSessionCommand() error {
-	g.sessionMutex.RLock()
-	defer g.sessionMutex.RUnlock()
-
-	if g.currentID == "" {
+	session := g.getCurrentSession()
+	if session == nil {
 		fmt.Println("No current session")
 		return nil
 	}
 
-	session := g.sessions[g.currentID]
+	session.mu.Lock()
+	messages := len(session.History)
+	session.mu.Unlock()
 	fmt.Printf("Current session: %s\n", session.ID)
 	fmt.Printf("Created: %s\n", session.CreatedAt)
-	fmt.Printf("Messages: %d\n", len(session.History))
+	fmt.Printf("Messages: %d\n", messages)
 	return nil
 }
 
@@ -2123,8 +2211,10 @@ func (g *Golem) CreateSession(sessionID string) *ChatSession {
 
 func (g *Golem) createSession(sessionID string) *ChatSession {
 	if sessionID == "" {
+		g.sessionMutex.Lock()
 		sessionID = fmt.Sprintf("session_%d", g.sessionID)
 		g.sessionID++
+		g.sessionMutex.Unlock()
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -2172,6 +2262,14 @@ func (g *Golem) getCurrentSession() *ChatSession {
 
 // ProcessTemplateWithSession processes a template with session context
 func (g *Golem) ProcessTemplateWithSession(template string, wildcards map[string]string, session *ChatSession) string {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return g.processTemplateWithSession(template, wildcards, session)
+}
+
+// processTemplateWithSession is ProcessTemplateWithSession for a caller that
+// holds the session's lock
+func (g *Golem) processTemplateWithSession(template string, wildcards map[string]string, session *ChatSession) string {
 	// Ensure knowledge base is initialized for variable/collection operations
 	if g.aimlKB == nil {
 		g.aimlKB = NewAIMLKnowledgeBase()
@@ -2983,7 +3081,7 @@ func (cache *PatternMatchingCache) GetCacheStats() map[string]interface{} {
 		"exact_match_keys":    len(cache.ExactMatchKeys),
 		"max_size":            cache.MaxSize,
 		"ttl_seconds":         cache.TTL,
-		"hits":                cache.Hits,
+		"hits":                copyCounts(cache.Hits),
 		"misses":              cache.Misses,
 		"hit_rate":            hitRate,
 		"total_requests":      totalRequests,

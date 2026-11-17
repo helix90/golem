@@ -1070,7 +1070,7 @@ func (tp *TreeProcessor) processBotTag(node *ASTNode, content string) string {
 
 	// Get bot property from knowledge base
 	if tp.ctx != nil && tp.ctx.KnowledgeBase != nil {
-		if value, exists := tp.ctx.KnowledgeBase.Properties[name]; exists {
+		if value, exists := tp.ctx.KnowledgeBase.property(name); exists {
 			return value
 		}
 	}
@@ -2600,7 +2600,7 @@ func (tp *TreeProcessor) processSizeTag(_ *ASTNode, _ string) string {
 func (tp *TreeProcessor) processVersionTag(_ *ASTNode, _ string) string {
 	// Version tag - bot version
 	if tp.ctx != nil && tp.ctx.KnowledgeBase != nil {
-		if version, exists := tp.ctx.KnowledgeBase.Properties["version"]; exists {
+		if version, exists := tp.ctx.KnowledgeBase.property("version"); exists {
 			return version
 		}
 	}
@@ -2610,7 +2610,7 @@ func (tp *TreeProcessor) processVersionTag(_ *ASTNode, _ string) string {
 func (tp *TreeProcessor) processIdTag(_ *ASTNode, _ string) string {
 	// ID tag - bot ID
 	if tp.ctx != nil && tp.ctx.KnowledgeBase != nil {
-		if id, exists := tp.ctx.KnowledgeBase.Properties["id"]; exists {
+		if id, exists := tp.ctx.KnowledgeBase.property("id"); exists {
 			return id
 		}
 	}

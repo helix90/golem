@@ -381,6 +381,86 @@ func TestConcurrentSessionsIsolated(t *testing.T) {
 	}
 }
 
+// Golem methods that report on sessions must not race with the sessions
+// processing input, and the caches that template processing shares must not
+// race either.
+func TestConcurrentSessionsAndStats(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>HELLO *</pattern><template>Hi <star/> <bot name="name"/> <gender>he</gender> <length><star/></length></template></category>
+<category><pattern>SET *</pattern><template><think><set name="x"><star/></set></think><condition name="x"><li value="a">A</li><li>other</li></condition></template></category>
+<category><pattern>TOPIC *</pattern><template><think><set name="topic"><star/></set></think><topic/></template></category>
+<category><pattern>KEEP *</pattern><template><list name="l" operation="add"><star/></list><map name="m" key="<star/>" operation="set"><star/></map></template></category>
+<category><pattern>TEACH *</pattern><template><learn><category><pattern>LEARNED <eval><star/></eval></pattern><template>got it</template></category></learn>ok</template></category>
+<category><pattern>FORGET *</pattern><template><unlearn><category><pattern>LEARNED <eval><star/></eval></pattern><template>got it</template></category></unlearn>ok</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			session := g.CreateSession(fmt.Sprintf("user%d", i))
+			for j := 0; j < 10; j++ {
+				for _, input := range []string{"hello bob", "set a", "topic cats", "keep q", fmt.Sprintf("teach w%d", i), fmt.Sprintf("forget w%d", i)} {
+					g.ProcessInput(input, session)
+				}
+				g.ProcessTemplateWithSession(`<get name="x"/>`, nil, session)
+			}
+		}(i)
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for j := 0; j < 50; j++ {
+			g.GetLearningSummary()
+			g.GetSessionLearningStats("user1")
+			g.GetSessionLearnedCategories("user1")
+			g.GetVariableResolutionCacheStats()
+			g.GetTemplateTagProcessingCacheStats()
+			g.ProcessTemplate(`<bot name="name"/><map name="m" key="q"/>`, nil)
+			g.aimlKB.SetProperty("mood", fmt.Sprintf("%d", j))
+			g.CreateSession("")
+		}
+	}()
+	wg.Wait()
+}
+
+// Calls for one session from different goroutines run one at a time.
+func TestConcurrentCallsShareSession(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>COUNT</pattern><template><think><set name="n"><get name="n"/>x</set></think>ok</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	session := g.CreateSession("shared")
+	const goroutines, calls = 8, 25
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < calls; j++ {
+				g.ProcessInput("count", session)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if len(session.History) != goroutines*calls {
+		t.Errorf("Expected %d history entries, got %d", goroutines*calls, len(session.History))
+	}
+	if n := len(session.Variables["n"]); n != goroutines*calls {
+		t.Errorf("Expected n to be %d long, got %d", goroutines*calls, n)
+	}
+}
+
 // Removing a category must not shift other patterns onto the wrong category.
 func TestUnlearnKeepsOtherCategories(t *testing.T) {
 	g := New(false)

@@ -81,6 +81,81 @@ golem -help
 # Warns about state loss in single-command mode
 ```
 
+## Thread Safety
+
+One `Golem` instance can serve many goroutines at once, as long as you
+finish setting it up before you start serving.
+
+### Setup: one goroutine, before serving
+
+These calls change the engine itself and are **not** guarded against
+concurrent chat. Make them before any goroutine starts chatting:
+
+- Loading: `LoadAIML*`, `LoadFile`, `Execute("load", ...)`, `LoadSRAIXConfigs*`, `AddSRAIXConfig`
+- Configuration: `SetKnowledgeBase`, `SetLogLevel`, `EnableTreeProcessing`, `DisableTreeProcessing`, `UpdateTemplateProcessingConfig`, `SetPersistentLearningPath`
+
+### Serving: safe from any goroutine
+
+- Chat: `ProcessInput`, `ProcessInputWithThatIndex`, `ProcessTemplate`, `ProcessTemplateWithSession`, `ProcessTemplateWithContext`
+- Sessions: `CreateSession`, `GetSessionLearningStats`, `GetSessionLearnedCategories`, `ClearSessionLearning`, `GetLearningSummary`
+- Knowledge base data: `GetProperty`, `SetProperty`
+- Caches: the `Get...Stats`, `Clear...` and `Invalidate...` methods
+
+Template tags that change shared data (`<set>` on global or topic
+variables, `<map>`, `<list>`, `<array>`, set collections, `<learn>`,
+`<unlearn>`) are safe while other sessions are matching and processing.
+Their changes are shared, so every session sees them.
+
+### Sessions
+
+- **Different sessions run in parallel.** This is the normal pattern: one
+  `ChatSession` per user or conversation.
+- **Calls on the same session run one at a time.** Each `ChatSession` has a
+  lock that the chat methods hold for the whole call. Two goroutines sending
+  input to one session won't corrupt it, but the second waits for the first,
+  and the order they run in is not defined. If order matters (it usually
+  does for `<that>`), send a conversation's input from one goroutine.
+- **Don't read session fields directly while a call on that session is in
+  progress.** Fields such as `session.Variables` and `session.History` are
+  only safe to read from the goroutine that makes the session's calls, between
+  calls. From other goroutines, use the Golem methods above.
+- **Stats methods return copies.** `GetSessionLearningStats`,
+  `GetSessionLearnedCategories` and the cache stats methods return snapshots
+  that don't change after they are returned. Changing them doesn't change the
+  session or cache.
+
+### Lock rules (for developers)
+
+- `ChatSession.mu`: held for a whole chat call. Exported chat methods take it;
+  internal code that already holds it calls the unexported variants
+  (`processTemplateForSession`, `processTemplateWithSession`). Never call an
+  exported chat method from template processing — the lock is not reentrant.
+- `Golem.sessionMutex`: guards the session map, `currentID` and the session ID
+  counter. Never wait for a session's lock while holding it: copy the sessions
+  with `sessionSnapshot()`, release it, then lock each session.
+- `AIMLKnowledgeBase.mu`: guards `Variables`, `TopicVars`, `Properties`, `Maps`,
+  `Lists`, `Arrays` and `SetCollections`. Use the locked helpers
+  (`lookupVariable`, `setVariable`, `property`, `GetProperty`, `SetProperty`)
+  rather than reading the maps directly. Sections that hold it must not call
+  back into variable resolution or the caches.
+- `AIMLKnowledgeBase.patternsMu`: guards `Categories` and `Patterns`; matching
+  takes the read lock, `<learn>`/`<unlearn>` the write lock.
+- Each cache has its own lock. Compute anything that reads the session or knowledge
+  base (cache keys, scope hashes) *before* taking a cache lock.
+- Order, when more than one is held: `ChatSession.mu` → `patternsMu` /
+  `AIMLKnowledgeBase.mu` → cache locks.
+- Run `make test-race` after touching any of this. The concurrency
+  regression tests are in `pkg/golem/aiml_parsing_regression_test.go`.
+
+### Not covered
+
+- The legacy regex processors in `aiml_native.go` (`process*TagsWithContext`)
+  write knowledge-base collections without the lock. The tree processor, which
+  is the default, doesn't use them.
+- `ProcessTemplateWithSession` and `ProcessTemplateWithContext` create an
+  empty knowledge base when none is loaded. That isn't safe across
+  goroutines, so load one before serving.
+
 ## Best Practices
 
 ### For CLI Users
@@ -92,6 +167,7 @@ golem -help
 - Create one Golem instance per application lifecycle
 - Share knowledge base between instances if needed
 - Use `GetKnowledgeBase()` and `SetKnowledgeBase()` for state sharing
+- Load and configure before serving, then share the instance across goroutines (see [Thread Safety](#thread-safety))
 
 ### For Developers
 - **NEVER** modify state management without understanding all three patterns

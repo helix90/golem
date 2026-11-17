@@ -173,6 +173,21 @@ func main() {
 }
 ```
 
+#### Concurrency
+
+One `Golem` can serve many goroutines. Load and configure it first, then give each user or conversation its own session:
+
+```go
+g := golem.New(false)
+g.LoadAIMLFromDirectory("aiml")   // setup: before serving
+
+// in each request handler
+session := g.CreateSession(userID) // once per user
+response, err := g.ProcessInput(text, session)
+```
+
+Different sessions run in parallel. Calls on the same session run one at a time. See [Thread Safety](ARCHITECTURE.md#thread-safety) for the full rules.
+
 ## 📚 Examples
 
 The `examples-module/` directory contains comprehensive examples:

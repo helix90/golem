@@ -218,6 +218,14 @@ func (kb *AIMLKnowledgeBase) lookupVariable(topic string, varKey string) (string
 	return "", false
 }
 
+// property looks up a bot property
+func (kb *AIMLKnowledgeBase) property(name string) (string, bool) {
+	kb.mu.RLock()
+	defer kb.mu.RUnlock()
+	value, exists := kb.Properties[name]
+	return value, exists
+}
+
 // setVariable sets a global variable
 func (kb *AIMLKnowledgeBase) setVariable(varKey string, value string) {
 	kb.mu.Lock()
@@ -1613,6 +1621,14 @@ func (g *Golem) ProcessTemplate(template string, wildcards map[string]string) st
 
 // ProcessTemplateWithContext processes an AIML template with full context support
 func (g *Golem) ProcessTemplateWithContext(template string, wildcards map[string]string, session *ChatSession) string {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return g.processTemplateForSession(template, wildcards, session)
+}
+
+// processTemplateForSession is ProcessTemplateWithContext for a caller that
+// holds the session's lock
+func (g *Golem) processTemplateForSession(template string, wildcards map[string]string, session *ChatSession) string {
 	// Create variable context for template processing
 	// Ensure knowledge base is initialized for variable/collection operations
 	if g.aimlKB == nil {
@@ -5036,48 +5052,18 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 		}
 	}
 
-	// 3. Check topic scope
-	if ctx.Session != nil && ctx.KnowledgeBase != nil && ctx.KnowledgeBase.TopicVars != nil {
-		currentTopic := ctx.Session.GetSessionTopic()
-		if currentTopic == "" {
-			currentTopic = "default"
-		}
-		if topicVars, exists := ctx.KnowledgeBase.TopicVars[currentTopic]; exists {
-			if value, exists := topicVars[varName]; exists {
-				g.LogInfo("Found variable '%s' in topic scope '%s': '%s'", varName, currentTopic, value)
-				// Cache the result
-				if g.variableResolutionCache != nil {
-					g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
-				}
-				return value
+	// 3-5. Check topic scope, then global scope (knowledge base variables),
+	// then properties (read-only)
+	if ctx.KnowledgeBase != nil {
+		currentTopic := ""
+		if ctx.Session != nil {
+			currentTopic = ctx.Session.GetSessionTopic()
+			if currentTopic == "" {
+				currentTopic = "default"
 			}
 		}
-	}
-
-	// 4. Check global scope (knowledge base variables)
-	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Variables != nil {
-		g.LogInfo("Checking knowledge base variables: %v", ctx.KnowledgeBase.Variables)
-		g.LogInfo("Knowledge base pointer: %p", ctx.KnowledgeBase)
-		g.LogInfo("Knowledge base Variables pointer: %p", ctx.KnowledgeBase.Variables)
-		if value, exists := ctx.KnowledgeBase.Variables[varName]; exists {
+		if value, exists := ctx.KnowledgeBase.lookupVariable(currentTopic, varName); exists {
 			g.LogInfo("Found variable '%s' in knowledge base: '%s'", varName, value)
-			// Cache the result
-			if g.variableResolutionCache != nil {
-				g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
-			}
-			return value
-		}
-	} else {
-		g.LogInfo("Knowledge base is nil or Variables is nil: KB=%v, Variables=%v", ctx.KnowledgeBase != nil, ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Variables != nil)
-		if ctx.KnowledgeBase != nil {
-			g.LogInfo("Knowledge base exists but Variables is nil - THIS IS THE BUG!")
-		}
-	}
-
-	// 5. Check properties scope (read-only)
-	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Properties != nil {
-		if value, exists := ctx.KnowledgeBase.Properties[varName]; exists {
-			g.LogInfo("Found variable '%s' in properties: '%s'", varName, value)
 			// Cache the result
 			if g.variableResolutionCache != nil {
 				g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
@@ -5108,27 +5094,9 @@ func (g *Golem) resolveVariableWithPresence(varName string, ctx *VariableContext
 		}
 	}
 
-	// 3. Check topic scope
-	if ctx.KnowledgeBase != nil && ctx.Topic != "" {
-		if ctx.KnowledgeBase.TopicVars != nil {
-			if topicVars, ok := ctx.KnowledgeBase.TopicVars[ctx.Topic]; ok {
-				if value, exists := topicVars[varName]; exists {
-					return value, true
-				}
-			}
-		}
-	}
-
-	// 4. Check global scope (Variables)
-	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Variables != nil {
-		if value, exists := ctx.KnowledgeBase.Variables[varName]; exists {
-			return value, true
-		}
-	}
-
-	// 5. Check properties as fallback
-	if ctx.KnowledgeBase != nil && ctx.KnowledgeBase.Properties != nil {
-		if value, exists := ctx.KnowledgeBase.Properties[varName]; exists {
+	// 3-5. Check topic scope, then global scope (Variables), then properties
+	if ctx.KnowledgeBase != nil {
+		if value, exists := ctx.KnowledgeBase.lookupVariable(ctx.Topic, varName); exists {
 			return value, true
 		}
 	}
@@ -5162,9 +5130,6 @@ func (g *Golem) setVariable(varName, varValue string, scope VariableScope, ctx *
 	case ScopeTopic:
 		// Topic variables are stored in the knowledge base
 		if ctx.KnowledgeBase != nil {
-			if ctx.KnowledgeBase.TopicVars == nil {
-				ctx.KnowledgeBase.TopicVars = make(map[string]map[string]string)
-			}
 			currentTopic := ""
 			if ctx.Session != nil {
 				currentTopic = ctx.Session.GetSessionTopic()
@@ -5172,23 +5137,22 @@ func (g *Golem) setVariable(varName, varValue string, scope VariableScope, ctx *
 			if currentTopic == "" {
 				currentTopic = "default"
 			}
+			ctx.KnowledgeBase.mu.Lock()
+			if ctx.KnowledgeBase.TopicVars == nil {
+				ctx.KnowledgeBase.TopicVars = make(map[string]map[string]string)
+			}
 			if ctx.KnowledgeBase.TopicVars[currentTopic] == nil {
 				ctx.KnowledgeBase.TopicVars[currentTopic] = make(map[string]string)
 			}
 			ctx.KnowledgeBase.TopicVars[currentTopic][varName] = varValue
+			ctx.KnowledgeBase.mu.Unlock()
 			g.LogDebug("Set topic variable '%s' to '%s' in topic '%s'", varName, varValue, currentTopic)
 		}
 	case ScopeGlobal:
 		g.LogInfo("Setting global variable '%s' to '%s'", varName, varValue)
-		g.LogInfo("Before: KB Variables=%v", ctx.KnowledgeBase.Variables)
 		if ctx.KnowledgeBase != nil {
-			if ctx.KnowledgeBase.Variables == nil {
-				g.LogInfo("Creating new Variables map - THIS IS THE BUG!")
-				ctx.KnowledgeBase.Variables = make(map[string]string)
-			}
-			ctx.KnowledgeBase.Variables[varName] = varValue
+			ctx.KnowledgeBase.setVariable(varName, varValue)
 		}
-		g.LogInfo("After: KB Variables=%v", ctx.KnowledgeBase.Variables)
 	case ScopeProperties:
 		// Properties are read-only, cannot be set
 		g.LogInfo("Warning: Cannot set property '%s' - properties are read-only", varName)
@@ -5908,6 +5872,8 @@ func (g *Golem) parsePropertiesFile(content string) (map[string]string, error) {
 
 // GetProperty retrieves a property value
 func (kb *AIMLKnowledgeBase) GetProperty(key string) string {
+	kb.mu.RLock()
+	defer kb.mu.RUnlock()
 	// Check properties first
 	if value, exists := kb.Properties[key]; exists {
 		return value
@@ -5921,6 +5887,8 @@ func (kb *AIMLKnowledgeBase) GetProperty(key string) string {
 
 // SetProperty sets a property value
 func (kb *AIMLKnowledgeBase) SetProperty(key, value string) {
+	kb.mu.Lock()
+	defer kb.mu.Unlock()
 	kb.Properties[key] = value
 }
 
@@ -9178,12 +9146,12 @@ func (cache *ThatPatternCache) GetCacheStats() map[string]interface{} {
 		"patterns":        len(cache.Patterns),
 		"max_size":        cache.MaxSize,
 		"ttl_seconds":     cache.TTL,
-		"hits":            cache.Hits,
+		"hits":            copyCounts(cache.Hits),
 		"misses":          cache.Misses,
 		"hit_rate":        hitRate,
 		"total_requests":  totalRequests,
 		"match_results":   len(cache.MatchResults),
-		"result_hits":     cache.ResultHits,
+		"result_hits":     copyCounts(cache.ResultHits),
 		"result_hit_rate": resultHitRate,
 		"context_hashes":  len(cache.ContextHashes),
 	}

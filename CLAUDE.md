@@ -114,6 +114,10 @@ golem> quit
 
 See `ARCHITECTURE.md` for detailed explanation of state persistence patterns.
 
+### Thread Safety
+
+One `Golem` serves many goroutines once setup (loading, configuration) is done. Each `ChatSession` has a lock held for a whole chat call, so exported chat methods must never be called from inside template processing (use the unexported `processTemplateForSession` / `processTemplateWithSession`). Read knowledge-base data through its locked helpers, never wait for a session lock while holding `sessionMutex`, and compute cache keys before taking a cache lock. The full rules and lock order are in `ARCHITECTURE.md` ("Thread Safety"). Run `make test-race` after changing anything shared.
+
 ### Core Components
 
 **Main Engine (`pkg/golem/golem.go`)**:
