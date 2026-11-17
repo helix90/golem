@@ -461,6 +461,79 @@ func TestConcurrentCallsShareSession(t *testing.T) {
 	}
 }
 
+// Loading AIML or replacing the knowledge base while sessions chat must not
+// race, and a load must keep what sessions wrote before it.
+func TestReloadWhileChatting(t *testing.T) {
+	g := New(false)
+	err := g.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>HELLO *</pattern><template>Hi <star/> <bot name="name"/></template></category>
+<category><pattern>KEEP *</pattern><template><map name="m" key="<star/>" operation="set"><star/></map><list name="l" operation="add"><star/></list>kept</template></category>
+<category><pattern>SET *</pattern><template><think><set name="x"><star/></set></think><get name="x"/></template></category>
+<category><pattern>OOB</pattern><template>ok</template></category>
+</aiml>`)
+	if err != nil {
+		t.Fatalf("Failed to load AIML: %v", err)
+	}
+
+	session := g.CreateSession("keeper")
+	if _, err := g.ProcessInput("keep apple", session); err != nil {
+		t.Fatalf("Failed to process input: %v", err)
+	}
+
+	replacement := New(false)
+	if err := replacement.LoadAIMLFromString(`<aiml version="2.0">
+<category><pattern>HELLO *</pattern><template>Hello <star/></template></category>
+</aiml>`); err != nil {
+		t.Fatalf("Failed to load replacement AIML: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			session := g.CreateSession(fmt.Sprintf("user%d", i))
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				for _, input := range []string{"hello bob", "keep pear", "set a", "extra"} {
+					g.ProcessInput(input, session)
+				}
+				g.ProcessTemplateWithSession(`<bot name="name"/><map name="m" key="pear"/>`, nil, session)
+				g.Execute("chat", []string{"oob"})
+			}
+		}(i)
+	}
+	for j := 0; j < 20; j++ {
+		if err := g.LoadAIMLFromString(fmt.Sprintf(`<aiml version="2.0">
+<category><pattern>EXTRA</pattern><template>extra %d</template></category>
+</aiml>`, j)); err != nil {
+			t.Errorf("Failed to load AIML while chatting: %v", err)
+		}
+		g.SetKnowledgeBase(g.GetKnowledgeBase())
+	}
+	close(stop)
+	wg.Wait()
+
+	kb := g.GetKnowledgeBase()
+	if kb.Maps["m"]["apple"] != "apple" {
+		t.Errorf("Expected map entry written before the loads to survive them, got %q", kb.Maps["m"]["apple"])
+	}
+	if response, err := g.ProcessInput("extra", session); err != nil || response != "extra 19" {
+		t.Errorf("Expected the last loaded category to answer, got %q (err=%v)", response, err)
+	}
+
+	// Replacing the knowledge base while chatting: later calls use the new one
+	g.SetKnowledgeBase(replacement.GetKnowledgeBase())
+	if response, err := g.ProcessInput("hello bob", session); err != nil || response != "Hello bob" {
+		t.Errorf("Expected the replacement knowledge base to answer, got %q (err=%v)", response, err)
+	}
+}
+
 // Removing a category must not shift other patterns onto the wrong category.
 func TestUnlearnKeepsOtherCategories(t *testing.T) {
 	g := New(false)

@@ -9,6 +9,7 @@ All notable changes to Golem are recorded here.
 - Fixed more data races when one `Golem` serves many goroutines: in the variable resolution cache, in cache keys that read knowledge-base data, in global and topic variables and bot properties, and in the session stats methods.
 - Calls on the same `ChatSession` from different goroutines now run one at a time instead of corrupting the session.
 - `GetSessionLearningStats`, `GetSessionLearnedCategories` and the cache stats methods return copies, not the live data.
+- AIML can be loaded or replaced while sessions chat. `LoadAIMLFromString` now merges into the live knowledge base under its locks instead of copying it, so it no longer loses what sessions write during a load, or topic variables. `SetKnowledgeBase` swaps the knowledge base safely: calls in progress finish with the old one. `SetLogLevel`, `Enable/DisableTreeProcessing` and OOB handler registration are safe while serving too.
 - The threading rules are documented in `ARCHITECTURE.md` under "Thread Safety".
 
 ## v1.6.0 - 2026-11-16

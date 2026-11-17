@@ -76,7 +76,8 @@ type AIMLKnowledgeBase struct {
 
 	// mu guards the data that template tags read and modify at runtime
 	// (Variables, TopicVars, Properties, Maps, Lists, Arrays, SetCollections),
-	// since sessions may process templates concurrently
+	// since sessions may process templates concurrently, and the data a load
+	// merges in while sessions run (also Sets, Topics, Substitutions)
 	mu sync.RWMutex
 
 	// patternsMu guards Categories and Patterns, which <learn> and <unlearn>
@@ -279,25 +280,22 @@ func (g *Golem) LoadAIMLFromString(content string) error {
 	// Convert AIML to AIMLKnowledgeBase
 	kb := g.aimlToKnowledgeBase(aiml)
 
-	// Merge with existing knowledge base
-	if g.aimlKB == nil {
-		g.aimlKB = kb
+	// Merge with existing knowledge base. Loads run one at a time, and the
+	// merge takes the knowledge base's locks, so this is safe while other
+	// goroutines are chatting.
+	g.loadMu.Lock()
+	defer g.loadMu.Unlock()
+	if current := g.knowledgeBase(); current != nil {
+		current.merge(kb)
 	} else {
-		mergedKB, err := g.mergeKnowledgeBases(g.aimlKB, kb)
-		if err != nil {
-			return err
-		}
-		g.aimlKB = mergedKB
+		g.kbMu.Lock()
+		g.aimlKB = kb
+		g.kbMu.Unlock()
 	}
 
 	g.LogDebug("Loaded AIML from string successfully")
-	g.LogDebug("Total categories: %d", len(g.aimlKB.Categories))
-	g.LogDebug("Total patterns: %d", len(g.aimlKB.Patterns))
-	g.LogDebug("Total sets: %d", len(g.aimlKB.Sets))
-	g.LogDebug("Total topics: %d", len(g.aimlKB.Topics))
-	g.LogDebug("Total variables: %d", len(g.aimlKB.Variables))
-	g.LogDebug("Total properties: %d", len(g.aimlKB.Properties))
-	g.LogDebug("Total maps: %d", len(g.aimlKB.Maps))
+	g.LogDebug("Total categories: %d", g.knowledgeBase().categoryCount())
+	g.LogDebug("Total patterns: %d", g.knowledgeBase().patternCount())
 
 	return nil
 }
@@ -340,115 +338,102 @@ func categoryKey(category Category) string {
 	return key
 }
 
-// mergeKnowledgeBases merges two knowledge bases
-func (g *Golem) mergeKnowledgeBases(kb1, kb2 *AIMLKnowledgeBase) (*AIMLKnowledgeBase, error) {
-	mergedKB := &AIMLKnowledgeBase{
-		Categories:     make([]Category, 0),
-		Patterns:       make(map[string]*Category),
-		Sets:           make(map[string][]string),
-		Topics:         make(map[string][]string),
-		Variables:      make(map[string]string),
-		Properties:     make(map[string]string),
-		Maps:           make(map[string]map[string]string),
-		Lists:          make(map[string][]string),
-		Arrays:         make(map[string][]string),
-		SetCollections: make(map[string]*SetCollection),
-		Substitutions:  make(map[string]map[string]string),
+// merge adds other's categories and data to kb, in place. It takes kb's
+// locks, so sessions can keep using kb while it runs; other must not be in use.
+// Data is merged before categories so that a new category's sets and bot
+// properties exist by the time it can match.
+func (kb *AIMLKnowledgeBase) merge(other *AIMLKnowledgeBase) {
+	kb.mu.Lock()
+	if kb.Sets == nil {
+		kb.Sets = make(map[string][]string)
 	}
-
-	// Copy from first knowledge base
-	mergedKB.Categories = append(mergedKB.Categories, kb1.Categories...)
-	for setName, members := range kb1.Sets {
-		mergedKB.Sets[setName] = members
+	for setName, members := range other.Sets {
+		kb.Sets[setName] = append(append([]string(nil), kb.Sets[setName]...), members...)
 	}
-	for topicName, patterns := range kb1.Topics {
-		mergedKB.Topics[topicName] = patterns
+	if kb.Topics == nil {
+		kb.Topics = make(map[string][]string)
 	}
-	for varName, value := range kb1.Variables {
-		mergedKB.Variables[varName] = value
+	for topicName, patterns := range other.Topics {
+		kb.Topics[topicName] = append(append([]string(nil), kb.Topics[topicName]...), patterns...)
 	}
-	for propName, value := range kb1.Properties {
-		mergedKB.Properties[propName] = value
+	if kb.TopicVars == nil {
+		kb.TopicVars = make(map[string]map[string]string)
 	}
-	for mapName, mapData := range kb1.Maps {
-		mergedKB.Maps[mapName] = mapData
-	}
-	for listName, listData := range kb1.Lists {
-		mergedKB.Lists[listName] = listData
-	}
-	for arrayName, arrayData := range kb1.Arrays {
-		mergedKB.Arrays[arrayName] = arrayData
-	}
-	for setName, setData := range kb1.SetCollections {
-		mergedKB.SetCollections[setName] = setData
-	}
-	for subName, subData := range kb1.Substitutions {
-		mergedKB.Substitutions[subName] = subData
-	}
-
-	// Merge from second knowledge base
-	mergedKB.Categories = append(mergedKB.Categories, kb2.Categories...)
-	mergedKB.rebuildPatternIndex()
-	for setName, members := range kb2.Sets {
-		if mergedKB.Sets[setName] == nil {
-			mergedKB.Sets[setName] = make([]string, 0)
+	for topicName, vars := range other.TopicVars {
+		if kb.TopicVars[topicName] == nil {
+			kb.TopicVars[topicName] = make(map[string]string)
 		}
-		mergedKB.Sets[setName] = append(mergedKB.Sets[setName], members...)
-	}
-	for topicName, patterns := range kb2.Topics {
-		if mergedKB.Topics[topicName] == nil {
-			mergedKB.Topics[topicName] = make([]string, 0)
+		for varName, value := range vars {
+			kb.TopicVars[topicName][varName] = value
 		}
-		mergedKB.Topics[topicName] = append(mergedKB.Topics[topicName], patterns...)
 	}
-	for varName, value := range kb2.Variables {
-		mergedKB.Variables[varName] = value
+	if kb.Variables == nil {
+		kb.Variables = make(map[string]string)
 	}
-	for propName, value := range kb2.Properties {
-		mergedKB.Properties[propName] = value
+	for varName, value := range other.Variables {
+		kb.Variables[varName] = value
 	}
-	for mapName, mapData := range kb2.Maps {
-		if mergedKB.Maps[mapName] == nil {
-			mergedKB.Maps[mapName] = make(map[string]string)
+	if kb.Properties == nil {
+		kb.Properties = make(map[string]string)
+	}
+	for propName, value := range other.Properties {
+		kb.Properties[propName] = value
+	}
+	if kb.Maps == nil {
+		kb.Maps = make(map[string]map[string]string)
+	}
+	for mapName, mapData := range other.Maps {
+		if kb.Maps[mapName] == nil {
+			kb.Maps[mapName] = make(map[string]string)
 		}
 		for key, value := range mapData {
-			mergedKB.Maps[mapName][key] = value
+			kb.Maps[mapName][key] = value
 		}
 	}
-	for listName, listData := range kb2.Lists {
-		if mergedKB.Lists[listName] == nil {
-			mergedKB.Lists[listName] = make([]string, 0)
-		}
-		mergedKB.Lists[listName] = append(mergedKB.Lists[listName], listData...)
+	if kb.Lists == nil {
+		kb.Lists = make(map[string][]string)
 	}
-	for arrayName, arrayData := range kb2.Arrays {
-		if mergedKB.Arrays[arrayName] == nil {
-			mergedKB.Arrays[arrayName] = make([]string, 0)
-		}
-		mergedKB.Arrays[arrayName] = append(mergedKB.Arrays[arrayName], arrayData...)
+	for listName, listData := range other.Lists {
+		kb.Lists[listName] = append(kb.Lists[listName], listData...)
 	}
-	for setName, setData := range kb2.SetCollections {
-		if mergedKB.SetCollections[setName] == nil {
-			mergedKB.SetCollections[setName] = NewSetCollection()
+	if kb.Arrays == nil {
+		kb.Arrays = make(map[string][]string)
+	}
+	for arrayName, arrayData := range other.Arrays {
+		kb.Arrays[arrayName] = append(kb.Arrays[arrayName], arrayData...)
+	}
+	if kb.SetCollections == nil {
+		kb.SetCollections = make(map[string]*SetCollection)
+	}
+	for setName, setData := range other.SetCollections {
+		if kb.SetCollections[setName] == nil {
+			kb.SetCollections[setName] = NewSetCollection()
 		}
 		// Merge items while maintaining uniqueness
 		for _, item := range setData.Items {
-			if !mergedKB.SetCollections[setName].Index[item] {
-				mergedKB.SetCollections[setName].Items = append(mergedKB.SetCollections[setName].Items, item)
-				mergedKB.SetCollections[setName].Index[item] = true
+			if !kb.SetCollections[setName].Index[item] {
+				kb.SetCollections[setName].Items = append(kb.SetCollections[setName].Items, item)
+				kb.SetCollections[setName].Index[item] = true
 			}
 		}
 	}
-	for subName, subData := range kb2.Substitutions {
-		if mergedKB.Substitutions[subName] == nil {
-			mergedKB.Substitutions[subName] = make(map[string]string)
+	if kb.Substitutions == nil {
+		kb.Substitutions = make(map[string]map[string]string)
+	}
+	for subName, subData := range other.Substitutions {
+		if kb.Substitutions[subName] == nil {
+			kb.Substitutions[subName] = make(map[string]string)
 		}
 		for pattern, replacement := range subData {
-			mergedKB.Substitutions[subName][pattern] = replacement
+			kb.Substitutions[subName][pattern] = replacement
 		}
 	}
+	kb.mu.Unlock()
 
-	return mergedKB, nil
+	kb.patternsMu.Lock()
+	kb.Categories = append(kb.Categories, other.Categories...)
+	kb.rebuildPatternIndex()
+	kb.patternsMu.Unlock()
 }
 
 func (g *Golem) LoadAIML(filename string) (*AIMLKnowledgeBase, error) {
@@ -1594,16 +1579,17 @@ func setRegex(g *Golem, setName string, kb *AIMLKnowledgeBase) string {
 
 // ProcessTemplate processes an AIML template and returns the response
 func (g *Golem) ProcessTemplate(template string, wildcards map[string]string) string {
+	kb := g.knowledgeBase()
 	// Create variable context for template processing
 	ctx := &VariableContext{
 		LocalVars:     make(map[string]string),
 		Session:       nil, // No session context for ProcessTemplate
 		Topic:         "",  // Topic tracking will be implemented in future version
-		KnowledgeBase: g.aimlKB,
+		KnowledgeBase: kb,
 	}
 
-	if g.aimlKB != nil {
-		g.LogInfo("ProcessTemplate: KB pointer=%p, KB variables=%v", g.aimlKB, g.aimlKB.Variables)
+	if kb != nil {
+		g.LogInfo("ProcessTemplate: KB pointer=%p, KB variables=%v", kb, kb.Variables)
 		g.LogInfo("ProcessTemplate: Context KB pointer=%p, Context KB variables=%v", ctx.KnowledgeBase, ctx.KnowledgeBase.Variables)
 	} else {
 		g.LogInfo("ProcessTemplate: No knowledge base set")
@@ -1611,8 +1597,8 @@ func (g *Golem) ProcessTemplate(template string, wildcards map[string]string) st
 
 	result := g.processTemplateWithContext(template, wildcards, ctx)
 
-	if g.aimlKB != nil {
-		g.LogInfo("ProcessTemplate: After processing, KB pointer=%p, KB variables=%v", g.aimlKB, g.aimlKB.Variables)
+	if kb != nil {
+		g.LogInfo("ProcessTemplate: After processing, KB pointer=%p, KB variables=%v", kb, kb.Variables)
 		g.LogInfo("ProcessTemplate: After processing, Context KB pointer=%p, Context KB variables=%v", ctx.KnowledgeBase, ctx.KnowledgeBase.Variables)
 	}
 
@@ -1623,22 +1609,18 @@ func (g *Golem) ProcessTemplate(template string, wildcards map[string]string) st
 func (g *Golem) ProcessTemplateWithContext(template string, wildcards map[string]string, session *ChatSession) string {
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	return g.processTemplateForSession(template, wildcards, session)
+	return g.processTemplateForSession(template, wildcards, session, g.knowledgeBaseOrNew())
 }
 
 // processTemplateForSession is ProcessTemplateWithContext for a caller that
-// holds the session's lock
-func (g *Golem) processTemplateForSession(template string, wildcards map[string]string, session *ChatSession) string {
+// holds the session's lock, with the knowledge base to use
+func (g *Golem) processTemplateForSession(template string, wildcards map[string]string, session *ChatSession, kb *AIMLKnowledgeBase) string {
 	// Create variable context for template processing
-	// Ensure knowledge base is initialized for variable/collection operations
-	if g.aimlKB == nil {
-		g.aimlKB = NewAIMLKnowledgeBase()
-	}
 	ctx := &VariableContext{
 		LocalVars:      make(map[string]string),
 		Session:        session,
 		Topic:          session.GetSessionTopic(),
-		KnowledgeBase:  g.aimlKB,
+		KnowledgeBase:  kb,
 		RecursionDepth: 0,
 	}
 
@@ -2108,6 +2090,7 @@ func (g *Golem) fixGenderVerbAgreement(text string) string {
 
 // processSRAITagsWithContext processes <srai> tags with variable context
 func (g *Golem) processSRAITagsWithContext(template string, ctx *VariableContext) string {
+	kb := g.contextKnowledgeBase(ctx)
 	// Check recursion depth to prevent infinite recursion
 	if ctx.RecursionDepth >= MaxSRAIRecursionDepth {
 		g.LogWarn("SRAI recursion depth limit reached (%d), stopping recursion", MaxSRAIRecursionDepth)
@@ -2125,9 +2108,9 @@ func (g *Golem) processSRAITagsWithContext(template string, ctx *VariableContext
 			g.LogInfo("Processing SRAI: '%s' (depth: %d)", sraiContent, ctx.RecursionDepth)
 
 			// Process the SRAI content as a new pattern
-			if g.aimlKB != nil {
+			if kb != nil {
 				// Try to match the SRAI content as a pattern
-				category, wildcards, err := g.aimlKB.MatchPattern(sraiContent)
+				category, wildcards, err := kb.MatchPattern(sraiContent)
 				g.LogInfo("SRAI pattern match: content='%s', err=%v, category=%v, wildcards=%v", sraiContent, err, category != nil, wildcards)
 				if err == nil && category != nil {
 					// Create a new context with incremented recursion depth
@@ -4062,7 +4045,8 @@ func (g *Golem) processSRAIXTagsWithContext(template string, ctx *VariableContex
 
 // processLearnTagsWithContext processes <learn> and <learnf> tags with variable context
 func (g *Golem) processLearnTagsWithContext(template string, ctx *VariableContext) string {
-	if g.aimlKB == nil {
+	kb := g.contextKnowledgeBase(ctx)
+	if kb == nil {
 		return template
 	}
 
@@ -4135,7 +4119,8 @@ func (g *Golem) processLearnTagsWithContext(template string, ctx *VariableContex
 
 // processUnlearnTagsWithContext processes <unlearn> and <unlearnf> tags with variable context
 func (g *Golem) processUnlearnTagsWithContext(template string, ctx *VariableContext) string {
-	if g.aimlKB == nil {
+	kb := g.contextKnowledgeBase(ctx)
+	if kb == nil {
 		return template
 	}
 
@@ -4588,7 +4573,8 @@ func (g *Golem) processTemplateContentForVariable(template string, wildcards map
 
 // replacePropertyTags replaces <get name="property"/> tags with property values
 func (g *Golem) replacePropertyTags(template string) string {
-	if g.aimlKB == nil {
+	kb := g.knowledgeBase()
+	if kb == nil {
 		return template
 	}
 
@@ -4599,7 +4585,7 @@ func (g *Golem) replacePropertyTags(template string) string {
 	for _, match := range matches {
 		if len(match) > 1 {
 			propertyName := match[1]
-			propertyValue := g.aimlKB.GetProperty(propertyName)
+			propertyValue := kb.GetProperty(propertyName)
 			if propertyValue != "" {
 				template = strings.ReplaceAll(template, match[0], propertyValue)
 			}
@@ -4838,6 +4824,7 @@ func (g *Golem) processThinkTags(template string, session *ChatSession) string {
 
 // processThinkContent processes the content inside <think> tags
 func (g *Golem) processThinkContent(content string, session *ChatSession) {
+	kb := g.knowledgeBase()
 	// Process date/time tags in think content first
 	content = g.processDateTimeTags(content)
 
@@ -4856,9 +4843,9 @@ func (g *Golem) processThinkContent(content string, session *ChatSession) {
 			if session != nil {
 				// Set in session variables
 				session.Variables[varName] = varValue
-			} else if g.aimlKB != nil {
+			} else if kb != nil {
 				// Set in knowledge base variables
-				g.aimlKB.Variables[varName] = varValue
+				kb.setVariable(varName, varValue)
 			}
 		}
 	}
@@ -4965,12 +4952,13 @@ func (g *Golem) processConditionListItems(content string, actualValue string, se
 
 // processConditionTemplate processes condition content through the full template pipeline
 func (g *Golem) processConditionTemplate(content string, session *ChatSession) string {
+	kb := g.knowledgeBase()
 	// Create variable context for condition processing
 	ctx := &VariableContext{
 		LocalVars:      make(map[string]string),
 		Session:        session,
 		Topic:          "", // Topic tracking will be implemented in future version
-		KnowledgeBase:  g.aimlKB,
+		KnowledgeBase:  kb,
 		RecursionDepth: 0,
 	}
 
@@ -5004,12 +4992,13 @@ type VariableContext struct {
 
 // getVariableValue retrieves a variable value from the appropriate context with proper scope resolution
 func (g *Golem) getVariableValue(varName string, session *ChatSession) string {
+	kb := g.knowledgeBase()
 	// Create variable context
 	ctx := &VariableContext{
 		LocalVars:      make(map[string]string),
 		Session:        session,
 		Topic:          "", // Topic tracking will be implemented in future version
-		KnowledgeBase:  g.aimlKB,
+		KnowledgeBase:  kb,
 		RecursionDepth: 0,
 	}
 
@@ -5730,6 +5719,7 @@ func (g *Golem) looksLikeGoTimeFormat(format string) bool {
 
 // processRandomTags processes <random> tags and selects a random <li> element
 func (g *Golem) processRandomTags(template string) string {
+	kb := g.knowledgeBase()
 	// Find all <random> tags
 	randomRegex := regexp.MustCompile(`(?s)<random>(.*?)</random>`)
 	matches := randomRegex.FindAllStringSubmatch(template, -1)
@@ -5765,7 +5755,7 @@ func (g *Golem) processRandomTags(template string) string {
 				LocalVars:      make(map[string]string),
 				Session:        nil, // Use nil session to rely on knowledge base variables
 				Topic:          "",
-				KnowledgeBase:  g.aimlKB,
+				KnowledgeBase:  kb,
 				RecursionDepth: 0,
 			})
 
@@ -7564,7 +7554,8 @@ func (g *Golem) normalizeForMatchingWithSubstitutions(input string) string {
 // applyLoadedSubstitutions applies loaded substitution rules to text
 // Substitutions are applied iteratively until no more changes occur, with longer patterns taking precedence
 func (g *Golem) applyLoadedSubstitutions(text string) string {
-	if g.aimlKB == nil || len(g.aimlKB.Substitutions) == 0 {
+	kb := g.knowledgeBase()
+	if kb == nil {
 		return text
 	}
 
@@ -7577,13 +7568,18 @@ func (g *Golem) applyLoadedSubstitutions(text string) string {
 	}
 	var allSubstitutions []substitution
 
-	for _, substitutionMap := range g.aimlKB.Substitutions {
+	kb.mu.RLock()
+	for _, substitutionMap := range kb.Substitutions {
 		for pattern, replacement := range substitutionMap {
 			allSubstitutions = append(allSubstitutions, substitution{
 				pattern:     strings.ToUpper(pattern),
 				replacement: strings.ToUpper(replacement),
 			})
 		}
+	}
+	kb.mu.RUnlock()
+	if len(allSubstitutions) == 0 {
+		return text
 	}
 
 	// Sort by pattern length (longest first)
@@ -8788,7 +8784,8 @@ func (g *Golem) validateNestingDepth(template string) error {
 
 // addSessionCategory adds a category to the session-specific knowledge base
 func (g *Golem) addSessionCategory(category Category, ctx *VariableContext) error {
-	if g.aimlKB == nil {
+	kb := g.contextKnowledgeBase(ctx)
+	if kb == nil {
 		return fmt.Errorf("no knowledge base available")
 	}
 
@@ -8804,7 +8801,7 @@ func (g *Golem) addSessionCategory(category Category, ctx *VariableContext) erro
 	// Build the index key including that and topic
 	key := categoryKey(category)
 
-	if g.aimlKB.addOrUpdateCategory(category) {
+	if kb.addOrUpdateCategory(category) {
 		g.LogInfo("Updated existing session category: %s", key)
 	} else {
 		g.LogInfo("Added new session category: %s", key)
@@ -8890,7 +8887,8 @@ func (g *Golem) categorizePattern(pattern string) string {
 
 // addPersistentCategory adds a category to the persistent knowledge base
 func (g *Golem) addPersistentCategory(category Category) error {
-	if g.aimlKB == nil {
+	kb := g.knowledgeBase()
+	if kb == nil {
 		return fmt.Errorf("no knowledge base available")
 	}
 
@@ -8903,7 +8901,7 @@ func (g *Golem) addPersistentCategory(category Category) error {
 	normalizedPattern := NormalizePattern(category.Pattern)
 	key := categoryKey(category)
 
-	if g.aimlKB.addOrUpdateCategory(category) {
+	if kb.addOrUpdateCategory(category) {
 		g.LogInfo("Updated existing persistent category: %s", key)
 	} else {
 		g.LogInfo("Added new persistent category: %s", key)
@@ -8926,12 +8924,13 @@ func (g *Golem) addPersistentCategory(category Category) error {
 
 // removeSessionCategory removes a category from the session-specific knowledge base
 func (g *Golem) removeSessionCategory(category Category, ctx *VariableContext) error {
-	if g.aimlKB == nil {
+	kb := g.contextKnowledgeBase(ctx)
+	if kb == nil {
 		return fmt.Errorf("no knowledge base available")
 	}
 
 	key := categoryKey(category)
-	if !g.aimlKB.removeCategoryByKey(key) {
+	if !kb.removeCategoryByKey(key) {
 		g.LogInfo("Category not found for removal: %s", key)
 		return fmt.Errorf("category not found: %s", key)
 	}
@@ -8947,12 +8946,13 @@ func (g *Golem) removeSessionCategory(category Category, ctx *VariableContext) e
 
 // removePersistentCategory removes a category from the persistent knowledge base
 func (g *Golem) removePersistentCategory(category Category) error {
-	if g.aimlKB == nil {
+	kb := g.knowledgeBase()
+	if kb == nil {
 		return fmt.Errorf("no knowledge base available")
 	}
 
 	key := categoryKey(category)
-	if !g.aimlKB.removeCategoryByKey(key) {
+	if !kb.removeCategoryByKey(key) {
 		g.LogInfo("Category not found for removal: %s", key)
 		return fmt.Errorf("category not found: %s", key)
 	}

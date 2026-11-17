@@ -175,11 +175,11 @@ func main() {
 
 #### Concurrency
 
-One `Golem` can serve many goroutines. Load and configure it first, then give each user or conversation its own session:
+One `Golem` can serve many goroutines, and you can load or replace AIML while it does. Give each user or conversation its own session:
 
 ```go
 g := golem.New(false)
-g.LoadAIMLFromDirectory("aiml")   // setup: before serving
+g.Execute("load", []string{"aiml"}) // also safe to repeat while serving
 
 // in each request handler
 session := g.CreateSession(userID) // once per user

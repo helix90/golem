@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -264,17 +265,16 @@ type SessionLearningStats struct {
 // - Library mode: User manages instance lifecycle (state controlled by user)
 //
 // THREAD SAFETY:
-// One Golem can serve many goroutines. Load and configure it (LoadAIML*,
-// SetKnowledgeBase, SetLogLevel, ...) before serving; those calls are not
-// guarded. After that, the chat, session and cache methods are safe from any
-// goroutine. Different sessions run in parallel; calls on the same session
-// run one at a time. See ARCHITECTURE.md, "Thread Safety", for the full rules.
+// One Golem can serve many goroutines, and AIML can be loaded or replaced
+// (LoadAIMLFromString, SetKnowledgeBase) while it does. Different sessions
+// run in parallel; calls on the same session run one at a time. See
+// ARCHITECTURE.md, "Thread Safety", for the full rules.
 //
 // DO NOT modify the state management without understanding the implications
 // for all three usage patterns.
 type Golem struct {
 	verbose   bool
-	logLevel  LogLevel
+	logLevel  atomic.Int32 // a LogLevel; atomic so it can change while sessions log
 	logger    *log.Logger
 	aimlKB    *AIMLKnowledgeBase
 	sessions  map[string]*ChatSession
@@ -284,6 +284,12 @@ type Golem struct {
 	sraixMgr  *SRAIXManager
 	// Mutex for thread-safe session management
 	sessionMutex sync.RWMutex
+	// kbMu guards the aimlKB pointer; the knowledge base has its own locks
+	// for its contents. Read the pointer with knowledgeBase().
+	kbMu sync.RWMutex
+	// loadMu makes loads run one at a time, so that concurrent loads do not
+	// lose each other's changes
+	loadMu sync.Mutex
 	// Text processing components
 	sentenceSplitter     *SentenceSplitter
 	wordBoundaryDetector *WordBoundaryDetector
@@ -316,7 +322,7 @@ type Golem struct {
 	randomSeed int64
 	// Tree-based processing components
 	treeProcessor     *TreeProcessor
-	useTreeProcessing bool // Feature flag for tree-based processing
+	useTreeProcessing atomic.Bool // Feature flag for tree-based processing
 }
 
 // NewRegexCache creates a new regex cache
@@ -503,7 +509,7 @@ func (cache *TextNormalizationCache) GetNormalizedText(golem *Golem, input strin
 	case "NormalizePattern":
 		result = NormalizePattern(input)
 		// Apply loaded substitutions for pattern normalization
-		if golem != nil && golem.aimlKB != nil && len(golem.aimlKB.Substitutions) > 0 {
+		if golem != nil {
 			result = golem.applyLoadedSubstitutions(result)
 		}
 	case "NormalizeForMatchingCasePreserving":
@@ -1158,7 +1164,6 @@ func New(verbose bool) *Golem {
 
 	g := &Golem{
 		verbose:                    verbose,
-		logLevel:                   logLevel,
 		logger:                     logger,
 		sessions:                   make(map[string]*ChatSession),
 		sessionID:                  1,
@@ -1178,8 +1183,9 @@ func New(verbose bool) *Golem {
 		templateTagProcessingCache: templateTagProcessingCache,
 		patternMatchingCache:       patternMatchingCache,
 		persistentLearning:         persistentLearning,
-		useTreeProcessing:          true, // Tree-based AST processing is now the default (correct AIML behavior)
 	}
+	g.logLevel.Store(int32(logLevel))
+	g.useTreeProcessing.Store(true) // Tree-based AST processing is now the default (correct AIML behavior)
 	// Created up front so concurrent template processing never races to
 	// initialize it
 	g.treeProcessor = NewTreeProcessor(g)
@@ -1188,42 +1194,42 @@ func New(verbose bool) *Golem {
 
 // LogError logs an error message
 func (g *Golem) LogError(format string, args ...interface{}) {
-	if g.logLevel >= LogLevelError {
+	if g.GetLogLevel() >= LogLevelError {
 		g.logger.Printf("[ERROR] "+format, args...)
 	}
 }
 
 // LogWarn logs a warning message
 func (g *Golem) LogWarn(format string, args ...interface{}) {
-	if g.logLevel >= LogLevelWarn {
+	if g.GetLogLevel() >= LogLevelWarn {
 		g.logger.Printf("[WARN] "+format, args...)
 	}
 }
 
 // LogInfo logs an info message
 func (g *Golem) LogInfo(format string, args ...interface{}) {
-	if g.logLevel >= LogLevelInfo {
+	if g.GetLogLevel() >= LogLevelInfo {
 		g.logger.Printf("[INFO] "+format, args...)
 	}
 }
 
 // LogDebug logs a debug message
 func (g *Golem) LogDebug(format string, args ...interface{}) {
-	if g.logLevel >= LogLevelDebug {
+	if g.GetLogLevel() >= LogLevelDebug {
 		g.logger.Printf("[DEBUG] "+format, args...)
 	}
 }
 
 // LogTrace logs a trace message
 func (g *Golem) LogTrace(format string, args ...interface{}) {
-	if g.logLevel >= LogLevelTrace {
+	if g.GetLogLevel() >= LogLevelTrace {
 		g.logger.Printf("[TRACE] "+format, args...)
 	}
 }
 
 // EnableTreeProcessing enables tree-based tag processing
 func (g *Golem) EnableTreeProcessing() {
-	g.useTreeProcessing = true
+	g.useTreeProcessing.Store(true)
 	if g.treeProcessor == nil {
 		g.treeProcessor = NewTreeProcessor(g)
 	}
@@ -1232,13 +1238,13 @@ func (g *Golem) EnableTreeProcessing() {
 
 // DisableTreeProcessing disables tree-based tag processing (reverts to regex-based)
 func (g *Golem) DisableTreeProcessing() {
-	g.useTreeProcessing = false
+	g.useTreeProcessing.Store(false)
 	g.LogInfo("Tree-based tag processing disabled, using regex-based processing")
 }
 
 // IsTreeProcessingEnabled returns whether tree-based processing is enabled
 func (g *Golem) IsTreeProcessingEnabled() bool {
-	return g.useTreeProcessing
+	return g.useTreeProcessing.Load()
 }
 
 // SetPersistentLearningPath sets the path for persistent learning storage
@@ -1258,11 +1264,12 @@ func (g *Golem) GetPersistentLearningInfo() (map[string]interface{}, error) {
 
 // LoadPersistentCategories loads categories from persistent storage
 func (g *Golem) LoadPersistentCategories() error {
+	kb := g.knowledgeBase()
 	if g.persistentLearning == nil {
 		return fmt.Errorf("persistent learning not initialized")
 	}
 
-	if g.aimlKB == nil {
+	if kb == nil {
 		return fmt.Errorf("no knowledge base available")
 	}
 
@@ -1273,7 +1280,7 @@ func (g *Golem) LoadPersistentCategories() error {
 
 	// Add categories to the knowledge base
 	for _, category := range categories {
-		g.aimlKB.addOrUpdateCategory(category)
+		kb.addOrUpdateCategory(category)
 	}
 
 	g.LogInfo("Loaded %d persistent categories", len(categories))
@@ -1282,15 +1289,16 @@ func (g *Golem) LoadPersistentCategories() error {
 
 // SavePersistentCategories saves all current categories to persistent storage
 func (g *Golem) SavePersistentCategories(source string) error {
+	kb := g.knowledgeBase()
 	if g.persistentLearning == nil {
 		return fmt.Errorf("persistent learning not initialized")
 	}
 
-	if g.aimlKB == nil {
+	if kb == nil {
 		return fmt.Errorf("no knowledge base available")
 	}
 
-	return g.persistentLearning.SavePersistentCategories(g.aimlKB.snapshotCategories(), source)
+	return g.persistentLearning.SavePersistentCategories(kb.snapshotCategories(), source)
 }
 
 // GetSessionLearningStats returns learning statistics for a session
@@ -1339,6 +1347,7 @@ func (g *Golem) GetSessionLearnedCategories(sessionID string) ([]Category, error
 
 // ClearSessionLearning clears all learned categories from a session
 func (g *Golem) ClearSessionLearning(sessionID string) error {
+	kb := g.knowledgeBase()
 	g.sessionMutex.RLock()
 	session, exists := g.sessions[sessionID]
 	g.sessionMutex.RUnlock()
@@ -1352,7 +1361,7 @@ func (g *Golem) ClearSessionLearning(sessionID string) error {
 
 	// Remove all session-learned categories from knowledge base
 	for _, category := range session.LearnedCategories {
-		g.aimlKB.removeCategoryByKey(categoryKey(category))
+		kb.removeCategoryByKey(categoryKey(category))
 	}
 
 	// Clear session learning data
@@ -1373,10 +1382,11 @@ func (g *Golem) ClearSessionLearning(sessionID string) error {
 
 // GetLearningSummary returns a summary of learning across all sessions
 func (g *Golem) GetLearningSummary() map[string]interface{} {
+	kb := g.knowledgeBase()
 	sessions := g.sessionSnapshot()
 	summary := map[string]interface{}{
 		"total_sessions":   len(sessions),
-		"total_categories": g.aimlKB.categoryCount(),
+		"total_categories": kb.categoryCount(),
 		"session_stats":    make(map[string]interface{}),
 		"global_stats": map[string]interface{}{
 			"total_learned":     0,
@@ -1432,12 +1442,12 @@ func (g *Golem) sessionSnapshot() map[string]*ChatSession {
 
 // SetLogLevel sets the logging level
 func (g *Golem) SetLogLevel(level LogLevel) {
-	g.logLevel = level
+	g.logLevel.Store(int32(level))
 }
 
 // GetLogLevel returns the current logging level
 func (g *Golem) GetLogLevel() LogLevel {
-	return g.logLevel
+	return LogLevel(g.logLevel.Load())
 }
 
 // LogVerbose logs a message only if verbose mode is enabled (for backward compatibility)
@@ -1706,7 +1716,8 @@ func (g *Golem) loadCommand(args []string) error {
 
 // ChatCommand handles the chat command
 func (g *Golem) chatCommand(args []string) error {
-	if g.aimlKB == nil {
+	kb := g.knowledgeBase()
+	if kb == nil {
 		return fmt.Errorf("no AIML knowledge base loaded. Use 'load' command first")
 	}
 
@@ -1747,9 +1758,9 @@ func (g *Golem) chatCommand(args []string) error {
 	session.AddToRequestHistory(input)
 
 	// Match pattern and get response
-	category, wildcards, err := g.aimlKB.MatchPattern(input)
+	category, wildcards, err := kb.MatchPattern(input)
 	if err != nil {
-		response := g.aimlKB.GetProperty("default_response")
+		response := kb.GetProperty("default_response")
 		if response == "" {
 			response = "I don't understand: " + input
 		}
@@ -1759,7 +1770,7 @@ func (g *Golem) chatCommand(args []string) error {
 	}
 
 	// Process template with session context
-	response := g.processTemplateWithSession(category.Template, wildcards, session)
+	response := g.processTemplateWithSession(category.Template, wildcards, session, kb)
 	fmt.Printf("Golem: %s\n", response)
 	session.History = append(session.History, "Golem: "+response)
 
@@ -1771,7 +1782,8 @@ func (g *Golem) chatCommand(args []string) error {
 
 // PropertiesCommand handles the properties command
 func (g *Golem) propertiesCommand(args []string) error {
-	if g.aimlKB == nil {
+	kb := g.knowledgeBase()
+	if kb == nil {
 		return fmt.Errorf("no AIML knowledge base loaded. Use 'load' command first")
 	}
 
@@ -1779,7 +1791,9 @@ func (g *Golem) propertiesCommand(args []string) error {
 		// Show all properties
 		fmt.Println("Bot Properties:")
 		fmt.Println(strings.Repeat("=", 50))
-		for key, value := range g.aimlKB.Properties {
+		kb.mu.RLock()
+		defer kb.mu.RUnlock()
+		for key, value := range kb.Properties {
 			fmt.Printf("%-20s: %s\n", key, value)
 		}
 		return nil
@@ -1788,7 +1802,7 @@ func (g *Golem) propertiesCommand(args []string) error {
 	if len(args) == 1 {
 		// Show specific property
 		key := args[0]
-		value := g.aimlKB.GetProperty(key)
+		value := kb.GetProperty(key)
 		if value == "" {
 			fmt.Printf("Property '%s' not found\n", key)
 		} else {
@@ -1801,7 +1815,7 @@ func (g *Golem) propertiesCommand(args []string) error {
 		// Set property
 		key := args[0]
 		value := args[1]
-		g.aimlKB.SetProperty(key, value)
+		kb.SetProperty(key, value)
 		fmt.Printf("Set %s = %s\n", key, value)
 		return nil
 	}
@@ -1867,7 +1881,10 @@ func (g *Golem) ProcessData(input string) (string, error) {
 // As AIML 2.0 specifies, input is split into sentences, each sentence is
 // matched and answered in turn, and the responses are joined.
 func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error) {
-	if g.aimlKB == nil {
+	// The whole call uses the knowledge base loaded when it started, even if
+	// another goroutine replaces it meanwhile
+	kb := g.knowledgeBase()
+	if kb == nil {
 		return "", fmt.Errorf("no AIML knowledge base loaded")
 	}
 	session.mu.Lock()
@@ -1875,12 +1892,12 @@ func (g *Golem) ProcessInput(input string, session *ChatSession) (string, error)
 
 	sentences := inputSentences(input)
 	if len(sentences) <= 1 {
-		return g.processSentence(input, session)
+		return g.processSentence(input, session, kb)
 	}
 	var responses []string
 	var firstErr error
 	for _, sentence := range sentences {
-		response, err := g.processSentence(sentence, session)
+		response, err := g.processSentence(sentence, session, kb)
 		if err != nil {
 			g.LogInfo("No response for sentence %q: %v", sentence, err)
 			if firstErr == nil {
@@ -1913,7 +1930,7 @@ func inputSentences(input string) []string {
 }
 
 // processSentence matches and answers one sentence of input
-func (g *Golem) processSentence(input string, session *ChatSession) (string, error) {
+func (g *Golem) processSentence(input string, session *ChatSession, kb *AIMLKnowledgeBase) (string, error) {
 
 	g.LogInfo("Processing input: %s", input)
 
@@ -1931,13 +1948,13 @@ func (g *Golem) processSentence(input string, session *ChatSession) (string, err
 	}
 
 	// Try to match pattern with full context (using index 0 for last response)
-	category, wildcards, err := g.aimlKB.MatchPatternWithTopicAndThatIndexOriginalCached(g, normalizedInput, input, currentTopic, normalizedThat, 0)
+	category, wildcards, err := kb.MatchPatternWithTopicAndThatIndexOriginalCached(g, normalizedInput, input, currentTopic, normalizedThat, 0)
 	if err != nil {
 		return "", err
 	}
 
 	// Process template with context
-	response := g.processTemplateForSession(category.Template, wildcards, session)
+	response := g.processTemplateForSession(category.Template, wildcards, session, kb)
 
 	// Add to history
 	session.History = append(session.History, input)
@@ -1959,7 +1976,8 @@ func (g *Golem) processSentence(input string, session *ChatSession) (string, err
 
 // ProcessInputWithThatIndex processes user input with specific that context index
 func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, thatIndex int) (string, error) {
-	if g.aimlKB == nil {
+	kb := g.knowledgeBase()
+	if kb == nil {
 		return "", fmt.Errorf("no AIML knowledge base loaded")
 	}
 	session.mu.Lock()
@@ -1984,13 +2002,13 @@ func (g *Golem) ProcessInputWithThatIndex(input string, session *ChatSession, th
 	}
 
 	// Try to match pattern with full context and specific that index
-	category, wildcards, err := g.aimlKB.MatchPatternWithTopicAndThatIndexOriginalCached(g, normalizedInput, input, currentTopic, normalizedThat, thatIndex)
+	category, wildcards, err := kb.MatchPatternWithTopicAndThatIndexOriginalCached(g, normalizedInput, input, currentTopic, normalizedThat, thatIndex)
 	if err != nil {
 		return "", err
 	}
 
 	// Process template with context
-	response := g.processTemplateForSession(category.Template, wildcards, session)
+	response := g.processTemplateForSession(category.Template, wildcards, session, kb)
 
 	// Add to history
 	session.History = append(session.History, input)
@@ -2052,31 +2070,83 @@ func (g *Golem) LoadFile(filename string) (string, error) {
 	return string(content), nil
 }
 
-// SetKnowledgeBase sets the AIML knowledge base
+// SetKnowledgeBase sets the AIML knowledge base. It may be called while
+// other goroutines are chatting: calls already in progress finish with the
+// old knowledge base, and later calls use the new one.
 func (g *Golem) SetKnowledgeBase(kb *AIMLKnowledgeBase) {
+	g.loadMu.Lock()
+	defer g.loadMu.Unlock()
+	g.setKnowledgeBase(kb)
+}
+
+// setKnowledgeBase is SetKnowledgeBase for a caller that holds loadMu
+func (g *Golem) setKnowledgeBase(kb *AIMLKnowledgeBase) {
+	g.kbMu.Lock()
 	g.aimlKB = kb
+	g.kbMu.Unlock()
 
 	// Register properties handler now that we have a knowledge base
 	propertiesHandler := &PropertiesHandler{aimlKB: kb}
 	g.oobMgr.RegisterHandler(propertiesHandler)
 
+	var properties map[string]string
+	if kb != nil {
+		kb.mu.RLock()
+		properties = make(map[string]string, len(kb.Properties))
+		for key, value := range kb.Properties {
+			properties[key] = value
+		}
+		kb.mu.RUnlock()
+	}
+
 	// Configure SRAIX services from properties if SRAIX manager exists
-	if g.sraixMgr != nil && kb != nil && kb.Properties != nil {
-		g.LogInfo("Configuring SRAIX from %d properties...", len(kb.Properties))
-		if err := g.sraixMgr.ConfigureFromProperties(kb.Properties); err != nil {
+	if g.sraixMgr != nil && len(properties) > 0 {
+		g.LogInfo("Configuring SRAIX from %d properties...", len(properties))
+		if err := g.sraixMgr.ConfigureFromProperties(properties); err != nil {
 			g.LogWarn("Failed to configure SRAIX from properties: %v", err)
 		} else {
 			g.LogInfo("SRAIX configuration complete")
 		}
 	} else {
-		g.LogInfo("Skipping SRAIX configuration: sraixMgr=%v, kb=%v, properties=%v",
-			g.sraixMgr != nil, kb != nil, kb != nil && kb.Properties != nil)
+		g.LogInfo("Skipping SRAIX configuration: sraixMgr=%v, kb=%v, properties=%d",
+			g.sraixMgr != nil, kb != nil, len(properties))
 	}
 }
 
 // GetKnowledgeBase returns the current AIML knowledge base
 func (g *Golem) GetKnowledgeBase() *AIMLKnowledgeBase {
+	return g.knowledgeBase()
+}
+
+// knowledgeBase returns the current knowledge base, or nil if none is loaded
+func (g *Golem) knowledgeBase() *AIMLKnowledgeBase {
+	g.kbMu.RLock()
+	defer g.kbMu.RUnlock()
 	return g.aimlKB
+}
+
+// knowledgeBaseOrNew returns the current knowledge base, first creating an
+// empty one if none is loaded, so that templates can still set variables
+// and collections
+func (g *Golem) knowledgeBaseOrNew() *AIMLKnowledgeBase {
+	if kb := g.knowledgeBase(); kb != nil {
+		return kb
+	}
+	g.kbMu.Lock()
+	defer g.kbMu.Unlock()
+	if g.aimlKB == nil {
+		g.aimlKB = NewAIMLKnowledgeBase()
+	}
+	return g.aimlKB
+}
+
+// contextKnowledgeBase returns the knowledge base a template is being
+// processed with, or the current one if the context has none
+func (g *Golem) contextKnowledgeBase(ctx *VariableContext) *AIMLKnowledgeBase {
+	if ctx != nil && ctx.KnowledgeBase != nil {
+		return ctx.KnowledgeBase
+	}
+	return g.knowledgeBase()
 }
 
 // SessionCommand handles session management
@@ -2264,23 +2334,18 @@ func (g *Golem) getCurrentSession() *ChatSession {
 func (g *Golem) ProcessTemplateWithSession(template string, wildcards map[string]string, session *ChatSession) string {
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	return g.processTemplateWithSession(template, wildcards, session)
+	return g.processTemplateWithSession(template, wildcards, session, g.knowledgeBaseOrNew())
 }
 
 // processTemplateWithSession is ProcessTemplateWithSession for a caller that
-// holds the session's lock
-func (g *Golem) processTemplateWithSession(template string, wildcards map[string]string, session *ChatSession) string {
-	// Ensure knowledge base is initialized for variable/collection operations
-	if g.aimlKB == nil {
-		g.aimlKB = NewAIMLKnowledgeBase()
-	}
-
+// holds the session's lock, with the knowledge base to use
+func (g *Golem) processTemplateWithSession(template string, wildcards map[string]string, session *ChatSession, kb *AIMLKnowledgeBase) string {
 	// Create variable context for template processing with session
 	ctx := &VariableContext{
 		LocalVars:      make(map[string]string),
 		Session:        session,
 		Topic:          "", // Topic tracking will be implemented in future version
-		KnowledgeBase:  g.aimlKB,
+		KnowledgeBase:  kb,
 		RecursionDepth: 0,
 	}
 
@@ -2566,8 +2631,10 @@ func (g *Golem) UpdateTemplateProcessingConfig(config *TemplateProcessingConfig)
 	g.templateConfig = config
 	// Update cache settings
 	if g.templateCache != nil {
+		g.templateCache.mutex.Lock()
 		g.templateCache.MaxSize = config.CacheSize
 		g.templateCache.TTL = config.CacheTTL
+		g.templateCache.mutex.Unlock()
 	}
 }
 
@@ -2760,7 +2827,8 @@ func (g *Golem) ClearPatternMatchingCache() {
 
 // InvalidatePatternMatchingKnowledgeBase invalidates pattern matching cache when knowledge base changes
 func (g *Golem) InvalidatePatternMatchingKnowledgeBase() {
-	if g.patternMatchingCache != nil && g.aimlKB != nil {
+	kb := g.knowledgeBase()
+	if g.patternMatchingCache != nil && kb != nil {
 		// Generate a simple hash of the knowledge base state
 		kbHash := g.generateKnowledgeBaseHash()
 		g.patternMatchingCache.InvalidateKnowledgeBase(kbHash)
@@ -2776,16 +2844,16 @@ func (g *Golem) InvalidatePatternMatchingSet(setName string) {
 
 // generateKnowledgeBaseHash creates a simple hash of the knowledge base state
 func (g *Golem) generateKnowledgeBaseHash() string {
-	if g.aimlKB == nil {
+	kb := g.knowledgeBase()
+	if kb == nil {
 		return ""
 	}
 
 	// Create a simple hash based on pattern count and set count
-	patternCount := g.aimlKB.patternCount()
-	setCount := 0
-	if g.aimlKB.Sets != nil {
-		setCount = len(g.aimlKB.Sets)
-	}
+	patternCount := kb.patternCount()
+	kb.mu.RLock()
+	setCount := len(kb.Sets)
+	kb.mu.RUnlock()
 
 	return fmt.Sprintf("patterns:%d,sets:%d", patternCount, setCount)
 }

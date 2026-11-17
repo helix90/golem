@@ -604,7 +604,7 @@ func (tp *TreeProcessor) processSRAITag(_ *ASTNode, content string) string {
 
 	kb := tp.ctx.KnowledgeBase
 	if kb == nil {
-		kb = tp.golem.aimlKB
+		kb = tp.golem.knowledgeBase()
 	}
 
 	// Try to match the SRAI content as a new AIML pattern
@@ -2675,7 +2675,7 @@ func (tp *TreeProcessor) processUnlearnTag(_ *ASTNode, content string) string {
 
 func (tp *TreeProcessor) processUnlearnfTag(_ *ASTNode, content string) string {
 	// Unlearnf tag - remove categories from persistent storage
-	if tp.golem.aimlKB == nil {
+	if tp.golem.contextKnowledgeBase(tp.ctx) == nil {
 		tp.golem.LogWarn("Unlearnf: No knowledge base available")
 		return ""
 	}

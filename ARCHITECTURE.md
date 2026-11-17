@@ -83,16 +83,32 @@ golem -help
 
 ## Thread Safety
 
-One `Golem` instance can serve many goroutines at once, as long as you
-finish setting it up before you start serving.
+One `Golem` instance can serve many goroutines at once, and you can load
+or replace AIML while it does.
 
 ### Setup: one goroutine, before serving
 
-These calls change the engine itself and are **not** guarded against
-concurrent chat. Make them before any goroutine starts chatting:
+Only these calls are **not** guarded against concurrent chat. Make them
+before any goroutine starts chatting:
 
-- Loading: `LoadAIML*`, `LoadFile`, `Execute("load", ...)`, `LoadSRAIXConfigs*`, `AddSRAIXConfig`
-- Configuration: `SetKnowledgeBase`, `SetLogLevel`, `EnableTreeProcessing`, `DisableTreeProcessing`, `UpdateTemplateProcessingConfig`, `SetPersistentLearningPath`
+- `UpdateTemplateProcessingConfig` (only the legacy template pipeline reads it)
+- `SetPersistentLearningPath`
+
+### Loading and reloading: safe while serving
+
+- `LoadAIMLFromString` merges into the live knowledge base, holding its
+  locks. Sessions pause briefly while it runs; nothing they wrote before
+  is lost. Loads run one at a time.
+- `SetKnowledgeBase` (and `Execute("load", ...)`, which uses it) swaps in a
+  new knowledge base. Calls already in progress finish with the old one;
+  later calls use the new one. Anything a session writes to the old one
+  after the swap (variables, maps, `<learn>`ed categories) is lost with it.
+- `LoadAIML`, `LoadAIMLFromDirectory` and the other `Load*FromFile` /
+  `Load*FromDirectory` functions only build and return data, so they are
+  always safe. A knowledge base they return isn't shared until you pass it
+  to `SetKnowledgeBase`; don't change it after that except through Golem.
+- `LoadSRAIXConfigs*`, `AddSRAIXConfig`, `SetLogLevel`,
+  `EnableTreeProcessing` and `DisableTreeProcessing` are safe too.
 
 ### Serving: safe from any goroutine
 
@@ -130,11 +146,17 @@ Their changes are shared, so every session sees them.
   internal code that already holds it calls the unexported variants
   (`processTemplateForSession`, `processTemplateWithSession`). Never call an
   exported chat method from template processing — the lock is not reentrant.
+- `Golem.kbMu`: guards the `aimlKB` pointer. Read it with `knowledgeBase()`
+  (or `knowledgeBaseOrNew()`), once per call, and pass that knowledge base
+  down; template code uses `ctx.KnowledgeBase` (`contextKnowledgeBase(ctx)`).
+  Never read `g.aimlKB` directly outside the accessors.
+- `Golem.loadMu`: makes `LoadAIMLFromString` and `SetKnowledgeBase` run one
+  at a time.
 - `Golem.sessionMutex`: guards the session map, `currentID` and the session ID
   counter. Never wait for a session's lock while holding it: copy the sessions
   with `sessionSnapshot()`, release it, then lock each session.
 - `AIMLKnowledgeBase.mu`: guards `Variables`, `TopicVars`, `Properties`, `Maps`,
-  `Lists`, `Arrays` and `SetCollections`. Use the locked helpers
+  `Lists`, `Arrays`, `SetCollections`, `Sets`, `Topics` and `Substitutions`. Use the locked helpers
   (`lookupVariable`, `setVariable`, `property`, `GetProperty`, `SetProperty`)
   rather than reading the maps directly. Sections that hold it must not call
   back into variable resolution or the caches.
@@ -142,8 +164,9 @@ Their changes are shared, so every session sees them.
   takes the read lock, `<learn>`/`<unlearn>` the write lock.
 - Each cache has its own lock. Compute anything that reads the session or knowledge
   base (cache keys, scope hashes) *before* taking a cache lock.
-- Order, when more than one is held: `ChatSession.mu` → `patternsMu` /
-  `AIMLKnowledgeBase.mu` → cache locks.
+- Order, when more than one is held: `loadMu` → `ChatSession.mu` →
+  `patternsMu` → `AIMLKnowledgeBase.mu` → cache locks. `kbMu` is held only
+  to read or swap the pointer, never while taking another lock.
 - Run `make test-race` after touching any of this. The concurrency
   regression tests are in `pkg/golem/aiml_parsing_regression_test.go`.
 
@@ -152,9 +175,8 @@ Their changes are shared, so every session sees them.
 - The legacy regex processors in `aiml_native.go` (`process*TagsWithContext`)
   write knowledge-base collections without the lock. The tree processor, which
   is the default, doesn't use them.
-- `ProcessTemplateWithSession` and `ProcessTemplateWithContext` create an
-  empty knowledge base when none is loaded. That isn't safe across
-  goroutines, so load one before serving.
+- The legacy consolidated template pipeline's template cache and metrics
+  (`storeInTemplateCache`, `GetTemplateCacheStats`) aren't fully locked.
 
 ## Best Practices
 

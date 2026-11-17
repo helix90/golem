@@ -5,6 +5,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // OOBHandler defines the interface for Out-of-Band message handlers
@@ -25,8 +26,11 @@ type OOBHandler interface {
 // OOBManager manages OOB handlers and processing
 type OOBManager struct {
 	handlers map[string]OOBHandler
-	verbose  bool
-	logger   *log.Logger
+	// mu guards handlers, which a knowledge base reload registers while
+	// sessions process OOB messages
+	mu      sync.RWMutex
+	verbose bool
+	logger  *log.Logger
 }
 
 // NewOOBManager creates a new OOB manager
@@ -40,7 +44,9 @@ func NewOOBManager(verbose bool, logger *log.Logger) *OOBManager {
 
 // RegisterHandler registers a new OOB handler
 func (om *OOBManager) RegisterHandler(handler OOBHandler) {
+	om.mu.Lock()
 	om.handlers[handler.GetName()] = handler
+	om.mu.Unlock()
 	if om.verbose {
 		om.logger.Printf("Registered OOB handler: %s - %s", handler.GetName(), handler.GetDescription())
 	}
@@ -52,8 +58,15 @@ func (om *OOBManager) ProcessOOB(message string, session *ChatSession) (string, 
 		om.logger.Printf("Processing OOB message: %s", message)
 	}
 
-	// Try each handler to see if it can handle the message
+	// Try each handler to see if it can handle the message. The handlers
+	// are copied so that none runs while the lock is held.
+	om.mu.RLock()
+	handlers := make(map[string]OOBHandler, len(om.handlers))
 	for name, handler := range om.handlers {
+		handlers[name] = handler
+	}
+	om.mu.RUnlock()
+	for name, handler := range handlers {
 		if handler.CanHandle(message) {
 			if om.verbose {
 				om.logger.Printf("Using OOB handler: %s", name)
@@ -67,6 +80,8 @@ func (om *OOBManager) ProcessOOB(message string, session *ChatSession) (string, 
 
 // ListHandlers returns a list of registered OOB handlers
 func (om *OOBManager) ListHandlers() []string {
+	om.mu.RLock()
+	defer om.mu.RUnlock()
 	var names []string
 	for name := range om.handlers {
 		names = append(names, name)
@@ -76,6 +91,8 @@ func (om *OOBManager) ListHandlers() []string {
 
 // GetHandler returns a specific handler by name
 func (om *OOBManager) GetHandler(name string) (OOBHandler, bool) {
+	om.mu.RLock()
+	defer om.mu.RUnlock()
 	handler, exists := om.handlers[name]
 	return handler, exists
 }
