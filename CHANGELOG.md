@@ -12,6 +12,15 @@ All notable changes to Golem are recorded here.
 - AIML can be loaded or replaced while sessions chat. `LoadAIMLFromString` now merges into the live knowledge base under its locks instead of copying it, so it no longer loses what sessions write during a load, or topic variables. `SetKnowledgeBase` swaps the knowledge base safely: calls in progress finish with the old one. `SetLogLevel`, `Enable/DisableTreeProcessing` and OOB handler registration are safe while serving too.
 - The threading rules are documented in `ARCHITECTURE.md` under "Thread Safety".
 
+### Performance
+
+- Removed the variable resolution cache and the template tag processing cache. Building their cache keys meant hashing every session variable and most of the knowledge base on each `<get>`, `<condition>`, `<gender>`, `<person>` and similar tag, which cost more than the work being cached and grew with the knowledge base. Chat is now 2–7× faster on a typical template (more for large knowledge bases), with a quarter of the allocations.
+- Fixed: `<shuffle>` gave the same order every time for the same input, because its result was cached.
+
+### Deprecated
+
+- `GetVariableResolutionCacheStats` and `GetTemplateTagProcessingCacheStats` always report an empty cache, and `ClearVariableResolutionCache`, `ClearTemplateTagProcessingCache`, `InvalidateTemplateTagType` and `InvalidateTemplateTagContext` do nothing. The `VariableResolutionCache` and `TemplateTagProcessingCache` types are unused. They will be removed in a future major version.
+
 ## v1.6.0 - 2026-11-16
 
 This release replaces Golem's pattern matcher with an AIML 2.0 graphmaster. It also fixes many template, loader, concurrency and SRAIX bugs. Some changes alter how existing bots answer, so read **Upgrading** before you update.

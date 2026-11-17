@@ -1694,18 +1694,7 @@ func (g *Golem) processPersonTagsWithContext(template string, ctx *VariableConte
 			// Normalize whitespace before processing
 			content = strings.Join(strings.Fields(content), " ")
 
-			// Check cache first
-			var substitutedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("person", content, ctx); found {
-					substitutedContent = cached
-				} else {
-					substitutedContent = g.SubstitutePronouns(content)
-					g.templateTagProcessingCache.SetProcessedTag("person", content, substitutedContent, ctx)
-				}
-			} else {
-				substitutedContent = g.SubstitutePronouns(content)
-			}
+			substitutedContent := g.SubstitutePronouns(content)
 
 			g.LogInfo("Person tag: '%s' -> '%s'", match[1], substitutedContent)
 			template = strings.ReplaceAll(template, match[0], substitutedContent)
@@ -1731,18 +1720,7 @@ func (g *Golem) processGenderTagsWithContext(template string, ctx *VariableConte
 			// Normalize whitespace before processing
 			content = strings.Join(strings.Fields(content), " ")
 
-			// Check cache first
-			var substitutedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("gender", content, ctx); found {
-					substitutedContent = cached
-				} else {
-					substitutedContent = g.SubstituteGenderPronouns(content)
-					g.templateTagProcessingCache.SetProcessedTag("gender", content, substitutedContent, ctx)
-				}
-			} else {
-				substitutedContent = g.SubstituteGenderPronouns(content)
-			}
+			substitutedContent := g.SubstituteGenderPronouns(content)
 
 			g.LogInfo("Gender tag: '%s' -> '%s'", match[1], substitutedContent)
 			template = strings.ReplaceAll(template, match[0], substitutedContent)
@@ -2221,18 +2199,7 @@ func (g *Golem) processUppercaseTagsWithContext(template string, ctx *VariableCo
 			content := strings.TrimSpace(raw)
 			content = whitespaceNormRe.ReplaceAllString(content, " ")
 
-			// Check cache first
-			var processedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("uppercase", content, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.uppercaseTextPreservingTags(content)
-					g.templateTagProcessingCache.SetProcessedTag("uppercase", content, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.uppercaseTextPreservingTags(content)
-			}
+			processedContent := g.uppercaseTextPreservingTags(content)
 
 			g.LogDebug("Uppercase tag: '%s' -> '%s'", match[1], processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -2298,18 +2265,7 @@ func (g *Golem) processFormalTagsWithContext(template string, ctx *VariableConte
 			content := strings.TrimSpace(raw)
 			content = whitespaceNormRe.ReplaceAllString(content, " ")
 
-			// Check cache first
-			var processedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("formal", content, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.formatFormalText(content)
-					g.templateTagProcessingCache.SetProcessedTag("formal", content, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.formatFormalText(content)
-			}
+			processedContent := g.formatFormalText(content)
 
 			g.LogDebug("Formal tag: '%s' -> '%s'", match[1], processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -2388,18 +2344,7 @@ func (g *Golem) processExplodeTagsWithContext(template string, ctx *VariableCont
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("explode", content, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.explodeText(content)
-					g.templateTagProcessingCache.SetProcessedTag("explode", content, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.explodeText(content)
-			}
+			processedContent := g.explodeText(content)
 
 			g.LogDebug("Explode tag: '%s' -> '%s'", match[1], processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -2446,18 +2391,7 @@ func (g *Golem) processCapitalizeTagsWithContext(template string, ctx *VariableC
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("capitalize", content, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.capitalizeText(content)
-					g.templateTagProcessingCache.SetProcessedTag("capitalize", content, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.capitalizeText(content)
-			}
+			processedContent := g.capitalizeText(content)
 
 			g.LogDebug("Capitalize tag: '%s' -> '%s'", match[1], processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -2526,18 +2460,7 @@ func (g *Golem) processReverseTagsWithContext(template string, ctx *VariableCont
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("reverse", content, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.reverseText(content)
-					g.templateTagProcessingCache.SetProcessedTag("reverse", content, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.reverseText(content)
-			}
+			processedContent := g.reverseText(content)
 
 			g.LogDebug("Reverse tag: '%s' -> '%s'", match[1], processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -2583,18 +2506,7 @@ func (g *Golem) processAcronymTagsWithContext(template string, ctx *VariableCont
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("acronym", content, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.createAcronym(content)
-					g.templateTagProcessingCache.SetProcessedTag("acronym", content, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.createAcronym(content)
-			}
+			processedContent := g.createAcronym(content)
 
 			g.LogDebug("Acronym tag: '%s' -> '%s'", match[1], processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -2649,18 +2561,7 @@ func (g *Golem) processTrimTagsWithContext(template string, ctx *VariableContext
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("trim", content, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.trimText(content)
-					g.templateTagProcessingCache.SetProcessedTag("trim", content, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.trimText(content)
-			}
+			processedContent := g.trimText(content)
 
 			g.LogDebug("Trim tag: '%s' -> '%s'", match[1], processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -2698,19 +2599,7 @@ func (g *Golem) processSubstringTagsWithContext(template string, ctx *VariableCo
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			cacheKey := fmt.Sprintf("%s|%s|%s", startStr, endStr, content)
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("substring", cacheKey, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.extractSubstring(content, startStr, endStr)
-					g.templateTagProcessingCache.SetProcessedTag("substring", cacheKey, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.extractSubstring(content, startStr, endStr)
-			}
+			processedContent := g.extractSubstring(content, startStr, endStr)
 
 			g.LogDebug("Substring tag: '%s' (start=%s, end=%s) -> '%s'", match[3], startStr, endStr, processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -2782,19 +2671,7 @@ func (g *Golem) processReplaceTagsWithContext(template string, ctx *VariableCont
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			cacheKey := fmt.Sprintf("%s|%s|%s", searchStr, replaceStr, content)
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("replace", cacheKey, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.replaceText(content, searchStr, replaceStr)
-					g.templateTagProcessingCache.SetProcessedTag("replace", cacheKey, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.replaceText(content, searchStr, replaceStr)
-			}
+			processedContent := g.replaceText(content, searchStr, replaceStr)
 
 			g.LogDebug("Replace tag: '%s' (search='%s', replace='%s') -> '%s'", match[3], searchStr, replaceStr, processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -2829,18 +2706,7 @@ func (g *Golem) processPluralizeTagsWithContext(template string, ctx *VariableCo
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("pluralize", content, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.pluralizeText(content)
-					g.templateTagProcessingCache.SetProcessedTag("pluralize", content, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.pluralizeText(content)
-			}
+			processedContent := g.pluralizeText(content)
 
 			g.LogDebug("Pluralize tag: '%s' -> '%s'", match[1], processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -3149,18 +3015,7 @@ func (g *Golem) processShuffleTagsWithContext(template string, ctx *VariableCont
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("shuffle", content, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.shuffleText(content)
-					g.templateTagProcessingCache.SetProcessedTag("shuffle", content, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.shuffleText(content)
-			}
+			processedContent := g.shuffleText(content)
 
 			g.LogDebug("Shuffle tag: '%s' -> '%s'", match[1], processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -3215,19 +3070,7 @@ func (g *Golem) processLengthTagsWithContext(template string, ctx *VariableConte
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			cacheKey := fmt.Sprintf("%s|%s", lengthType, content)
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("length", cacheKey, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.calculateLength(content, lengthType)
-					g.templateTagProcessingCache.SetProcessedTag("length", cacheKey, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.calculateLength(content, lengthType)
-			}
+			processedContent := g.calculateLength(content, lengthType)
 
 			g.LogDebug("Length tag: '%s' (type='%s') -> '%s'", match[2], lengthType, processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -3284,19 +3127,7 @@ func (g *Golem) processCountTagsWithContext(template string, ctx *VariableContex
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			cacheKey := fmt.Sprintf("%s|%s", searchStr, content)
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("count", cacheKey, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.countOccurrences(content, searchStr)
-					g.templateTagProcessingCache.SetProcessedTag("count", cacheKey, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.countOccurrences(content, searchStr)
-			}
+			processedContent := g.countOccurrences(content, searchStr)
 
 			g.LogDebug("Count tag: '%s' (search='%s') -> '%s'", match[2], searchStr, processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -3344,19 +3175,7 @@ func (g *Golem) processSplitTagsWithContext(template string, ctx *VariableContex
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			cacheKey := fmt.Sprintf("%s|%s|%s", delimiter, limitStr, content)
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("split", cacheKey, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.splitText(content, delimiter, limitStr)
-					g.templateTagProcessingCache.SetProcessedTag("split", cacheKey, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.splitText(content, delimiter, limitStr)
-			}
+			processedContent := g.splitText(content, delimiter, limitStr)
 
 			g.LogDebug("Split tag: '%s' (delimiter='%s', limit='%s') -> '%s'", match[3], delimiter, limitStr, processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -3419,19 +3238,7 @@ func (g *Golem) processJoinTagsWithContext(template string, ctx *VariableContext
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			cacheKey := fmt.Sprintf("%s|%s", delimiter, content)
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("join", cacheKey, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.joinText(content, delimiter)
-					g.templateTagProcessingCache.SetProcessedTag("join", cacheKey, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.joinText(content, delimiter)
-			}
+			processedContent := g.joinText(content, delimiter)
 
 			g.LogDebug("Join tag: '%s' (delimiter='%s') -> '%s'", match[2], delimiter, processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -3493,19 +3300,7 @@ func (g *Golem) processIndentTagsWithContext(template string, ctx *VariableConte
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			cacheKey := fmt.Sprintf("%d|%s|%s", level, char, content)
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("indent", cacheKey, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.indentText(content, level, char)
-					g.templateTagProcessingCache.SetProcessedTag("indent", cacheKey, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.indentText(content, level, char)
-			}
+			processedContent := g.indentText(content, level, char)
 
 			g.LogDebug("Indent tag: '%s' (level=%d, char='%s') -> '%s'", match[3], level, char, processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -3586,19 +3381,7 @@ func (g *Golem) processDedentTagsWithContext(template string, ctx *VariableConte
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			cacheKey := fmt.Sprintf("%d|%s|%s", level, char, content)
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("dedent", cacheKey, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.dedentText(content, level, char)
-					g.templateTagProcessingCache.SetProcessedTag("dedent", cacheKey, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.dedentText(content, level, char)
-			}
+			processedContent := g.dedentText(content, level, char)
 
 			g.LogDebug("Dedent tag: '%s' (level=%d, char='%s') -> '%s'", match[3], level, char, processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -3670,19 +3453,7 @@ func (g *Golem) processUniqueTagsWithContext(template string, ctx *VariableConte
 				continue
 			}
 
-			// Check cache first
-			var processedContent string
-			cacheKey := fmt.Sprintf("%s|%s", delimiter, content)
-			if g.templateTagProcessingCache != nil {
-				if cached, found := g.templateTagProcessingCache.GetProcessedTag("unique", cacheKey, ctx); found {
-					processedContent = cached
-				} else {
-					processedContent = g.uniqueText(content, delimiter)
-					g.templateTagProcessingCache.SetProcessedTag("unique", cacheKey, processedContent, ctx)
-				}
-			} else {
-				processedContent = g.uniqueText(content, delimiter)
-			}
+			processedContent := g.uniqueText(content, delimiter)
 
 			g.LogDebug("Unique tag: '%s' (delimiter='%s') -> '%s'", match[2], delimiter, processedContent)
 			template = strings.ReplaceAll(template, match[0], processedContent)
@@ -5009,22 +4780,10 @@ func (g *Golem) getVariableValue(varName string, session *ChatSession) string {
 func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 	g.LogInfo("Resolving variable '%s'", varName)
 
-	// Check cache first
-	if g.variableResolutionCache != nil {
-		if value, found := g.variableResolutionCache.GetResolvedVariable(varName, ctx); found {
-			g.LogInfo("Found variable '%s' in cache: '%s'", varName, value)
-			return value
-		}
-	}
-
 	// 1. Check local scope (highest priority)
 	if ctx.LocalVars != nil {
 		if value, exists := ctx.LocalVars[varName]; exists {
 			g.LogInfo("Found variable '%s' in local scope: '%s'", varName, value)
-			// Cache the result
-			if g.variableResolutionCache != nil {
-				g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
-			}
 			return value
 		}
 	}
@@ -5033,10 +4792,6 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 	if ctx.Session != nil && ctx.Session.Variables != nil {
 		if value, exists := ctx.Session.Variables[varName]; exists {
 			g.LogInfo("Found variable '%s' in session scope: '%s'", varName, value)
-			// Cache the result
-			if g.variableResolutionCache != nil {
-				g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
-			}
 			return value
 		}
 	}
@@ -5053,10 +4808,6 @@ func (g *Golem) resolveVariable(varName string, ctx *VariableContext) string {
 		}
 		if value, exists := ctx.KnowledgeBase.lookupVariable(currentTopic, varName); exists {
 			g.LogInfo("Found variable '%s' in knowledge base: '%s'", varName, value)
-			// Cache the result
-			if g.variableResolutionCache != nil {
-				g.variableResolutionCache.SetResolvedVariable(varName, value, ctx)
-			}
 			return value
 		}
 	}

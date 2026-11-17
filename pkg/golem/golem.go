@@ -124,6 +124,8 @@ type TextNormalizationCache struct {
 }
 
 // VariableResolutionCache represents a cache for variable resolution results
+//
+// Deprecated: Golem no longer uses it; see GetVariableResolutionCacheStats.
 type VariableResolutionCache struct {
 	Results     map[string]string    `json:"results"`
 	Hits        map[string]int       `json:"hits"`
@@ -141,6 +143,8 @@ type VariableResolutionCache struct {
 }
 
 // TemplateTagProcessingCache represents a cache for template tag processing results
+//
+// Deprecated: Golem no longer uses it; see GetTemplateTagProcessingCacheStats.
 type TemplateTagProcessingCache struct {
 	Results     map[string]string    `json:"results"`
 	Hits        map[string]int       `json:"hits"`
@@ -305,12 +309,8 @@ type Golem struct {
 	consolidatedProcessor *ConsolidatedTemplateProcessor
 	// Text normalization result cache
 	textNormalizationCache *TextNormalizationCache
-	// Variable resolution cache
-	variableResolutionCache *VariableResolutionCache
 	// That pattern cache
 	thatPatternCache *ThatPatternCache
-	// Template tag processing cache
-	templateTagProcessingCache *TemplateTagProcessingCache
 	// Pattern matching cache
 	patternMatchingCache *PatternMatchingCache
 	// Persistent learning components
@@ -618,6 +618,8 @@ func (cache *TextNormalizationCache) ClearCache() {
 }
 
 // NewVariableResolutionCache creates a new variable resolution cache
+//
+// Deprecated: Golem no longer uses VariableResolutionCache.
 func NewVariableResolutionCache(maxSize int, ttlSeconds int64) *VariableResolutionCache {
 	return &VariableResolutionCache{
 		Results:     make(map[string]string),
@@ -827,6 +829,8 @@ func (cache *VariableResolutionCache) ClearCache() {
 }
 
 // NewTemplateTagProcessingCache creates a new template tag processing cache
+//
+// Deprecated: Golem no longer uses TemplateTagProcessingCache.
 func NewTemplateTagProcessingCache(maxSize int, ttlSeconds int64) *TemplateTagProcessingCache {
 	return &TemplateTagProcessingCache{
 		Results:       make(map[string]string),
@@ -1150,39 +1154,31 @@ func New(verbose bool) *Golem {
 	// Create text normalization result cache
 	textNormalizationCache := NewTextNormalizationCache(1000, 1800) // 1000 results, 30 minutes TTL
 
-	// Create variable resolution cache
-	variableResolutionCache := NewVariableResolutionCache(500, 900) // 500 results, 15 minutes TTL
-
 	// Create that pattern cache
 	thatPatternCache := NewThatPatternCache(200) // 200 patterns
-
-	// Create template tag processing cache
-	templateTagProcessingCache := NewTemplateTagProcessingCache(1000, 1800) // 1000 results, 30 minutes TTL
 
 	// Create pattern matching cache
 	patternMatchingCache := NewPatternMatchingCache(2000, 3600) // 2000 results, 1 hour TTL
 
 	g := &Golem{
-		verbose:                    verbose,
-		logger:                     logger,
-		sessions:                   make(map[string]*ChatSession),
-		sessionID:                  1,
-		oobMgr:                     oobMgr,
-		sraixMgr:                   sraixMgr,
-		sentenceSplitter:           sentenceSplitter,
-		wordBoundaryDetector:       wordBoundaryDetector,
-		templateCache:              templateCache,
-		templateConfig:             templateConfig,
-		templateMetrics:            templateMetrics,
-		patternRegexCache:          patternRegexCache,
-		tagProcessingCache:         tagProcessingCache,
-		normalizationCache:         normalizationCache,
-		textNormalizationCache:     textNormalizationCache,
-		variableResolutionCache:    variableResolutionCache,
-		thatPatternCache:           thatPatternCache,
-		templateTagProcessingCache: templateTagProcessingCache,
-		patternMatchingCache:       patternMatchingCache,
-		persistentLearning:         persistentLearning,
+		verbose:                verbose,
+		logger:                 logger,
+		sessions:               make(map[string]*ChatSession),
+		sessionID:              1,
+		oobMgr:                 oobMgr,
+		sraixMgr:               sraixMgr,
+		sentenceSplitter:       sentenceSplitter,
+		wordBoundaryDetector:   wordBoundaryDetector,
+		templateCache:          templateCache,
+		templateConfig:         templateConfig,
+		templateMetrics:        templateMetrics,
+		patternRegexCache:      patternRegexCache,
+		tagProcessingCache:     tagProcessingCache,
+		normalizationCache:     normalizationCache,
+		textNormalizationCache: textNormalizationCache,
+		thatPatternCache:       thatPatternCache,
+		patternMatchingCache:   patternMatchingCache,
+		persistentLearning:     persistentLearning,
 	}
 	g.logLevel.Store(int32(logLevel))
 	g.useTreeProcessing.Store(true) // Tree-based AST processing is now the default (correct AIML behavior)
@@ -2700,11 +2696,12 @@ func (g *Golem) ClearTextNormalizationCache() {
 	}
 }
 
-// GetVariableResolutionCacheStats returns variable resolution cache statistics
+// GetVariableResolutionCacheStats returns variable resolution cache statistics.
+//
+// Deprecated: variable resolution is no longer cached, because building the
+// cache key cost more than resolving the variable. It always reports an
+// empty cache.
 func (g *Golem) GetVariableResolutionCacheStats() map[string]interface{} {
-	if g.variableResolutionCache != nil {
-		return g.variableResolutionCache.GetCacheStats()
-	}
 	return map[string]interface{}{
 		"results":        0,
 		"max_size":       0,
@@ -2717,12 +2714,10 @@ func (g *Golem) GetVariableResolutionCacheStats() map[string]interface{} {
 	}
 }
 
-// ClearVariableResolutionCache clears the variable resolution cache
-func (g *Golem) ClearVariableResolutionCache() {
-	if g.variableResolutionCache != nil {
-		g.variableResolutionCache.ClearCache()
-	}
-}
+// ClearVariableResolutionCache clears the variable resolution cache.
+//
+// Deprecated: variable resolution is no longer cached; this does nothing.
+func (g *Golem) ClearVariableResolutionCache() {}
 
 // GetThatPatternCacheStats returns that pattern cache statistics
 func (g *Golem) GetThatPatternCacheStats() map[string]interface{} {
@@ -2758,11 +2753,12 @@ func (g *Golem) InvalidateThatPatternContext(context string) {
 	}
 }
 
-// GetTemplateTagProcessingCacheStats returns template tag processing cache statistics
+// GetTemplateTagProcessingCacheStats returns template tag processing cache statistics.
+//
+// Deprecated: template tag results are no longer cached, because building
+// the cache key cost more than processing the tag. It always reports an
+// empty cache.
 func (g *Golem) GetTemplateTagProcessingCacheStats() map[string]interface{} {
-	if g.templateTagProcessingCache != nil {
-		return g.templateTagProcessingCache.GetCacheStats()
-	}
 	return map[string]interface{}{
 		"results":        0,
 		"max_size":       0,
@@ -2776,26 +2772,20 @@ func (g *Golem) GetTemplateTagProcessingCacheStats() map[string]interface{} {
 	}
 }
 
-// ClearTemplateTagProcessingCache clears the template tag processing cache
-func (g *Golem) ClearTemplateTagProcessingCache() {
-	if g.templateTagProcessingCache != nil {
-		g.templateTagProcessingCache.ClearCache()
-	}
-}
+// ClearTemplateTagProcessingCache clears the template tag processing cache.
+//
+// Deprecated: template tag results are no longer cached; this does nothing.
+func (g *Golem) ClearTemplateTagProcessingCache() {}
 
-// InvalidateTemplateTagType invalidates template tag processing cache entries for a specific tag type
-func (g *Golem) InvalidateTemplateTagType(tagType string) {
-	if g.templateTagProcessingCache != nil {
-		g.templateTagProcessingCache.InvalidateTagType(tagType)
-	}
-}
+// InvalidateTemplateTagType invalidates template tag processing cache entries for a specific tag type.
+//
+// Deprecated: template tag results are no longer cached; this does nothing.
+func (g *Golem) InvalidateTemplateTagType(tagType string) {}
 
-// InvalidateTemplateTagContext invalidates template tag processing cache entries for a specific context
-func (g *Golem) InvalidateTemplateTagContext(context string) {
-	if g.templateTagProcessingCache != nil {
-		g.templateTagProcessingCache.InvalidateContext(context)
-	}
-}
+// InvalidateTemplateTagContext invalidates template tag processing cache entries for a specific context.
+//
+// Deprecated: template tag results are no longer cached; this does nothing.
+func (g *Golem) InvalidateTemplateTagContext(context string) {}
 
 // GetPatternMatchingCacheStats returns pattern matching cache statistics
 func (g *Golem) GetPatternMatchingCacheStats() map[string]interface{} {

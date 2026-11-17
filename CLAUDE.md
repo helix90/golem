@@ -335,7 +335,7 @@ go run pkg/golem/conflict_demo.go
 
 ## Performance
 
-Multiple caching layers: regex compilation, pattern matching, template processing, normalization, variable resolution. Reuse Golem instances (don't create per request). **Tree-based AST processing is the default** (50-70% faster than regex). Session history default max: 20 items.
+Caching layers: regex compilation, pattern matching, normalization, `<that>` patterns. Don't add caches whose key has to be built from session or knowledge-base state: variable resolution and tag-result caches were removed because hashing that state cost more than the work they saved. Reuse Golem instances (don't create per request). **Tree-based AST processing is the default** (50-70% faster than regex). Session history default max: 20 items.
 
 ## AIML2 Compliance
 

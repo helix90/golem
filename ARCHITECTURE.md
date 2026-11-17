@@ -159,7 +159,7 @@ Their changes are shared, so every session sees them.
   `Lists`, `Arrays`, `SetCollections`, `Sets`, `Topics` and `Substitutions`. Use the locked helpers
   (`lookupVariable`, `setVariable`, `property`, `GetProperty`, `SetProperty`)
   rather than reading the maps directly. Sections that hold it must not call
-  back into variable resolution or the caches.
+  back into variable resolution.
 - `AIMLKnowledgeBase.patternsMu`: guards `Categories` and `Patterns`; matching
   takes the read lock, `<learn>`/`<unlearn>` the write lock.
 - Each cache has its own lock. Compute anything that reads the session or knowledge

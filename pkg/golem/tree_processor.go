@@ -2140,19 +2140,7 @@ func (tp *TreeProcessor) processSubstringTag(node *ASTNode, content string) stri
 		return ""
 	}
 
-	// Check cache first
-	var result string
-	cacheKey := fmt.Sprintf("%s|%s|%s", startStr, endStr, content)
-	if tp.golem.templateTagProcessingCache != nil {
-		if cached, found := tp.golem.templateTagProcessingCache.GetProcessedTag("substring", cacheKey, tp.ctx); found {
-			result = cached
-		} else {
-			result = tp.golem.extractSubstring(content, startStr, endStr)
-			tp.golem.templateTagProcessingCache.SetProcessedTag("substring", cacheKey, result, tp.ctx)
-		}
-	} else {
-		result = tp.golem.extractSubstring(content, startStr, endStr)
-	}
+	result := tp.golem.extractSubstring(content, startStr, endStr)
 
 	tp.golem.LogDebug("Substring tag: '%s' (start=%s, end=%s) -> '%s'", content, startStr, endStr, result)
 	return result
@@ -2178,19 +2166,7 @@ func (tp *TreeProcessor) processReplaceTag(node *ASTNode, content string) string
 		return ""
 	}
 
-	// Check cache first
-	var result string
-	cacheKey := fmt.Sprintf("%s|%s|%s", search, replace, content)
-	if tp.golem.templateTagProcessingCache != nil {
-		if cached, found := tp.golem.templateTagProcessingCache.GetProcessedTag("replace", cacheKey, tp.ctx); found {
-			result = cached
-		} else {
-			result = strings.ReplaceAll(content, search, replace)
-			tp.golem.templateTagProcessingCache.SetProcessedTag("replace", cacheKey, result, tp.ctx)
-		}
-	} else {
-		result = strings.ReplaceAll(content, search, replace)
-	}
+	result := strings.ReplaceAll(content, search, replace)
 
 	tp.golem.LogDebug("Replace tag: '%s' (search='%s', replace='%s') -> '%s'", content, search, replace, result)
 	return result
@@ -2220,19 +2196,7 @@ func (tp *TreeProcessor) processLengthTag(node *ASTNode, content string) string 
 		return "0"
 	}
 
-	// Check cache first
-	var result string
-	cacheKey := fmt.Sprintf("%s|%s", lengthType, content)
-	if tp.golem.templateTagProcessingCache != nil {
-		if cached, found := tp.golem.templateTagProcessingCache.GetProcessedTag("length", cacheKey, tp.ctx); found {
-			result = cached
-		} else {
-			result = tp.golem.calculateLength(content, lengthType)
-			tp.golem.templateTagProcessingCache.SetProcessedTag("length", cacheKey, result, tp.ctx)
-		}
-	} else {
-		result = tp.golem.calculateLength(content, lengthType)
-	}
+	result := tp.golem.calculateLength(content, lengthType)
 
 	tp.golem.LogDebug("Length tag: '%s' (type='%s') -> '%s'", content, lengthType, result)
 	return result
@@ -2255,21 +2219,9 @@ func (tp *TreeProcessor) processCountTag(node *ASTNode, content string) string {
 		return "0"
 	}
 
-	// Check cache first
 	var result string
-	cacheKey := fmt.Sprintf("%s|%s", search, content)
-	if tp.golem.templateTagProcessingCache != nil {
-		if cached, found := tp.golem.templateTagProcessingCache.GetProcessedTag("count", cacheKey, tp.ctx); found {
-			result = cached
-		} else {
-			count := strings.Count(content, search)
-			result = strconv.Itoa(count)
-			tp.golem.templateTagProcessingCache.SetProcessedTag("count", cacheKey, result, tp.ctx)
-		}
-	} else {
-		count := strings.Count(content, search)
-		result = strconv.Itoa(count)
-	}
+	count := strings.Count(content, search)
+	result = strconv.Itoa(count)
 
 	tp.golem.LogDebug("Count tag: '%s' (search='%s') -> '%s'", content, search, result)
 	return result
@@ -2462,18 +2414,7 @@ func (tp *TreeProcessor) processPersonTag(_ *ASTNode, content string) string {
 	content = strings.TrimSpace(content)
 	content = strings.Join(strings.Fields(content), " ")
 
-	// Check cache first
-	var substitutedContent string
-	if tp.golem.templateTagProcessingCache != nil {
-		if cached, found := tp.golem.templateTagProcessingCache.GetProcessedTag("person", content, tp.ctx); found {
-			substitutedContent = cached
-		} else {
-			substitutedContent = tp.golem.SubstitutePronouns(content)
-			tp.golem.templateTagProcessingCache.SetProcessedTag("person", content, substitutedContent, tp.ctx)
-		}
-	} else {
-		substitutedContent = tp.golem.SubstitutePronouns(content)
-	}
+	substitutedContent := tp.golem.SubstitutePronouns(content)
 
 	tp.golem.LogInfo("Person tag: '%s' -> '%s'", content, substitutedContent)
 	return substitutedContent
@@ -2485,18 +2426,7 @@ func (tp *TreeProcessor) processPerson2Tag(_ *ASTNode, content string) string {
 	content = strings.TrimSpace(content)
 	content = strings.Join(strings.Fields(content), " ")
 
-	// Check cache first
-	var substitutedContent string
-	if tp.golem.templateTagProcessingCache != nil {
-		if cached, found := tp.golem.templateTagProcessingCache.GetProcessedTag("person2", content, tp.ctx); found {
-			substitutedContent = cached
-		} else {
-			substitutedContent = tp.golem.SubstitutePronouns2(content)
-			tp.golem.templateTagProcessingCache.SetProcessedTag("person2", content, substitutedContent, tp.ctx)
-		}
-	} else {
-		substitutedContent = tp.golem.SubstitutePronouns2(content)
-	}
+	substitutedContent := tp.golem.SubstitutePronouns2(content)
 
 	tp.golem.LogInfo("Person2 tag: '%s' -> '%s'", content, substitutedContent)
 	return substitutedContent
@@ -2508,18 +2438,7 @@ func (tp *TreeProcessor) processGenderTag(_ *ASTNode, content string) string {
 	content = strings.TrimSpace(content)
 	content = strings.Join(strings.Fields(content), " ")
 
-	// Check cache first
-	var substitutedContent string
-	if tp.golem.templateTagProcessingCache != nil {
-		if cached, found := tp.golem.templateTagProcessingCache.GetProcessedTag("gender", content, tp.ctx); found {
-			substitutedContent = cached
-		} else {
-			substitutedContent = tp.golem.SubstituteGenderPronouns(content)
-			tp.golem.templateTagProcessingCache.SetProcessedTag("gender", content, substitutedContent, tp.ctx)
-		}
-	} else {
-		substitutedContent = tp.golem.SubstituteGenderPronouns(content)
-	}
+	substitutedContent := tp.golem.SubstituteGenderPronouns(content)
 
 	tp.golem.LogInfo("Gender tag: '%s' -> '%s'", content, substitutedContent)
 	return substitutedContent
